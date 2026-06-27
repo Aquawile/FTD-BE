@@ -49,7 +49,7 @@ def extract_recent_8k_filings(
     is_xbrl_flags = recent.get("isXBRL", [])
     is_inline_xbrl_flags = recent.get("isInlineXBRL", [])
 
-    cutoff = datetime.now(timezone.utc).date() - timedelta(days=lookback_days - 1)
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=lookback_days)
     results: list[EightKFiling] = []
 
     for index, form in enumerate(forms):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from dotenv import load_dotenv
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -45,6 +46,9 @@ class Settings:
 
     @classmethod
     def from_env(cls, project_root: Path | None = None) -> Settings:
+        if project_root:
+            env_path = project_root / ".env"
+            load_dotenv(env_path)
         return cls(
             gcp_project=os.getenv("GCP_PROJECT", "ftd2026").strip(),
             gce_instance_name=os.getenv("GCE_INSTANCE_NAME", "data-ingest-vm").strip(),
