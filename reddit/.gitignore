@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+
+# Node / Devvit
+node_modules/
+dist/
+.env.local
+package-lock.json
+
+# Logs
+*.log
+error_log.txt
+
+# IDE
+.idea/
+.DS_Store
+
+# GCP
+service-account*.json
