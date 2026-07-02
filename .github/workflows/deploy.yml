@@ -1,0 +1,66 @@
+name: Deploy to GCP
+
+on:
+  push:
+    branches: [rawdataingestion]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ftd2026
+          install_components: beta
+      
+      - name: Deploy GNews Cloud Function
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, 'gnews') ||
+          contains(github.event.head_commit.message, 'deploy')
+        run: |
+          gcloud functions deploy gnews-ingest \
+            --project=ftd2026 \
+            --region=us-west2 \
+            --runtime=python311 \
+            --trigger-http \
+            --allow-unauthenticated \
+            --entry-point=gnews_ingest \
+            --source=gnews/cloud-function \
+            --timeout=300s \
+            --memory=512MB \
+            --min-instances=0 \
+            --max-instances=1 \
+            --service-account=gnews-ingestion-sa@ftd2026.iam.gserviceaccount.com \
+            --set-secrets=GNEWS_API_KEY_SECRET=gnews-api-key:latest \
+            --set-env-vars="GCS_BUCKET=raw-data-strg,GCS_PREFIX=gnews,TICKERS_GCS_PATH=SEC/config/fortune500.json" \
+            --no-gen2 \
+            --quiet
+          echo "GNews Cloud Function deployed"
+      
+      - name: Deploy Prices VM Script
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, 'prices') ||
+          contains(github.event.head_commit.message, 'deploy')
+        run: |
+          gcloud compute instances start data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
+          sleep 15
+          gcloud compute scp prices/main.py data-ingest-vm:~/prices-ingestion/main.py --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp prices/run.sh data-ingest-vm:~/prices-ingestion/run.sh --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp prices/requirements.txt data-ingest-vm:~/prices-ingestion/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="source ~/prices-ingestion/.venv/bin/activate && pip install -r ~/prices-ingestion/requirements.txt && chmod +x ~/prices-ingestion/run.sh && (crontab -l 2>/dev/null | grep -v 'prices-ingestion'; echo '0 22 * * * /home/izzybutera11_gmail_com/prices-ingestion/run.sh') | crontab -" --quiet
+          echo "Prices VM script, dependencies, and cron updated"
