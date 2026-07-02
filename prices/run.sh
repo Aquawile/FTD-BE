@@ -1,7 +1,6 @@
 #!/bin/bash
 cd ~/gcloud-bucket-data/prices
-source .venv/bin/activate
-pip install -r requirements.txt >> /tmp/prices.log 2>&1
+pip3 install -r requirements.txt >> /tmp/prices.log 2>&1
 python3 main.py >> /tmp/prices.log 2>&1
 EXIT_CODE=$?
 echo "Pipeline finished at $(date -u) with exit code $EXIT_CODE" >> /tmp/prices.log

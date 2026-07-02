@@ -65,5 +65,5 @@ jobs:
           gcloud compute scp prices/main.py data-ingest-vm:~/gcloud-bucket-data/prices/main.py --zone=us-west2-a --project=ftd2026 --quiet
           gcloud compute scp prices/run.sh data-ingest-vm:~/gcloud-bucket-data/prices/run.sh --zone=us-west2-a --project=ftd2026 --quiet
           gcloud compute scp prices/requirements.txt data-ingest-vm:~/gcloud-bucket-data/prices/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="cd ~/gcloud-bucket-data/prices && source .venv/bin/activate && pip install -r requirements.txt && chmod +x run.sh && (crontab -l 2>/dev/null | grep -v 'gcloud-bucket-data/prices/run.sh'; echo '0 22 * * * /home/izzybutera11_gmail_com/gcloud-bucket-data/prices/run.sh') | crontab -" --quiet
+          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="pip3 install -r ~/gcloud-bucket-data/prices/requirements.txt && chmod +x ~/gcloud-bucket-data/prices/run.sh && (crontab -l 2>/dev/null | grep -v 'gcloud-bucket-data/prices/run.sh'; echo '0 22 * * * /home/izzybutera11_gmail_com/gcloud-bucket-data/prices/run.sh') | crontab -" --quiet
           echo "Prices VM script, dependencies, and cron updated"
