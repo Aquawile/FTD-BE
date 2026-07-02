@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     
     steps:
       - name: Checkout code
@@ -18,7 +19,8 @@ jobs:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
+          service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
       
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
