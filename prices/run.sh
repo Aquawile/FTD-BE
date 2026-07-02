@@ -1,5 +1,5 @@
 #!/bin/bash
-cd ~/prices
+cd ~/gcloud-bucket-data/prices
 source .venv/bin/activate
 pip install -r requirements.txt >> /tmp/prices.log 2>&1
 python3 main.py >> /tmp/prices.log 2>&1
