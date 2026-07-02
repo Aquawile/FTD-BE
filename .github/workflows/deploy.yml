@@ -41,7 +41,7 @@ jobs:
             --trigger-http \
             --allow-unauthenticated \
             --entry-point=gnews_ingest \
-            --source=gnews/cloud-function \
+            --source=gnews \
             --timeout=300s \
             --memory=512MB \
             --min-instances=0 \
