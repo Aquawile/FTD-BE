@@ -1,0 +1,1 @@
+# No external dependencies - uses urllib and metadata server
