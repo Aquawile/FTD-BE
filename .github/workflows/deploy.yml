@@ -46,6 +46,7 @@ jobs:
             --memory=256MB \
             --min-instances=0 \
             --max-instances=1 \
+            --service-account=github-actions-deploy@ftd2026.iam.gserviceaccount.com \
             --quiet
           echo "Start Price VM Cloud Function deployed"
       
