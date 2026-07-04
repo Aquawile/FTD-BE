@@ -28,6 +28,27 @@ jobs:
           project_id: ftd2026
           install_components: beta
       
+      - name: Deploy Start Price VM Cloud Function
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, 'start-price-vm') ||
+          contains(github.event.head_commit.message, 'deploy')
+        run: |
+          gcloud functions deploy start-price-vm \
+            --project=ftd2026 \
+            --region=us-west2 \
+            --runtime=python311 \
+            --trigger-http \
+            --allow-unauthenticated \
+            --entry-point=start_vm \
+            --source=cloud-functions/start-price-vm \
+            --timeout=30s \
+            --memory=256MB \
+            --min-instances=0 \
+            --max-instances=1 \
+            --quiet
+          echo "Start Price VM Cloud Function deployed"
+      
       - name: Deploy GNews Cloud Function
         if: |
           github.event_name == 'workflow_dispatch' ||
