@@ -17,16 +17,16 @@ SELECT
   target_ticker,
   target_cik,
   element_type,
-  current,
+  `current`,
   change,
   percent_change,
   high,
   low,
   open,
   previous_close,
-  normalized_calendar_date,
+  DATE(normalized_calendar_date) AS normalized_calendar_date,
   ingest_date
-FROM `{project}.{dataset}.staging_finnhub`;
+FROM `{project}.lakehouse.staging_finnhub`;
 """,
     "sentiment_mart": """
 CREATE OR REPLACE VIEW `{project}.{dataset}.sentiment_mart` AS
@@ -35,9 +35,9 @@ SELECT
   target_cik,
   element_type,
   content_body,
-  normalized_calendar_date,
+  DATE(normalized_calendar_date) AS normalized_calendar_date,
   ingest_date
-FROM `{project}.{dataset}.staging_gnews`;
+FROM `{project}.lakehouse.staging_gnews`;
 """,
     "sec_elements_mart": """
 CREATE OR REPLACE VIEW `{project}.{dataset}.sec_elements_mart` AS
@@ -50,10 +50,10 @@ SELECT
   item_number,
   accession_number,
   period_of_report,
-  filing_date,
-  normalized_calendar_date,
+  DATE(filing_date) AS filing_date,
+  DATE(normalized_calendar_date) AS normalized_calendar_date,
   ingest_date
-FROM `{project}.{dataset}.staging_sec`;
+FROM `{project}.lakehouse.staging_sec`;
 """,
     "unified_financials": """
 CREATE OR REPLACE VIEW `{project}.{dataset}.unified_financials` AS
@@ -62,11 +62,11 @@ SELECT
   target_cik,
   element_type,
   content_body,
-  normalized_calendar_date,
+  DATE(normalized_calendar_date) AS normalized_calendar_date,
   ingest_date,
   source,
   form_type
-FROM `{project}.{dataset}.unified_staging`;
+FROM `{project}.lakehouse.unified_staging`;
 """,
 }
 

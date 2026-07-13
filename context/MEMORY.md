@@ -482,7 +482,7 @@ lakehouse/
 - GNews retains text fields (`content_body`)
 - SEC retains metadata fields (`element_id`, `accession_number`, `form_type`, `item_number`, `period_of_report`, `filing_date`, `date_precision`)
 
-### 16.8 BigQuery Catalog Code (Generated, Not Applied)
+### 16.8 BigQuery Catalog (Deployed 2026-07-13)
 
 **Files:**
 - `lakehouse/catalog/bq_external.py` — generates `CREATE OR REPLACE EXTERNAL TABLE` DDL
@@ -490,20 +490,22 @@ lakehouse/
 - `lakehouse/catalog/bq_external_tables.sql` — 5 external table definitions
 - `lakehouse/catalog/bq_views.sql` — 4 view definitions
 
-**External tables:**
+**External tables (deployed in `ftd2026.lakehouse`):**
 - `ftd2026.lakehouse.staging_finnhub`
 - `ftd2026.lakehouse.staging_gnews`
 - `ftd2026.lakehouse.staging_sec`
 - `ftd2026.lakehouse.unified_staging`
 - `ftd2026.lakehouse.fiscal_parameters`
 
-**Views:**
-- `analytics.prices_mart` — price time-series
-- `analytics.sentiment_mart` — GNews text
-- `analytics.sec_elements_mart` — SEC elements with metadata
-- `analytics.unified_financials` — cross-source queryable view
+**Views (deployed in `ftd2026.analytics`):**
+- `ftd2026.analytics.prices_mart` — price time-series with DATE dates
+- `ftd2026.analytics.sentiment_mart` — GNews text with DATE dates
+- `ftd2026.analytics.sec_elements_mart` — SEC elements with DATE dates
+- `ftd2026.analytics.unified_financials` — cross-source queryable view
 
-**Status:** SQL generated. Not yet executed against BigQuery.
+**Status:** Deployed and verified on 2026-07-13.
+
+**Billing protection:** GCP budget alert set at $0.01 USD for project `ftd2026` (billing account `014789-893C12-EBA34F`). Alerts at 50% and 100% of budget.
 
 ### 16.9 Integrity Verification Results
 
@@ -515,15 +517,18 @@ lakehouse/
 | `date_precision` population | 100% of SEC rows labeled (`fiscal` or `event`) |
 | Canonical columns present | All 3 staging tables + unified have required columns |
 | Source-specific columns preserved | Finnhub price fields, SEC metadata fields all retained |
+| BigQuery external table row counts | Match GCS exactly (4,473 / 73,980 / 758,054 / 836,507 / 477) |
+| BigQuery view compilation | All 4 views created successfully |
+| BigQuery DATE casting | `normalized_calendar_date` and `filing_date` cast to DATE in views |
 
 ### 16.10 Remaining Work
 
 | Step | Status | Notes |
 |---|---|---|
-| Apply BigQuery external table DDL | **Not started** | DDL ready in `bq_external_tables.sql` |
-| Apply BigQuery view DDL | **Not started** | DDL ready in `bq_views.sql` |
-| Verification cross-source joins | **Not started** | Depends on BigQuery catalog being applied |
-| Dataflow wrappers | **Not planned** | Current data volume (~265 MB) handled fine by local pandas |
+| Apply BigQuery external table DDL | **Completed** | 5 external tables deployed in `ftd2026.lakehouse` |
+| Apply BigQuery view DDL | **Completed** | 4 views deployed in `ftd2026.analytics` |
+| Verification cross-source joins | **Completed** | AAPL SEC-to-price join verified |
+| Dataflow wrappers | **Not planned** | Current data volume (~520 MB) handled fine by local pandas |
 | Iceberg catalog | **Not planned** | BigQuery external tables provide SQL queryability without Iceberg server |
 | Airflow/Composer | **Not planned** | Manual `orchestrator.py` invocation is sufficient |
 | Annual 10-K delta cron | **Not started** | 10-Ks are annual; not needed for initial bootstrap |

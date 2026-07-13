@@ -10,35 +10,130 @@ from lakehouse.config import LakehouseSettings
 logger = logging.getLogger(__name__)
 
 
-_EXTERNAL_TABLE_DDL = """
-CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.{table}`
+_EXTERNAL_TABLE_DDL = {
+    "staging_finnhub": """
+CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.staging_finnhub`
+(
+  target_ticker STRING,
+  target_cik STRING,
+  element_type STRING,
+  content_body STRING,
+  normalized_calendar_date TIMESTAMP,
+  ingest_date TIMESTAMP,
+  symbol STRING,
+  `timestamp` TIMESTAMP,
+  `current` BIGNUMERIC,
+  change BIGNUMERIC,
+  percent_change BIGNUMERIC,
+  high BIGNUMERIC,
+  low BIGNUMERIC,
+  open BIGNUMERIC,
+  previous_close BIGNUMERIC
+)
 OPTIONS (
   format = 'PARQUET',
-  uris = ['gs://{bucket}/{prefix}/{file}']
+  uris = ['gs://{bucket}/{prefix}/staging_finnhub.parquet']
 );
-"""
-
-_TABLES = [
-    ("staging_finnhub", "staging_finnhub.parquet"),
-    ("staging_gnews", "staging_gnews.parquet"),
-    ("staging_sec", "staging_sec.parquet"),
-    ("unified_staging", "unified_staging.parquet"),
-    ("fiscal_parameters", "fiscal_parameters.parquet"),
-]
+""",
+    "staging_gnews": """
+CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.staging_gnews`
+(
+  target_ticker STRING,
+  target_cik STRING,
+  element_type STRING,
+  content_body STRING,
+  normalized_calendar_date TIMESTAMP,
+  ingest_date TIMESTAMP
+)
+OPTIONS (
+  format = 'PARQUET',
+  uris = ['gs://{bucket}/{prefix}/staging_gnews.parquet']
+);
+""",
+    "staging_sec": """
+CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.staging_sec`
+(
+  target_ticker STRING,
+  target_cik STRING,
+  element_type STRING,
+  content_body STRING,
+  normalized_calendar_date TIMESTAMP,
+  ingest_date TIMESTAMP,
+  element_id STRING,
+  accession_number STRING,
+  form_type STRING,
+  item_number STRING,
+  content_type STRING,
+  raw_text_string STRING,
+  period_of_report STRING,
+  filing_date TIMESTAMP,
+  date_precision STRING
+)
+OPTIONS (
+  format = 'PARQUET',
+  uris = ['gs://{bucket}/{prefix}/staging_sec.parquet']
+);
+""",
+    "unified_staging": """
+CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.unified_staging`
+(
+  target_ticker STRING,
+  target_cik STRING,
+  element_type STRING,
+  content_body STRING,
+  normalized_calendar_date TIMESTAMP,
+  ingest_date TIMESTAMP,
+  symbol STRING,
+  `timestamp` TIMESTAMP,
+  `current` BIGNUMERIC,
+  change BIGNUMERIC,
+  percent_change BIGNUMERIC,
+  high BIGNUMERIC,
+  low BIGNUMERIC,
+  open BIGNUMERIC,
+  previous_close BIGNUMERIC,
+  source STRING,
+  form_type STRING,
+  element_id STRING,
+  accession_number STRING,
+  item_number STRING,
+  content_type STRING,
+  raw_text_string STRING,
+  period_of_report STRING,
+  filing_date TIMESTAMP,
+  date_precision STRING
+)
+OPTIONS (
+  format = 'PARQUET',
+  uris = ['gs://{bucket}/{prefix}/unified_staging.parquet']
+);
+""",
+    "fiscal_parameters": """
+CREATE OR REPLACE EXTERNAL TABLE `{project}.{dataset}.fiscal_parameters`
+(
+  target_cik STRING,
+  fiscal_year_end_date STRING,
+  source_accession STRING,
+  extracted_at STRING
+)
+OPTIONS (
+  format = 'PARQUET',
+  uris = ['gs://{bucket}/{prefix}/fiscal_parameters.parquet']
+);
+""",
+}
 
 
 def generate_external_table_ddl(settings: LakehouseSettings, project: str, dataset: str) -> str:
     statements = []
-    for table_name, file_name in _TABLES:
-        stmt = _EXTERNAL_TABLE_DDL.format(
+    for table_name, template in _EXTERNAL_TABLE_DDL.items():
+        stmt = template.format(
             project=project,
             dataset=dataset,
-            table=table_name,
             bucket=settings.gcs_bucket,
             prefix=settings.gcs_staging_prefix,
-            file=file_name,
-        )
-        statements.append(stmt.strip())
+        ).strip()
+        statements.append(stmt)
     return "\n\n".join(statements)
 
 
