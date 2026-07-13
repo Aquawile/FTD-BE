@@ -6,3 +6,5 @@
 .env
 error_log.txt
 *.log
+error_log_*.txt
+github-actions-key.json
