@@ -364,7 +364,7 @@ curl -X POST https://<region>-<project>.cloudfunctions.net/start-price-vm
 
 **Goal:** Process the three raw GCS data streams into schema-enforced, temporally-synchronized staging tables before any embedding occurs.
 
-**Status:** Core local pipeline implemented, executed, and verified. BigQuery catalog code generated but not yet applied.
+**Status:** Core local pipeline implemented, executed, and verified. BigQuery catalog deployed and verified on 2026-07-13.
 
 ### 16.1 10-K Bootstrap (Completed)
 
@@ -548,3 +548,206 @@ PYTHONPATH=/Users/isabellabutera/gcloud-bucket-data:/Users/isabellabutera/gcloud
 **Time cost:** ~17 minutes for full pipeline (mostly SEC HTML parsing).
 **GCS storage cost:** ~265 MB total for Parquet staging files.
 **Cloud cost:** $0 (all compute is local; BigQuery catalog not yet applied).
+
+---
+
+## 17. Post-Mortem: Issues Encountered and Fixes Applied
+
+This section documents every significant failure, root cause, fix, and verification step encountered during Option 1 development.
+
+### 17.1 Fiscal Resolver Low Success Rate
+
+**Symptom:** Only ~20% of 10-K HTML files yielded a fiscal year-end date (197/990). The remaining 80% produced no date, leaving `normalized_calendar_date` null for thousands of SEC rows.
+
+**Root Cause:** The regex patterns in `_extract_fy_from_html()` had two flaws:
+1. They looked for `dei:FiscalYearEndDate`, but modern 10-Ks use `dei:CurrentFiscalYearEndDate`.
+2. They used `([^<]+)` to capture text inside inline XBRL tags. Modern 10-Ks nest HTML tags like `<b>` and `<span>` inside `ix:nonNumeric` elements, so `([^<]+)` stopped at the first nested tag and returned empty or truncated text.
+
+**Fix:** Rewrote `_extract_fy_from_html()` in `fiscal_resolver.py`:
+1. Try visible text patterns first (legacy format).
+2. Fall back to inline XBRL with `re.DOTALL` regex that captures the full inner XML.
+3. Strip nested tags with `re.sub(r'<[^>]+>', '', raw)`.
+4. Extract year from `dei:DocumentFiscalYearFocus` and combine with month/day.
+5. Handle special formats like `--10-03` (day-month without year).
+
+**Verification:** Full scan of all 495 10-K HTML files. Success rate increased from ~20% to 96.4% (477/495).
+
+---
+
+### 17.2 Null `normalized_calendar_date` in SEC Rows
+
+**Symptom:** 31,004 SEC rows had `null` `normalized_calendar_date` after validation. These rows could not participate in temporal joins with Finnhub or GNews data.
+
+**Root Cause:** The validation core only tried two fallbacks for 10-Ks: `period_of_report` → `fiscal_year_end_date`. For 18/495 CIKs, both were missing or unparseable. There was no further fallback, so the date remained null.
+
+**Fix:** Added `date_precision` column and a 4-tier fallback chain in `_enrich_sec_dates()`:
+- **10-Ks:** `period_of_report` → `fiscal_year_end_date` → `filing_date` → `ingest_date`
+- **8-Ks:** `filing_date` → `ingest_date`
+
+Each fallback is a real timestamp from a real source. No data is fabricated. The `date_precision` column labels which source provided the date: `exact_fiscal`, `fiscal`, `event`, or `ingestion`.
+
+**Verification:** After re-running validation, 0 null `normalized_calendar_date` values in any staging table. All 836,507 unified rows have valid temporal coordinates.
+
+---
+
+### 17.3 Null `normalized_calendar_date` in Finnhub Rows
+
+**Symptom:** 489 Finnhub price records had null `timestamp` and null `current` price. These incomplete API responses produced rows that could not participate in temporal joins.
+
+**Root Cause:** The Finnhub NDJSON contains some records with null `timestamp` and null `current` price. These are incomplete API responses, not valid price quotes.
+
+**Fix:** Added explicit skip in `load_price_frames()`: if `timestamp is None` or `current is None`, drop the record before it enters the DataFrame.
+
+**Verification:** Price staging reduced from 4,957 to 4,473 rows (484 incomplete records removed). All remaining rows have valid `normalized_calendar_date`.
+
+---
+
+### 17.4 Null-Type Parquet Columns
+
+**Symptom:** `content_body` in `staging_finnhub.parquet` and `period_of_report` in `staging_sec.parquet` were written as Parquet `null` type instead of `large_string`. BigQuery external tables may not surface null-type columns, which would break views referencing them.
+
+**Root Cause:** In pandas, these columns contained Python `None` values. When PyArrow converted the DataFrame to Parquet, columns with all `None` values were inferred as `null` type rather than `string`.
+
+**Fix:** Modified source code to write empty strings `""` instead of `None`:
+- `finnhub_coercion.py`: Added `rec["content_body"] = ""` for every price row.
+- `sec_shredder.py`: Changed `period_of_report=period_of_report or ""` and `filing_date=filing_date or ""`.
+- `unified_staging.py`: Changed `df["form_type"] = ""` instead of `None`.
+
+**Verification:** After re-running pipeline, PyArrow schema inspection showed no null-type columns in any Parquet file.
+
+---
+
+### 17.5 Decimal Price Columns Corrupted by `fillna("")`
+
+**Symptom:** Pipeline crashed with `pyarrow.lib.ArrowTypeError: ('int or Decimal object expected, got str', 'Conversion failed for column current with type object')` when writing `unified_staging.parquet`.
+
+**Root Cause:** The `_coerce_schema()` function in `validation_core.py` called `fillna("")` on all object columns. Finnhub price columns (`current`, `change`, etc.) are `Decimal` objects stored in object-dtype columns. `fillna("")` converted Decimals to strings like `"157.52"`. When PyArrow tried to serialize these strings into `decimal128` columns, it failed because strings are not valid decimal values.
+
+**Fix:** Modified `_coerce_schema()` to skip non-string object columns during null filling:
+```python
+for col in df.select_dtypes(include=["object"]).columns:
+    sample = df[col].dropna()
+    if len(sample) > 0 and not isinstance(sample.iloc[0], str):
+        continue
+    df[col] = df[col].fillna("")
+```
+
+**Verification:** Re-ran pipeline. PyArrow successfully serialized all tables. Decimal prices preserved as `decimal128(7,3)` etc.
+
+---
+
+### 17.6 Finnhub Timestamp Format Mismatch
+
+**Symptom:** All 4,473 Finnhub rows had null `timestamp` after the first pipeline run. `normalized_calendar_date` was also null.
+
+**Root Cause:** The raw Finnhub NDJSON uses ISO 8601 strings like `"2026-07-10T20:00:00+00:00"`. The initial pipeline code attempted `int(timestamp)`, which fails on ISO strings and returns `None`. This propagated through the pipeline, making both `timestamp` and `normalized_calendar_date` null.
+
+**Fix:** 
+1. Pipeline now preserves the raw ISO string as-is.
+2. `_coerce_schema()` converts it to `datetime64[us, UTC]` using `pd.to_datetime()`.
+3. `normalized_calendar_date` is derived from the parsed timestamp.
+
+**Verification:** After fix, all 4,473 rows have valid `timestamp` (type `datetime64[us, UTC]`) and `normalized_calendar_date` (type `timestamp[us]`).
+
+---
+
+### 17.7 8-K Support Gaps
+
+**Symptom:** 8-K filings were processed but had no fiscal year-end metadata. The date fallback chain was designed only for 10-Ks.
+
+**Root Cause:** 8-Ks are event-driven filings (e.g., CEO departure, merger agreement). They do not have `period_of_report` or fiscal year-end dates. The initial validation logic only handled 10-K date resolution.
+
+**Fix:** Extended `_enrich_sec_dates()` with 8-K-specific logic:
+- **Priority 1:** `filing_date` → `normalized_calendar_date` + `date_precision = 'event'`
+- **Priority 2:** `ingest_date` → `normalized_calendar_date` + `date_precision = 'ingestion'`
+
+**Verification:** All 422 8-K HTML files were shredded. All 8-K rows received `filing_date` from SEC submissions API. 0 null dates in 8-K rows.
+
+---
+
+### 17.8 Validation Core Dropping Source-Specific Columns
+
+**Symptom:** Earlier versions of validation core projected to a fixed column list, stripping SEC metadata like `element_id`, `accession_number`, `period_of_report`, `filing_date`.
+
+**Root Cause:** The validation code used a hardcoded column whitelist and dropped anything not in it.
+
+**Fix:** Changed validation to preserve all existing columns and only add missing canonical ones. Canonical columns (`target_ticker`, `target_cik`, `element_type`, `content_body`, `normalized_calendar_date`, `ingest_date`) are listed first; source-specific extras follow.
+
+**Verification:** Finnhub retains price fields. GNews retains text fields. SEC retains all metadata fields.
+
+---
+
+### 17.9 BigQuery Reserved Keyword Conflicts
+
+**Symptom:** BigQuery DDL execution failed with `Syntax error: Expected ")" or "," but got keyword CURRENT` when creating external tables.
+
+**Root Cause:** BigQuery reserved words like `timestamp` and `current` cannot be used as unquoted column names in DDL.
+
+**Fix:** Backtick-quoted reserved keywords in all DDL files:
+- `bq_external_tables.sql`: `` `timestamp` ``, `` `current` ``
+- `bq_views.py`: `` `current` `` in `prices_mart`
+- `bq_external.py`: Updated generator to quote reserved words
+
+**Verification:** Re-ran DDL against BigQuery. All 5 external tables created successfully.
+
+---
+
+### 17.10 BigQuery View Dataset Reference Bug
+
+**Symptom:** View DDL failed with `Not found: Table ftd2026:analytics.staging_finnhub` when creating views.
+
+**Root Cause:** The view generator templates used `{project}.{dataset}.staging_finnhub` for the `FROM` clause, but views are created in the `analytics` dataset while external tables live in `lakehouse`. The `{dataset}` placeholder resolved to `analytics`, so views referenced `analytics.staging_finnhub` instead of `lakehouse.staging_finnhub`.
+
+**Fix:** Hardcoded `lakehouse` in all view `FROM` clauses:
+```sql
+FROM `{project}.lakehouse.staging_finnhub`
+```
+
+**Verification:** All 4 views created successfully in `ftd2026.analytics`. Cross-source joins verified.
+
+---
+
+### 17.11 Pipeline Progress Appeared Stuck
+
+**Symptom:** During SEC shredding, the pipeline showed no new log output for 15-20 minutes at a time. Appeared frozen.
+
+**Root Cause:** SEC HTML parsing is CPU-bound and slow. The shredder processes 1,412 HTML files (422 8-Ks + 990 10-Ks), each requiring BeautifulSoup parsing, boilerplate removal, and table-to-Markdown conversion. This is inherently slow on a single core.
+
+**Fix:** No code fix needed. This is expected behavior. The pipeline was working; it just takes ~20 minutes for the SEC track. Added process monitoring (`ps aux`) to confirm it was still running.
+
+**Verification:** Pipeline completed successfully in ~25 minutes total.
+
+---
+
+### 17.12 GCS File Deletion and Re-run Strategy
+
+**Symptom:** After discovering corrupted Finnhub timestamps and null-type columns in the first pipeline run, the existing Parquet files on GCS contained flawed schemas.
+
+**Root Cause:** The pipeline overwrites files in place. There was no versioning or backup of staging outputs.
+
+**Fix:** Before re-running, deleted all 5 flawed Parquet files from GCS:
+```bash
+gsutil rm gs://raw-data-strg/lakehouse/staging/*.parquet
+```
+Then ran the pipeline once with all fixes applied.
+
+**Verification:** New Parquet files have correct schemas: 0 null-type columns, proper temporal types, preserved Decimal prices.
+
+---
+
+### Summary Table
+
+| Issue | Impact | Fix | Verification |
+|---|---|---|---|
+| Fiscal resolver 20% success | 18 CIKs missing dates | DOTALL regex + correct XBRL tags | 477/495 = 96.4% |
+| 31,004 null SEC dates | Unjoinable rows | 4-tier fallback + `date_precision` | 0 null dates |
+| 484 null Finnhub dates | Unjoinable price rows | Skip null-timestamp records | 4,473 clean rows |
+| Null-type Parquet cols | BQ external tables may hide cols | Write `""` instead of `None` | 0 null types in schema |
+| Decimal corruption | Pipeline crash | Skip non-string cols in `fillna` | PyArrow round-trip OK |
+| Finnhub timestamp format | All timestamps null | Preserve ISO string, parse later | `datetime64[us, UTC]` |
+| 8-K date gaps | 8-K rows unjoinable | `filing_date` fallback for 8-Ks | 0 null dates in 8-Ks |
+| Column stripping | Lost SEC metadata | Preserve all columns | Source-specific fields retained |
+| BQ reserved keywords | DDL syntax error | Backtick-quote `timestamp`, `current` | All tables created |
+| View dataset reference | Views pointed to wrong dataset | Hardcode `lakehouse` in FROM | All views created |
+| Slow SEC parsing | Appeared stuck | No fix needed; expected behavior | Pipeline completed |
+| Flawed GCS files | Bad schemas persisted | Delete + re-run pipeline | Clean schemas verified |
