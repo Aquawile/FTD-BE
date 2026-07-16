@@ -13,7 +13,7 @@ class LakehouseSettings:
     """Settings for the lakehouse staging pipeline."""
 
     project_root: Path
-    gcs_bucket: str = "raw-data-strg"
+    gcs_bucket: str = "processed-layer-one"
     lakehouse_gcs_prefix: str = "lakehouse"
     staging_path: str = "lakehouse/staging"
     catalog_path: str = "lakehouse/catalog"
