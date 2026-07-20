@@ -175,7 +175,7 @@ def _coerce_schema(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def validate_staging(settings: LakehouseSettings) -> dict[str, pd.DataFrame]:
+def validate_staging(settings: LakehouseSettings, sample: int | None = None) -> dict[str, pd.DataFrame]:
     cik_map = _build_cik_map(settings)
     fiscal_map = _load_fiscal_map(settings)
     client = storage.Client(project=settings.sec_settings.gcp_project)
@@ -218,6 +218,10 @@ def validate_staging(settings: LakehouseSettings) -> dict[str, pd.DataFrame]:
         canonical = [c for c in _CANONICAL_COLUMNS if c in df.columns]
         extras = [c for c in df.columns if c not in _CANONICAL_COLUMNS]
         df = df[canonical + extras].reset_index(drop=True)
+
+        # Sample if requested
+        if sample is not None and len(df) > sample:
+            df = df.sample(n=sample, random_state=42).reset_index(drop=True)
 
         validated[table_name] = df
         logger.info("Validated %s: %d rows, columns=%s", table_name, len(df), list(df.columns))

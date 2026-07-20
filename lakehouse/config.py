@@ -8,19 +8,25 @@ from pathlib import Path
 from src.config import Settings
 
 
-@dataclass(frozen=True)
+@dataclass
 class LakehouseSettings:
     """Settings for the lakehouse staging pipeline."""
 
     project_root: Path
     gcs_bucket: str = "processed-layer-one"
+    raw_data_gcs_bucket: str = "raw-data-strg"
     lakehouse_gcs_prefix: str = "lakehouse"
     staging_path: str = "lakehouse/staging"
     catalog_path: str = "lakehouse/catalog"
     bq_dataset: str = "lakehouse"
     target_company_limit: int = 500
+    postgres_host: str = ""
+    postgres_port: int = 5432
+    postgres_db: str = ""
+    postgres_user: str = ""
+    postgres_password: str = ""
+    postgres_tables: tuple[str, ...] = ()
 
-    # Reuse underlying SEC settings for auth and roster loading.
     _sec_settings: Settings = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -33,6 +39,10 @@ class LakehouseSettings:
     @property
     def gcs_staging_prefix(self) -> str:
         return f"{self.lakehouse_gcs_prefix}/staging"
+
+    @property
+    def postgres_enabled(self) -> bool:
+        return bool(self.postgres_host and self.postgres_db and self.postgres_user)
 
     @property
     def sec_settings(self) -> Settings:

@@ -31,7 +31,7 @@ def load_validated_table(settings: LakehouseSettings, table_name: str) -> Option
     return table.to_pandas()
 
 
-def build_unified_staging(settings: LakehouseSettings) -> Optional[pd.DataFrame]:
+def build_unified_staging(settings: LakehouseSettings, sample: int | None = None) -> Optional[pd.DataFrame]:
     """Concatenate all validated staging tables into a unified relation.
 
     Returns a DataFrame with columns:
@@ -42,6 +42,8 @@ def build_unified_staging(settings: LakehouseSettings) -> Optional[pd.DataFrame]
     for name in ("staging_finnhub", "staging_gnews", "staging_sec"):
         df = load_validated_table(settings, name)
         if df is not None and not df.empty:
+            if sample is not None and len(df) > sample:
+                df = df.sample(n=sample, random_state=42).reset_index(drop=True)
             tables[name] = df
 
     if not tables:

@@ -751,3 +751,396 @@ Then ran the pipeline once with all fixes applied.
 | View dataset reference | Views pointed to wrong dataset | Hardcode `lakehouse` in FROM | All views created |
 | Slow SEC parsing | Appeared stuck | No fix needed; expected behavior | Pipeline completed |
 | Flawed GCS files | Bad schemas persisted | Delete + re-run pipeline | Clean schemas verified |
+
+---
+
+## 18. PostgreSQL Migration (In Progress)
+
+### 18.1 New VM Provisioned
+
+Created `ftd-postgres-vm` (e2-micro, us-west2-a) for PostgreSQL.  
+Public access prevention enforced on bucket `processed-layer-one`.  
+PostgreSQL 15.18 installed, database `ftd_lakehouse` created, user `ftd_app` created.  
+Firewall rules created for user IPv4/IPv6 on TCP 5432.
+
+**Credentials saved:**
+```
+Host: 34.94.89.135
+Port: 5432
+Database: ftd_lakehouse
+Username: ftd_app
+Password: 5Ou+BkyuQT3izP72219jMLy2AobRdI3f
+```
+
+### 18.2 Code Changes for PostgreSQL Output
+
+Added `--postgres` flag to orchestrator. New `postgres_writer.py` module with `write_frame()` using `psycopg2.extras.execute_values`.  
+Modified `config.py` to add PostgreSQL connection fields and `postgres_enabled` property.  
+Removed `frozen=True` from `LakehouseSettings` to allow runtime env var population.
+
+### 18.3 Issues Encountered
+
+**SSH session drops killing background processes:**  
+`gcloud compute ssh` terminates background processes when the session ends. Fixed by using `nohup` and `tee` for logging.
+
+**Memory pressure on e2-micro:**  
+Loading large DataFrames + `execute_values` with full list caused OOM. Fix applied: changed `write_frame` to use generator (`_row_generator`) instead of building full list in memory.
+
+**Network path failure:**  
+External IP `34.94.89.135` timed out from `data-ingest-vm`. Fixed by using internal IP `10.168.0.3` (VPC internal traffic allowed).
+
+**Finnhub/GNews paths:**  
+Pipeline looks for `prices/` and `gnews/` in `processed-layer-one` bucket, but raw data still lives in `raw-data-strg`. These tracks return empty. SEC data works because it was moved to `processed-layer-one`.
+
+**`--sample` mode limitation:**  
+`--sample 100` only limits initial SEC shredding. Validation Core loads full Parquet files from GCS, so PostgreSQL receives full dataset regardless of sample flag.
+
+### 18.4 Current Status (Completed 2026-07-16)
+
+- PostgreSQL VM running, database and user created
+- All 5 tables successfully written to PostgreSQL:
+  - `staging_finnhub`: 4,473 rows
+  - `staging_gnews`: 73,980 rows
+  - `staging_sec`: 758,054 rows
+  - `fiscal_parameters`: 477 rows
+  - `unified_staging`: 836,507 rows
+- Finnhub/GNews bucket paths fixed to read from `raw-data-strg`
+- `--sample` mode now limits all tracks (SEC, Finnhub, GNews, validation, unified)
+- PostgreSQL writer uses `execute_values` with generator for memory efficiency
+- Auto-creates tables with correct types (`TIMESTAMP`, `NUMERIC`, `TEXT`)
+- Full pipeline run completed successfully in ~45 minutes
+
+---
+
+## 19. Bucket Migration: raw-data-strg → processed-layer-one
+
+Moved all `gs://raw-data-strg/lakehouse/staging/*.parquet` to `gs://processed-layer-one/lakehouse/staging/`.  
+Deleted CSV duplicates from `processed-layer-one`.  
+Updated `lakehouse/config.py` to use `raw_data_gcs_bucket` for raw inputs and `gcs_bucket` for processed outputs.  
+Row counts verified: 4,473 / 73,980 / 758,054 / 836,507 / 477.
+
+---
+
+## 20. App Development Plan: Backend API + Swagger (Experimental)
+
+### 20.1 Context Documents Analyzed
+
+**UC_Master_Table v02 (3).xlsx** — Contains 49 use cases across 10 requirements:
+- Data Ingestion (Alpha Vantage, Reddit, SEC EDGAR) — already implemented
+- Data Pipelines (parse, clean, vectorize, RAG, scoring) — partially implemented
+- Data Mapping (NER, CIK lookup, ticker mapping)
+- User Creation & Authentication
+- Search (keyword, semantic vector, multi-hop, caching)
+- Workspace management
+- Audit trail
+- Timeline (narrative history, alerts, export)
+- Dashboard (ticker research, < 3s load)
+
+**FTD_ Core User Flows.pdf** — 7 user flows:
+1. Account Registration & Onboarding
+2. Ticker Keyword Search & Dashboard Analysis
+3. Workspace Creation & Asset Tracking
+4. Navigating and Exporting Historical Narrative Timeline
+5. Advanced Multi-Hop Querying & Context Chat (RAG)
+6. Crowdsourced Error Reporting & Mapping Overrides
+7. Administrative Mapping Review and Validation
+
+**Mentorship App#1.pdf** — 12-week learning plan:
+- Phase 1 (Weeks 1-4): Cloud foundations, data modeling, ingestion, serverless
+- Phase 2 (Weeks 5-8): AI/LLM APIs, vector DBs, RAG, function calling
+- Phase 3 (Weeks 9-12): Integration, UI, CI/CD, monitoring
+
+### 20.2 What We Have Now
+
+**PostgreSQL schema (5 tables, ~1.45 GB):**
+
+| Table | Rows | Purpose |
+|---|---|---|
+| `staging_finnhub` | 4,473 | Price quotes (current, change, high, low, etc.) |
+| `staging_gnews` | 73,980 | News article text content |
+| `staging_sec` | 758,054 | SEC filing elements (8-K/10-K text sections) |
+| `fiscal_parameters` | 477 | Fiscal year-end dates per CIK |
+| `unified_staging` | 836,507 | Combined view of all sources |
+
+**What exists:**
+- Relational, queryable financial data in PostgreSQL
+- Fortune 500 ticker coverage with CIK mappings
+- Temporal coverage via `normalized_calendar_date` and `ingest_date`
+- Source attribution (`source`, `form_type`, `accession_number`)
+- No embeddings, no vector columns, no user tables, no auth
+
+### 20.3 What Is Out of Scope (Do Not Build Yet)
+
+**Explicitly excluded from this phase:**
+- Embeddings / vector search (requires `text-embedding-3-small` + pgvector)
+- RAG inference engine (requires embeddings + LLM API integration)
+- User authentication & JWT sessions (requires `users` table, bcrypt, Firebase/Cloud Function)
+- User workspaces (requires `workspaces`, `workspace_tickers` tables)
+- Narrative state / timeline (requires `narrative_state` table with append-only history)
+- Hype vs. Evidence scoring (requires `ticker_scores` table + weighted calculation engine)
+- Mapping confidence queue (requires `mapping_review`, `errors` tables)
+- Caching layer (requires Redis/Memorystore)
+- Background workers / Cloud Run jobs for async processing
+- Frontend UI (React, Streamlit, etc.)
+- Any code that modifies existing data (write endpoints)
+
+### 20.4 Stopping Point Definition
+
+**STOP at:** Backend data-access layer and business logic that queries PostgreSQL directly — **no HTTP API layer, no endpoints, no Swagger, no frontend integration yet.**
+
+**Specifically, this means:**
+1. Python modules/functions that encapsulate queries against the 5 PostgreSQL tables
+2. Business logic for the app\'s specific purposes (ticker search, dashboard aggregation, timeline building, etc.)
+3. Direct psycopg2 (or asyncpg) database access — no HTTP server, no FastAPI, no Flask
+4. Pydantic models for response typing and validation (optional but recommended)
+5. Importable, testable Python code — not yet wrapped in routes or endpoints
+6. No database writes from this layer (read-only against staging tables)
+7. No authentication, no CORS, no Docker, no Cloud Run deployment
+
+**What this phase produces:**
+- A Python package (e.g., `app/` or `backend/`) with functions like:
+  - `get_ticker_search(query) -> list[TickerResult]`
+  - `get_ticker_prices(ticker, start, end) -> list[PriceRow]`
+  - `get_ticker_news(ticker, start, end, limit) -> list[NewsRow]`
+  - `get_ticker_filings(ticker, start, end, form_type) -> list[FilingSummary]`
+  - `get_filing_elements(accession_number) -> list[ElementRow]`
+  - `get_ticker_timeline(ticker, start, end) -> list[TimelineEvent]`
+  - `search_content(keyword, source) -> list[SearchResult]`
+- A `db.py` connection utility
+- A `models.py` with Pydantic schemas
+- Possibly a SQL scripts folder for raw queries and view creation
+
+**What this phase does NOT produce:**
+- HTTP server (no `uvicorn`, no FastAPI app)
+- No `@app.get("/tickers")` route decorators
+- No `/docs` or Swagger UI
+- No CORS configuration
+- No Dockerfile or containerization
+- No Cloud Run deployment
+- No frontend calling code
+
+### 20.5 Methods to Build the API
+
+**Recommended stack:**
+- **Framework:** FastAPI (Python) — auto-generates Swagger, async support, type hints
+- **Database driver:** psycopg2 or asyncpg (raw SQL or SQLAlchemy Core)
+- **Validation:** Pydantic v2 models for request/response schemas
+- **Deployment:** Docker container → GCP Cloud Run (or local dev)
+- **Documentation:** Built-in Swagger UI (`/docs`) + ReDoc (`/redoc`)
+
+**Architecture pattern:**
+```
+Frontend (not built)
+    │
+    │ HTTPS/REST
+    ▼
+FastAPI Backend
+    │
+    │ psycopg2 / asyncpg
+    ▼
+PostgreSQL (ftd_lakehouse on ftd-postgres-vm)
+```
+
+**Endpoint categories to implement:**
+
+| Category | Endpoints | Source Table |
+|---|---|---|
+| Ticker Search | `GET /tickers?q={query}` | `unified_staging` (distinct tickers) |
+| Price Data | `GET /tickers/{ticker}/prices?start=&end=` | `staging_finnhub` |
+| News/Articles | `GET /tickers/{ticker}/news?start=&end=&limit=` | `staging_gnews` |
+| SEC Filings | `GET /tickers/{ticker}/filings?start=&end=&form_type=` | `staging_sec` |
+| Filing Elements | `GET /filings/{accession_number}/elements` | `staging_sec` |
+| Fiscal Calendar | `GET /tickers/{ticker}/fiscal-year-end` | `fiscal_parameters` |
+| Unified Timeline | `GET /tickers/{ticker}/timeline?start=&end=` | `unified_staging` |
+| Keyword Search | `GET /search?q={keyword}&source={finnhub|gnews|sec}` | `unified_staging` (ILIKE) |
+
+**Implementation steps (no code yet, just plan):**
+1. Initialize FastAPI project structure (`main.py`, `models.py`, `db.py`, `routes/`)
+2. Define Pydantic schemas for each table's response shape
+3. Create database connection utility (singleton or dependency)
+4. Implement read-only SQL queries with parameterized filters
+5. Add CORS middleware
+6. Verify Swagger UI renders at `/docs`
+7. Test each endpoint with sample requests
+8. (Optional) Dockerize for Cloud Run deployment
+
+
+
+---
+
+## 21. Use Case Feasibility Analysis (PostgreSQL Data-Access Layer Phase)
+
+This section evaluates every use case from `UC_Master_Table v02 (3).xlsx` against the current PostgreSQL schema and the data-access layer scope (read-only Python functions querying the 5 existing staging tables).
+
+### 21.1 Current Schema Reality Check
+
+**Tables we HAVE:**
+- `staging_finnhub` (4,473 rows) — price quotes
+- `staging_gnews` (73,980 rows) — news article text
+- `staging_sec` (758,054 rows) — SEC filing elements
+- `fiscal_parameters` (477 rows) — fiscal year-end dates
+- `unified_staging` (836,507 rows) — combined view of all sources
+
+**Tables we DO NOT have (but UC expects):**
+- `users`, `workspaces`, `workspace_tickers`
+- `narrative_state` (append-only timeline history)
+- `ticker_scores` (hype vs. evidence metrics)
+- `mapping_review`, `errors` (mapping confidence queue)
+- `document_embeddings` (vector search)
+- `inference_results` (RAG outputs)
+
+**Infrastructure we DO NOT have:**
+- pgvector extension
+- LLM API integration (OpenAI/Anthropic/Gemini)
+- Redis / Memorystore
+- Pub/Sub
+- Authentication (JWT, bcrypt, Firebase)
+- Cloud Run jobs / background workers
+
+### 21.2 Use Case Feasibility Matrix
+
+| UC | Title | Implementable Now? | Reasoning |
+|---|---|---|---|
+| **REQ-001: Data Ingestion** |
+| UC-Ingest-01 | Schedule & Trigger Alpha Vantage News Fetch | **No** | We don't have Alpha Vantage. Our news source is GNews (different API, different schema). Ingestion scheduling is handled by Cloud Functions / Cloud Scheduler, not the data-access layer. |
+| UC-Ingest-02 | Ingest & Stage Raw News Article Records | **No** | This is a write/ingestion process (dedup, hash, insert). Our data-access layer is strictly read-only. The staging already happened in the lakehouse pipeline. |
+| UC-Ingest-03 | Schedule & Trigger Reddit Community Post Fetch | **No** | We have no Reddit pipeline. Our social data source is GNews only. |
+| UC-Ingest-04 | Ingest & Stage Raw Reddit Post Records | **No** | No Reddit data exists. Also a write/ingestion process. |
+| UC-Ingest-05 | Schedule & Trigger SEC EDGAR Filing Fetch | **No** | Our SEC ingestion is already handled by `sec/src/main.py` + Cloud Scheduler. This UC describes a different technical approach (Lambda/Cloud Run) but the data-access layer doesn't touch scheduling. |
+| UC-Ingest-06 | Ingest & Stage Raw EDGAR Filing Records | **No** | This describes HTML/XBRL parsing and staging into `sec_filings` table. Our pipeline already shreds SEC filings into `staging_sec`. The data-access layer reads the output; it doesn't perform the ingestion. |
+| **REQ-002: Data Pipelines** |
+| UC-Pipe-01 | Parse & Clean News Article Text | **No** | Already completed in `gnews_normalizer.py`. The data-access layer consumes cleaned text; it doesn't perform cleaning. |
+| UC-Pipe-02 | Vectorize & Index News Article | **No** | Requires `text-embedding-3-small` API + pgvector extension. Neither exists. Explicitly out of scope for this phase. |
+| UC-Pipe-03 | Parse & Clean Reddit Post Text | **No** | No Reddit data. Also already a pipeline concern. |
+| UC-Pipe-04 | Vectorize & Index Community Post | **No** | No Reddit data + no embeddings infrastructure. |
+| UC-Pipe-05 | Extract & Normalize EDGAR Filing Data | **No** | Already completed in `sec_shredder.py` + `fiscal_resolver.py`. The data-access layer consumes the normalized output. |
+| UC-Pipe-06 | Vectorize & Index Filing Sections | **No** | Requires embeddings + pgvector. Out of scope. |
+| UC-Pipe-07 | Execute RAG Inference & Prompt Assembly | **No** | Requires embeddings + LLM API + vector search. This is the AI inference layer, not data access. |
+| UC-Pipe-08 | Generate Hype vs. Evidence Score | **No** | Requires a `ticker_scores` table and a scoring engine that doesn't exist yet. No schema to query. |
+| UC-Pipe-09 | Persist Narrative State Update | **No** | Requires `narrative_state` table with append-only history. This table doesn't exist. The logic also requires detecting composite score shifts >= 10 points, which depends on UC-Pipe-08. |
+| **REQ-003: Data Mapping** |
+| UC-Map-01 | Map News Article Entity to Ticker Symbol | **No** | Our pipeline already maps articles to tickers via `target_ticker` (set during ingestion using the Fortune 500 ticker list). The UC describes NER + fuzzy matching at ingestion time, which is a pipeline concern. The data-access layer just reads the already-mapped data. |
+| UC-Map-02 | Map EDGAR Filing to Ticker via CIK Lookup | **No** | Already handled in `company_roster.py` and the SEC pipeline. `staging_sec` already has `target_cik` and `target_ticker`. The mapping is complete; the data-access layer reads it. |
+| UC-Map-03 | Map Reddit Post to Ticker via Mention Detection | **No** | No Reddit data. |
+| UC-Map-04 | Validate & Audit Mapping Confidence | **No** | Requires `mapping_review` table and admin dashboard UI. Neither exists. |
+| UC-Map-05 | Flag and Log Mapping Error (User-Reported) | **No** | Requires `errors` table and a write endpoint for users to submit reports. Neither exists. Also requires user authentication. |
+| **REQ-004: User Creation** |
+| UC-User-01 | Register Account | **No** | Requires `users` table, email validation, bcrypt password hashing, confirmation email. None of this exists. |
+| UC-User-02 | Recover Account | **No** | Requires `users` table + password reset token mechanism. |
+| **REQ-005: Authentication** |
+| UC-Auth-01 | Login & Credential Validation | **No** | Requires `users` table, JWT issuance, credential validation against stored hashes. |
+| UC-Auth-02 | Session Lifecycle Management | **No** | Requires JWT tokens, Redis for session storage, token rotation logic. |
+| **REQ-006: Search** |
+| UC-Search-01 | Execute User Keyword Search | **Partial** | **Implementable:** Search by ticker symbol (`target_ticker ILIKE`). **Not implementable:** Company name search (no company name lookup table — we only have ticker symbols). Hype/evidence scores (no `ticker_scores` table). Narrative summaries (require aggregation/LLM). |
+| UC-Search-02 | Rank & Return Search Results | **No** | Requires weighted scoring combining semantic similarity (embeddings) with metadata. We have no embeddings and no ranking engine. |
+| UC-Search-03 | Filter Search Results by Date Range | **Partial** | **Implementable:** Date range filtering is a query parameter (`WHERE normalized_calendar_date >= %s AND <= %s`). This is a feature of any search function, not a standalone endpoint. |
+| UC-Search-04 | Execute Semantic Vector Search | **No** | Requires pgvector extension + pre-computed embeddings. Neither exists. |
+| UC-Search-05 | Augment LLM Prompt with Retrieved Context | **No** | Requires LLM API + embeddings + vector search. This is the RAG inference layer. |
+| UC-Search-06 | Decompose & Execute Multi-Hop Query | **No** | Requires LLM query router + parallel execution orchestration. |
+| UC-Search-07 | Cache & Return Repeated Search and Inference Results | **No** | Requires Redis / Memorystore for caching. |
+| **REQ-007: Workspace** |
+| UC-Work-01 | Create & Manage Research Workspace | **No** | Requires `workspaces` table, soft-delete logic, and write endpoints. |
+| UC-Work-02 | Add & Remove Ticker from Workspace | **No** | Requires `workspace_tickers` join table, 50-ticker limit enforcement, cache invalidation signal. |
+| **REQ-008: Audit Trail** |
+| UC-Audit-01 | Source Link Management & Integrity Validation | **No** | Requires scheduled URL validation job, `source_url` column tracking, broken-link flagging. Our current schema has no URL column and no validation mechanism. |
+| **REQ-009: Timeline** |
+| UC-Time-01 | Render & Navigate Narrative Timeline | **Partial** | **Implementable:** Chronological query of `unified_staging` with `ORDER BY normalized_calendar_date` and pagination (LIMIT/OFFSET). **Not implementable:** The actual timeline rendering (UI), lazy-loading protocol (requires HTTP), and linking to source documents (requires URL storage). Also, the UC references `narrative_state` table which we don't have; `unified_staging` is the closest substitute. |
+| UC-Time-02 | Set Alerts & Export Timeline View | **No** | Requires Pub/Sub for alerts and export generation (PDF/CSV). Neither infrastructure exists. |
+| **REQ-010: Dashboard** |
+| UC-Dash-01 | Render Ticker Research Dashboard | **No** | This is a frontend/UI requirement. The underlying data queries (prices, news, filings, scores) can be implemented individually, but "render dashboard" with < 3s load is a frontend + aggregation concern. Materialized views would help but require schema changes. |
+
+### 21.3 What IS Implementable in This Phase
+
+Based on the analysis above, the data-access layer can implement **query functions** for these app purposes:
+
+| Functionality | Supported By | UC Mapping |
+|---|---|---|
+| Ticker search by symbol | `unified_staging.target_ticker` ILIKE | UC-Search-01 (partial) |
+| Price time-series | `staging_finnhub` by ticker + date range | UC-Search-03 (partial) |
+| News article retrieval | `staging_gnews` by ticker + date range | UC-Search-01 (partial) |
+| SEC filing list | `staging_sec` aggregated by `accession_number` | UC-Search-01 (partial) |
+| SEC filing elements | `staging_sec` by `accession_number` | UC-Search-01 (partial) |
+| Fiscal year-end lookup | `fiscal_parameters` joined to `staging_sec` | UC-Map-02 (partial — already mapped) |
+| Unified timeline | `unified_staging` by ticker + date range + source filter | UC-Time-01 (partial) |
+| Keyword/content search | `unified_staging.content_body` ILIKE | UC-Search-01 (partial) |
+
+**Common pattern:** Every implementable function is a **parameterized SELECT query** against one of the 5 existing tables. No joins to non-existent tables. No writes. No embeddings. No LLM calls.
+
+### 21.4 What Is NOT Implementable and Why
+
+| Category | UCs | Why Not Now | When It Becomes Possible |
+|---|---|---|---|
+| **Data Ingestion** | UC-Ingest-01 through 06 | Different pipelines (Alpha Vantage, Reddit) or already completed by lakehouse pipeline. Ingestion is not a data-access concern. | Never for Alpha Vantage/Reddit unless those pipelines are built. SEC ingestion is already done. |
+| **Data Pipelines (processing)** | UC-Pipe-01, 03, 05 | Already completed in `lakehouse/pipelines/`. The data-access layer consumes their output. | N/A — already done |
+| **Data Pipelines (AI/embeddings)** | UC-Pipe-02, 04, 06, 07, 08, 09 | Require embeddings (pgvector + API), LLM calls, scoring engine, narrative_state table. None of this schema or infrastructure exists. | After Phase 2 of the learning plan (Weeks 5-8) when vector DBs and LLM APIs are introduced |
+| **Data Mapping (ingestion-time)** | UC-Map-01, 02, 03 | Already completed by pipeline. `target_ticker` and `target_cik` are already populated in all staging tables. | N/A — already done |
+| **Data Mapping (admin/review)** | UC-Map-04, 05 | Require `mapping_review` and `errors` tables + admin UI + user auth. | After user auth is implemented (REQ-004/005) |
+| **User Creation** | UC-User-01, 02 | Require `users` table, email service, password hashing. | When auth infrastructure is built |
+| **Authentication** | UC-Auth-01, 02 | Require `users` table + JWT + Redis sessions. | After user table exists |
+| **Search (semantic/LLM)** | UC-Search-02, 04, 05, 06, 07 | Require embeddings, LLM API, Redis cache. | After Phase 2 AI infrastructure is in place |
+| **Workspace** | UC-Work-01, 02 | Require `workspaces` table + user auth + write endpoints. | After user auth is implemented |
+| **Audit Trail** | UC-Audit-01 | Requires URL validation infrastructure and source_url tracking. | When ingestion pipelines are updated to store URLs |
+| **Timeline (UI/alerts)** | UC-Time-02 | Requires Pub/Sub, export generation, alert subscription logic. | After core timeline query exists and notification infra is added |
+| **Dashboard** | UC-Dash-01 | Frontend/UI requirement. Underlying data queries can be built, but rendering/aggregation is a later step. | After data-access layer exists and frontend development begins |
+
+### 21.5 The Exact Scope for This Phase
+
+**Build these Python functions (read-only against existing tables):**
+
+| Function | SQL Pattern | Returns |
+|---|---|---|
+| `search_tickers(query, limit)` | `SELECT DISTINCT target_ticker, target_cik FROM unified_staging WHERE target_ticker ILIKE %s LIMIT %s` | `list[TickerResult]` |
+| `get_ticker_prices(ticker, start, end)` | `SELECT ... FROM staging_finnhub WHERE target_ticker = %s AND date BETWEEN %s AND %s ORDER BY date` | `list[PriceRow]` |
+| `get_ticker_news(ticker, start, end, limit)` | `SELECT ... FROM staging_gnews WHERE target_ticker = %s AND date BETWEEN %s AND %s ORDER BY ingest_date DESC LIMIT %s` | `list[NewsRow]` |
+| `get_ticker_filings(ticker, start, end, form_type)` | `SELECT ... FROM staging_sec WHERE target_ticker = %s AND filing_date BETWEEN %s AND %s AND form_type = %s GROUP BY accession_number` | `list[FilingSummary]` |
+| `get_filing_elements(accession_number, item_number, element_type)` | `SELECT ... FROM staging_sec WHERE accession_number = %s AND ... ORDER BY item_number` | `list[ElementRow]` |
+| `get_ticker_fiscal_year_end(ticker)` | `SELECT ... FROM fiscal_parameters JOIN staging_sec USING (target_cik) WHERE target_ticker = %s LIMIT 1` | `FiscalYearEnd` |
+| `get_ticker_timeline(ticker, start, end, sources, limit, offset)` | `SELECT ... FROM unified_staging WHERE target_ticker = %s AND date BETWEEN %s AND %s AND source = ANY(%s) ORDER BY date DESC LIMIT %s OFFSET %s` | `list[TimelineEvent]` |
+| `search_content(keyword, source, limit)` | `SELECT ... FROM unified_staging WHERE content_body ILIKE %s AND source = %s LIMIT %s` | `list[SearchResult]` |
+
+**Supporting infrastructure:**
+- `app/db.py` — connection pool, query executor
+- `app/models.py` — Pydantic schemas for all response shapes
+- `app/queries/` — raw SQL strings organized by domain
+- `app/services/` — Python functions that execute queries and return models
+
+**Explicitly NOT building:**
+- No HTTP server, routes, or endpoints
+- No FastAPI, Flask, or web framework
+- No Swagger, OpenAPI, or API docs
+- No CORS, no auth middleware
+- No Docker, no Cloud Run, no deployment
+- No frontend code
+- No schema changes to PostgreSQL
+- No write operations from this layer
+
+### 21.6 When Each Deferred Category Gets Implemented
+
+**Phase: After data-access layer (this phase)**
+- HTTP API layer (FastAPI routes wrapping these functions)
+- Swagger/OpenAPI documentation (auto-generated by FastAPI)
+
+**Phase: After user auth infrastructure**
+- User creation/login (REQ-004, REQ-005)
+- Workspace management (REQ-007) — needs users to own workspaces
+- User-reported errors (UC-Map-05) — needs authenticated users
+- Admin mapping review (UC-Map-04) — needs admin identity
+
+**Phase: After AI/vector infrastructure**
+- Embeddings generation (UC-Pipe-02, 04, 06) — needs pgvector + embedding API
+- Semantic vector search (UC-Search-04) — needs embeddings + pgvector
+- RAG inference (UC-Pipe-07, UC-Search-05) — needs embeddings + LLM API
+- Multi-hop queries (UC-Search-06) — needs RAG + LLM router
+- Hype vs. Evidence scoring (UC-Pipe-08) — needs LLM + financial data processing
+- Caching (UC-Search-07) — needs Redis after expensive LLM/vector calls exist
+
+**Phase: After frontend development**
+- Dashboard rendering (UC-Dash-01)
+- Timeline navigation UI (UC-Time-01)
+- Search result ranking/display (UC-Search-02)
+- Export functionality (UC-Time-02)
+
+**Phase: After ingestion pipelines are expanded**
+- Alpha Vantage news (UC-Ingest-01/02) — if added as a new source
+- Reddit data (UC-Ingest-03/04) — if added as a new source
+- URL storage for audit trail (UC-Audit-01) — requires schema changes to staging tables

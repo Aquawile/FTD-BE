@@ -35,7 +35,7 @@ _NUMERIC_FIELDS = (
 def _iter_price_blobs(settings: LakehouseSettings) -> Iterator[storage.Blob]:
     """Yield price NDJSON blobs from GCS."""
     client = storage.Client(project=settings.sec_settings.gcp_project)
-    bucket = client.bucket(settings.gcs_bucket)
+    bucket = client.bucket(settings.raw_data_gcs_bucket)
     prefix = "prices/"
     yield from bucket.list_blobs(prefix=prefix)
 

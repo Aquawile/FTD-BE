@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _iter_gnews_blobs(settings: LakehouseSettings) -> Iterator[storage.Blob]:
     client = storage.Client(project=settings.sec_settings.gcp_project)
-    bucket = client.bucket(settings.gcs_bucket)
+    bucket = client.bucket(settings.raw_data_gcs_bucket)
     prefix = "gnews/"
     yield from bucket.list_blobs(prefix=prefix)
 
