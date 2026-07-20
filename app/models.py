@@ -30,7 +30,6 @@ class NewsRow(BaseModel):
     normalized_calendar_date: Optional[date] = None
     ingest_date: Optional[date] = None
     content_body: str
-    element_id: Optional[str] = None
 
 
 class FilingSummary(BaseModel):

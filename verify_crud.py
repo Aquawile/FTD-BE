@@ -17,9 +17,13 @@ def check(name, fn, *args, **kwargs):
     print(f"=== {name} ===")
     try:
         result = fn(*args, **kwargs)
-        if result:
+        if result is None:
+            print(f"  Result: None\n")
+        elif isinstance(result, list) and result:
             print(f"  First: {result[0]}")
-        print(f"  Total: {len(result)}\n")
+            print(f"  Total: {len(result)}\n")
+        else:
+            print(f"  Result: {result}\n")
         return result
     except Exception as e:
         print(f"  ERROR: {e}\n")

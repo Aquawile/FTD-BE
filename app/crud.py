@@ -64,8 +64,7 @@ def get_ticker_news(
             target_ticker,
             normalized_calendar_date,
             ingest_date,
-            content_body,
-            element_id
+            content_body
         FROM staging_gnews
         WHERE target_ticker = %s
           AND normalized_calendar_date >= %s
@@ -109,7 +108,7 @@ def get_filing_elements(
             element_type,
             content_body,
             raw_text_string,
-            period_of_report,
+            NULLIF(period_of_report, '') AS period_of_report,
             filing_date,
             date_precision
         FROM staging_sec
