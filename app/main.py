@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes import filings, search, tickers
+from app.auth.router import router as auth_router
 
 app = FastAPI(
     title="FTD Lakehouse API",
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(tickers.router)
 app.include_router(filings.router)
 app.include_router(search.router)

@@ -1,0 +1,2 @@
+CREATE INDEX IF NOT EXISTS idx_user_permissions_index_user_id ON user_permissions_index(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_permissions_index_permission_name ON user_permissions_index(permission_name);

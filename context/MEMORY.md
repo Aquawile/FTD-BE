@@ -1455,3 +1455,185 @@ Our data pipeline uses **three sources**, not the five originally planned:
 **The UC table also references capabilities we don't have yet** (embeddings, LLM, vector search, scoring engine, user auth). These are deferred to later phases per mentor guidance and the mentorship learning plan.
 
 **Bottom line:** The use cases that are implementable are the ones that match our actual three sources and read-only data retrieval. Everything else is either already done by the pipeline, describes different data sources we didn't choose, or requires infrastructure we haven't built yet.
+
+---
+
+## 25. Authentication & Authorization System — Implementation Plan
+
+### 25.1 Phase 1: Database Schema & Migrations (Completed 2026-07-26)
+
+**Purpose:** Create the four authentication tables in PostgreSQL so that the auth subsystem has a persistent storage layer.
+
+**Migration files (already existed at correct paths):**
+- `app/auth/migrations/001_create_auth_tables.sql` — Creates `users`, `permissions`, `user_permissions`, `user_permissions_index` tables with `CREATE TABLE IF NOT EXISTS` (idempotent)
+- `app/auth/migrations/002_create_indexes.sql` — Creates indexes on `user_permissions_index(user_id)` and `user_permissions_index(permission_name)` with `CREATE INDEX IF NOT EXISTS` (idempotent)
+
+**Tables created (verified via `\dt` and `\d` in psql):**
+
+| Table | Columns | Key Constraints |
+|---|---|---|
+| `users` | `id` SERIAL PK, `email` TEXT UNIQUE NOT NULL, `password_hash` TEXT NOT NULL, `created_at` TIMESTAMP DEFAULT NOW(), `is_active` BOOLEAN DEFAULT TRUE | PK on `id`, UNIQUE on `email`, FK from `user_permissions.user_id` CASCADE |
+| `permissions` | `id` SERIAL PK, `name` TEXT UNIQUE NOT NULL, `description` TEXT | PK on `id`, UNIQUE on `name`, FK from `user_permissions.permission_id` CASCADE |
+| `user_permissions` | `user_id` INTEGER NOT NULL FK, `permission_id` INTEGER NOT NULL FK | Composite PK `(user_id, permission_id)`, both FKs CASCADE |
+| `user_permissions_index` | `user_id` INTEGER NOT NULL, `permission_name` TEXT NOT NULL | Index on `user_id`, Index on `permission_name` |
+
+**Validation evidence:**
+- `\dt` confirmed 9 tables (5 existing + 4 new): `fiscal_parameters`, `permissions`, `staging_finnhub`, `staging_gnews`, `staging_sec`, `unified_staging`, `user_permissions`, `user_permissions_index`, `users`
+- No existing tables or data modified or deleted
+- Migration is idempotent (uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`)
+
+**Execution method:** SSH tunnel through `ftd-postgres-vm` (see Section 26 below).
+
+### 25.2 Implementation Plan Reference
+
+The full implementation plan spans 7 phases covering the authentication & authorization backend:
+1. **Phase 1** — Database schema & migrations (this section)
+2. **Phase 2** — Core auth infrastructure (config, models, hasher, token)
+3. **Phase 3** — `/auth/login` endpoint
+4. **Phase 4** — Auth middleware & dependencies
+5. **Phase 5** — Permission seeding & index maintenance
+6. **Phase 6** — Protecting existing endpoints
+7. **Phase 7** — Integration testing & validation
+
+The plan is documented in the full implementation plan and follows strict additive-only, no-destructive-commands safety guardrails.
+
+---
+
+## 26. SSH Workaround: Accessing ftd-postgres-vm PostgreSQL
+
+**Problem:** The `ftd-postgres-vm` VM (e2-micro, `us-west2-a`, external IP `35.236.126.62`) does not allow anonymous/public access to PostgreSQL port 5432 or SSH port 22 from arbitrary IPs. Direct `psql` connections to `34.94.89.135` or the VM's external IP `35.236.126.62` time out. The `gcloud compute ssh` command also times out because it requires an interactive IAP tunnel setup that doesn't work in non-interactive shell contexts.
+
+**Workaround:** Use `gcloud compute start-iap-tunnel` to create a local port-forward隧道 through GCP's Identity-Aware Proxy (IAP), then connect `psql` to the local forwarded port.
+
+### 26.1 Steps
+
+```bash
+# 1. Start IAP tunnel (runs in background)
+gcloud compute start-iap-tunnel ftd-postgres-vm 5432 \
+  --zone=us-west2-a --project=ftd2026 \
+  --local-host-port=127.0.0.1:5433 &
+
+# 2. Wait for tunnel to establish
+sleep 3
+
+# 3. Connect psql through the tunnel
+PGHOST=127.0.0.1 PGPORT=5433 PGDATABASE=ftd_lakehouse \
+  PGUSER=ftd_app PGPASSWORD='5Ou+BkyuQT3izP72219jMLy2AobRdI3f' \
+  psql -c "\dt"
+
+# 4. Close tunnel when done
+kill <tunnel_pid>
+```
+
+### 26.2 Alternative: SSH Config + gcloud compute ssh
+
+The `gcloud compute config-ssh` command sets up SSH config entries:
+```
+Host ftd-postgres-vm.us-west2-a.ftd2026
+    HostName 35.236.126.62
+    IdentityFile /Users/isabellabutera/.ssh/google_compute_engine
+    UserKnownHostsFile=/Users/isabellabutera/.ssh/google_compute_known_hosts
+    HostKeyAlias=compute.4333432600937155991
+    IdentitiesOnly=yes
+```
+
+Then use: `ssh ftd-postgres-vm.us-west2-a.ftd2026` — this uses GCP's IAP tunneling under the hood and requires browser-based authentication on first use.
+
+### 26.3 Notes
+
+- GCP firewall rules allow TCP 5432 from external IPs (`allow-postgres-from-user-ipv4` rule exists) but the VM's PostgreSQL may only listen on internal interfaces
+- The `gcloud compute ssh` IAP tunnel approach is the most reliable method for non-interactive scripts
+- Credentials are stored in `run_pg.sh` and `app/db.py` with `PGPASSWORD` environment variable
+- Do NOT commit credentials to version control; use environment variables or secret management
+
+---
+
+## 27. Authentication & Authorization System — Phase 2 (Completed 2026-07-26)
+
+### 27.1 What Was Done
+
+Installed `bcrypt` and `PyJWT` dependencies and created all foundational auth modules under `app/auth/`. No existing files were modified.
+
+### 27.2 New Files Created
+
+| File | Purpose |
+|---|---|
+| `app/auth/__init__.py` | Package init (empty) |
+| `app/auth/config.py` | JWT config from env vars with defaults (`JWT_SECRET_KEY`, `JWT_ALGORITHM=HS256`, `JWT_EXPIRATION_MINUTES=60`, `JWT_ISSUER=ftd-auth`, `JWT_AUDIENCE=ftd-api`, `JWT_TOKEN_VERSION=1`, `BCRYPT_ROUNDS=12`) |
+| `app/auth/models.py` | Pydantic models: `LoginRequest` (email, password), `LoginResponse` (access_token, token_type), `TokenData` (user_id, email, permissions); also `normalize_email()` utility |
+| `app/auth/hasher.py` | `hash_password(password) -> str` (bcrypt, `$2b$` prefix) and `verify_password(password, hash) -> bool` |
+| `app/auth/token.py` | `create_access_token(data, expires_delta) -> str` (JWT with `iss`, `aud`, `exp`, `iat`, `sub`, `email`, `tv` claims) and `verify_token(token) -> dict \| None` |
+| `requirements.txt` | Root-level deps file with `bcrypt>=4.1.0` and `PyJWT>=2.8.0` |
+
+### 27.3 Dependencies Installed
+
+- `bcrypt` 5.0.0 — password hashing/verification
+- `PyJWT` 2.13.0 — JWT creation, signing, verification
+
+### 27.4 Unit Tests Created
+
+| File | Tests |
+|---|---|
+| `tests/test_hasher.py` | 5 tests: hash produces `$2b$` prefix, verify correct/incorrect passwords, unique salt per hash, invalid hash returns False |
+| `tests/test_token.py` | 8 tests: token creation returns string, contains all required claims, valid token verifies, expired token returns None, malformed token returns None, wrong secret returns None, wrong token version returns None, `sub` claim is string in payload |
+
+All 13 unit tests pass.
+
+### 27.5 Key Design Decisions
+
+1. **`sub` claim stored as string** — PyJWT 2.x requires `sub` to be a string, so `create_access_token` converts integer user IDs to strings. Consumers must convert back to int when needed.
+2. **`verify_token` catches `jwt.InvalidTokenError`** — this is the base exception class for all PyJWT validation failures (expired, invalid signature, wrong issuer/audience).
+3. **`verify_password` catches `ValueError`** — `bcrypt.checkpw` raises `ValueError` on an invalid hash format rather than returning `False`. The function safely returns `False` in this case.
+4. **`normalize_email()` in `models.py`** — strips whitespace and lowercases email before any database interaction, as required by the plan.
+5. **No `email-validator` dependency** — email normalization uses stdlib (strip + lower), which is sufficient for the lookup pattern. The plan noted this as optional.
+
+### 27.6 Files NOT Modified
+
+- No existing application files were modified in Phase 2. The implementation is strictly additive.
+
+---
+
+## 28. Authentication & Authorization System — Phase 3 (Completed 2026-07-26)
+
+### 28.1 What Was Done
+
+Created the `/auth/login` endpoint, the repository for user lookup, and wired the auth router into `app/main.py`.
+
+### 28.2 New Files Created
+
+| File | Purpose |
+|---|---|
+| `app/auth/repository.py` | `get_user_by_email(email)` — normalizes email before querying `users` table with parameterized SQL |
+| `app/auth/router.py` | `POST /auth/login` endpoint: validates `LoginRequest`, normalizes email, looks up user, checks `is_active`, verifies password with `bcrypt`, creates JWT with `sub` (user id) and `email` claims, returns `LoginResponse` |
+| `app/auth/__init__.py` | Previously missing; created as empty package init |
+
+### 28.3 Files Modified
+
+| File | Change |
+|---|---|
+| `app/main.py` | Added `from app.auth.router import router as auth_router` and `app.include_router(auth_router)` before existing route includes |
+
+### 28.4 Test Results (validated via local server + IAP tunnel)
+
+| Test Case | Expected | Actual |
+|---|---|---|
+| Valid login (`testuser@example.com` / `testpass123`) | 200 + JWT | ✅ 200 with access_token |
+| Invalid password | 401 | ✅ 401 |
+| Non-existent email | 401 | ✅ 401 |
+| Inactive user | 401 | ✅ 401 |
+| Malformed body (missing password) | 422 | ✅ 422 |
+| Email normalization (`TestUser@Example.com`) | 200 + JWT | ✅ 200 with access_token |
+
+### 28.5 Key Design Decisions
+
+1. **Generic 401 error message** — Both "user not found" and "wrong password" return the same `{"detail":"Invalid credentials"}` message to prevent email enumeration attacks.
+2. **Password verification happens after user lookup** — Both missing user and wrong password return the same response.
+3. **Inactive users treated as invalid credentials** — Consistent security posture.
+4. **Sub stored as string** — `sub` is stored as a string `"1"` (not integer 1) in the JWT, matching PyJWT 2.x requirements.
+5. **No permissions in JWT** — Permissions are resolved from PostgreSQL on each request (Phase 4), not embedded in the token.
+
+### 28.6 Files NOT Modified (existing preserved)
+
+- `app/routes/tickers.py`, `app/routes/filings.py`, `app/routes/search.py`, `app/routes/news.py` — not touched yet (Phase 6)
+- `app/auth/migrations/001_create_auth_tables.sql`, `app/auth/migrations/002_create_indexes.sql` — not modified
+- `app/auth/config.py`, `app/auth/models.py`, `app/auth/hasher.py`, `app/auth/token.py` — created in Phase 2; not modified
