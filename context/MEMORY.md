@@ -1637,3 +1637,52 @@ Created the `/auth/login` endpoint, the repository for user lookup, and wired th
 - `app/routes/tickers.py`, `app/routes/filings.py`, `app/routes/search.py`, `app/routes/news.py` — not touched yet (Phase 6)
 - `app/auth/migrations/001_create_auth_tables.sql`, `app/auth/migrations/002_create_indexes.sql` — not modified
 - `app/auth/config.py`, `app/auth/models.py`, `app/auth/hasher.py`, `app/auth/token.py` — created in Phase 2; not modified
+
+---
+
+## 29. Authentication & Authorization System — Phase 4 (Completed 2026-07-26)
+
+### 29.1 What Was Done
+
+Created the authorization middleware (intercepts every request, validates JWT, attaches user identity), dependency injection functions (`get_current_user`, `get_current_permissions`, `require_permission`), and permission constants. Modified `app/main.py` to register the middleware.
+
+### 29.2 New Files Created
+
+| File | Purpose |
+|---|---|
+| `app/auth/permissions.py` | 8 permission constants (`PERMISSION_TICKERS_SEARCH`, etc.) and `ALL_PERMISSIONS` frozenset |
+| `app/auth/middleware.py` | `AuthMiddleware` class (subclasses `BaseHTTPMiddleware`): extracts Bearer token, validates JWT via `verify_token()`, attaches `request.state.user_id` and `request.state.email`, skips public paths (`/health`, `/auth/login`, `/docs*`, `/openapi.json`, `/redoc`), returns 401 for missing/invalid/expired/malformed tokens |
+| `app/auth/dependencies.py` | FastAPI dependencies: `get_current_user` (validates JWT, returns `{user_id, email}`), `get_current_permissions` (queries `user_permissions_index` for user's permission set), `require_permission(permission)` (raises HTTP 403 if permission absent) |
+
+### 29.3 Files Modified
+
+| File | Change |
+|---|---|
+| `app/main.py` | Added `from app.auth.middleware import AuthMiddleware` and `app.add_middleware(AuthMiddleware)` after CORS middleware |
+
+### 29.4 Validation Results
+
+| Check | Result |
+|---|---|
+| All modules import successfully | ✅ |
+| AuthMiddleware is in middleware stack before CORS | ✅ |
+| All 10 routes registered correctly | ✅ |
+| All 8 permission constants defined correctly | ✅ |
+| `PUBLIC_PATHS` includes `/health` and `/auth/login` | ✅ |
+| `get_current_user` raises HTTP 401 when token missing | ✅ |
+| `get_current_permissions` queries PostgreSQL (not JWT) | ✅ |
+| `require_permission` raises HTTP 403 when permission absent | ✅ |
+| `require_permission` allows request through when permission present | ✅ |
+
+### 29.5 Key Design Decisions
+
+1. **`AuthMiddleware` as `BaseHTTPMiddleware` subclass** — Required by Starlette's `app.add_middleware()` API; plain async functions are not supported as middleware classes.
+2. **`public_paths` excludes `/auth/login`** — The login endpoint must work without authentication so users can obtain tokens.
+3. **Permission resolution queried from PostgreSQL on every request** — Per the plan's requirement that permission changes become effective immediately (stateless JWTs don't carry permissions).
+4. **`oauth2_scheme` uses `auto_error=False`** — So `get_current_user` can raise its own 401 with a custom message instead of FastAPI's default 401.
+5. **`request.state.user_id` and `request.state.email`** — Auth middleware attaches user identity to request state for downstream middleware/dependencies to access.
+6. **Middleware runs before route handlers** — Auth interception happens before any route logic executes.
+
+### 29.6 Files NOT Modified (existing preserved)
+
+- All existing route handlers — dependencies added in Phase 6
