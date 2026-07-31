@@ -1686,3 +1686,130 @@ Created the authorization middleware (intercepts every request, validates JWT, a
 ### 29.6 Files NOT Modified (existing preserved)
 
 - All existing route handlers — dependencies added in Phase 6
+
+---
+
+## 30. SSH/VPN Access — Persistent Issues and Workaround
+
+### 30.1 SSH Tunnel Failure Pattern
+
+The `ftd-postgres-vm` SSH daemon (`sshd`) fails to respond to SSH banner exchanges after a VM stop/start cycle. The VM boots fully (reaches `multi-user.target` in ~25s), TCP ports 22 and 5432 accept connections at the GCP network layer (`nc -zv` succeeds), but `sshd` does not send its banner or respond to any SSH handshake. `gcloud compute ssh`, direct `ssh` to the external IP, and `gcloud compute start-iap-tunnel` all hang at "banner exchange" or "failed to connect to backend."
+
+The direct `nc | nc` test to port 22 confirms zero response from sshd. PostgreSQL on port 5432 similarly accepts TCP but does not complete authentication handshakes from external sources (only responds to connections originating from within the GCP VPC network or via `gcloud compute ssh --command`).
+
+### 30.2 Working Approaches
+
+| Method | Status | Notes |
+|---|---|---|
+| `gcloud compute ssh --command="..."` | **Unreliable after VM restart** — hangs at banner exchange | Worked reliably before the VM was stopped |
+| `gcloud compute start-iap-tunnel` | **Fails** — "failed to connect to backend" | Persistent IAP TCP forwarding issue |
+| `ssh` via external IP | **Fails** — connection established, no banner | TCP works, sshd not responding |
+| `ssh ftd-postgres-vm.us-west2-a.ftd2026` | **Fails** — same as above | Uses GCP SSH config, same issue |
+| `nc -zv IP PORT` | **Succeeds** at TCP level only | Confirms firewall allows traffic, not service health |
+
+### 30.3 Workaround for Database Operations
+
+Use `gcloud compute ssh --command=` for one-off database commands (this uses GCP's internal IAP channel which works for command execution even when the persistent SSH tunnel doesn't):
+
+```bash
+gcloud compute ssh ftd-postgres-vm --zone=us-west2-a --project=ftd2026 \
+  --command="PGPASSWORD='5Ou+BkyuQT3izP72219jMLy2AobRdI3f' psql -h 127.0.0.1 -U ftd_app -d ftd_lakehouse -c \"YOUR_SQL_HERE\""
+```
+
+### 30.4 VM Restart Procedure
+
+If the VM is terminated, restart it and wait 60+ seconds before attempting SSH:
+
+```bash
+gcloud compute instances start ftd-postgres-vm --zone=us-west2-a --project=ftd2026
+# Wait 60+ seconds for sshd to initialize after OS Login cache refresh
+gcloud compute ssh ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --command="echo READY"
+```
+
+### 30.5 Known VM State
+
+- `ftd-postgres-vm`: e2-micro, `us-west2-a`, external IP currently `34.94.216.101` (changed from `35.236.126.62` after stop/start; GCP ephemeral IPs change on each start-stop cycle)
+- SSH daemon requires reinitialization after VM stop/start cycles
+- PostgreSQL (`ftd_lakehouse`) is operational — accessible via `gcloud compute ssh --command=` inline commands
+- `data-ingest-vm`: RUNNING at `34.20.146.65` (external IP), operational for its pipeline purpose only
+
+---
+
+## 31. Authentication & Authorization System — Phase 5 (Completed 2026-07-31)
+
+### 31.1 What Was Done
+
+Populated the `permissions` table, created index maintenance scripts, and added the composite index on `user_permissions_index(user_id, permission_name)`.
+
+### 31.2 New Files Created
+
+| File | Purpose |
+|---|---|
+| `app/auth/seed_data.py` | Idempotent script to seed `permissions` table with all 8 constants from `permissions.py`. Uses `INSERT ... ON CONFLICT DO NOTHING`. Prints summary of inserts vs. existing. |
+| `app/auth/index_maintainer.py` | Two functions: `rebuild_user_permissions_index()` (TRUNCATE + INSERT from joined `user_permissions` + `permissions`) and `sync_user_permissions_index(user_id)` (DELETE + INSERT for single user). |
+| `app/auth/migrations/003_create_composite_index.sql` | Creates composite index `idx_user_permissions_index_composite` on `user_permissions_index(user_id, permission_name)`. Uses `CREATE INDEX IF NOT EXISTS`. |
+
+### 31.3 Database Changes Executed
+
+1. **Permissions table**: Already seeded with all 8 permission constants during Phase 3 (manually via `gcloud compute ssh`). `seed_data.py` is idempotent and confirms no duplicates.
+2. **Composite index**: Created `idx_user_permissions_index_composite ON user_permissions_index(user_id, permission_name)`. Verified via `\d user_permissions_index`.
+3. **Index state**: All three indexes now exist on `user_permissions_index`:
+   - `idx_user_permissions_index_composite` (user_id, permission_name) — new in Phase 5
+   - `idx_user_permissions_index_user_id` (user_id)
+   - `idx_user_permissions_index_permission_name` (permission_name)
+
+### 31.4 Validation
+
+| Check | Result |
+|---|---|
+| `permissions` table has all 8 rows | ✅ (8 rows confirmed) |
+| `user_permissions_index` composite index exists | ✅ (verified via `\d user_permissions_index`) |
+| Single-column indexes still present | ✅ |
+| `seed_data.py` is idempotent (`ON CONFLICT DO NOTHING`) | ✅ |
+| `rebuild_user_permissions_index()` and `sync_user_permissions_index()` implemented | ✅ |
+| No existing tables modified | ✅ |
+
+### 31.5 Files NOT Modified
+
+- All existing application files preserved
+- Only additive changes: new files + new migration
+
+---
+
+## 32. Authentication & Authorization System — Phase 6 (Completed 2026-07-31)
+
+### 32.1 What Was Done
+
+Applied the `require_permission(...)` dependency to all 9 existing GET endpoints so that every route is now protected by authentication and authorization. The `/health` endpoint remains publicly accessible; `/auth/login` is excluded from the auth middleware.
+
+### 32.2 Files Modified
+
+| File | Change |
+|---|---|
+| `app/routes/tickers.py` | Added `from app.auth.dependencies import require_permission` and `permission: str = require_permission("...")` to all 6 endpoints |
+| `app/routes/filings.py` | Added `from app.auth.dependencies import require_permission` and `from fastapi import Depends` + permission dependency to 1 endpoint |
+| `app/routes/search.py` | Added `from app.auth.dependencies import require_permission` and `from fastapi import Depends` + permission dependency to 1 endpoint |
+| `app/routes/news.py` | Added `from app.auth.dependencies import require_permission` and `from fastapi import Depends` + permission dependency to 1 endpoint |
+
+### 32.3 Permission Mapping
+
+| Endpoint | Permission |
+|---|---|
+| `GET /tickers/search` | `tickers.search` |
+| `GET /tickers/{ticker}/prices` | `tickers.prices` |
+| `GET /tickers/{ticker}/news` | `tickers.news` |
+| `GET /tickers/{ticker}/filings` | `tickers.filings` |
+| `GET /tickers/{ticker}/timeline` | `tickers.timeline` |
+| `GET /tickers/{ticker}/fiscal-year-end` | `tickers.fiscal_year_end` |
+| `GET /filings/{accession_number}/elements` | `filings.read` |
+| `GET /search` | `search.read` |
+| `POST /auth/login` | **none** (public) |
+| `GET /health` | **none** (public) |
+
+### 32.4 Key Design Decision
+
+`require_permission()` already returns a `Depends(...)` object (not a raw dependency function), so route handlers use it directly as `permission: str = require_permission("...")` — NOT wrapped in `Depends(...)` again — because FastAPI dependency injection auto-unwraps `Depends` objects when used as parameter defaults.
+
+### 32.5 Files NOT Modified
+
+- All existing route handler business logic — only a dependency parameter was added
