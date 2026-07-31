@@ -1813,3 +1813,66 @@ Applied the `require_permission(...)` dependency to all 9 existing GET endpoints
 ### 32.5 Files NOT Modified
 
 - All existing route handler business logic — only a dependency parameter was added
+
+---
+
+## 33. Current Project Status (as of 2026-07-31)
+
+### 33.1 What We Have
+
+The authentication and authorization infrastructure is fully built and committed:
+
+| Component | Status |
+|---|---|
+| Database schema (4 auth tables) | ✅ Created and verified |
+| Core auth modules (config, models, hasher, token) | ✅ All import cleanly |
+| Unit tests (hasher + token) | ✅ 13/13 pass |
+| `/auth/login` endpoint | ✅ Returns 200 + JWT for valid credentials |
+| Auth middleware (JWT validation) | ✅ In middleware stack |
+| Authorization dependencies (get_current_user, get_current_permissions, require_permission) | ✅ Implemented |
+| Permission constants (8 capabilities) | ✅ Defined and seeded in DB |
+| Composite index on user_permissions_index | ✅ Created |
+| All 9 existing GET endpoints protected | ✅ require_permission applied |
+| `/health` public, `/auth/login` public | ✅ Confirmed |
+
+### 33.2 What's Still Missing
+
+| Gap | Impact | Priority |
+|---|---|---|
+| No real users in `users` table | Nobody can log in | Critical |
+| `user_permissions` table is empty | Even with a user, no permissions → 403 on everything | Critical |
+| No user creation mechanism | No way to create users or assign permissions | Critical |
+| No seed admin user | Cannot test the full auth lifecycle end-to-end | Critical |
+| SSH daemon broken after VM restart | Cannot run live integration tests from local machine | Blocking |
+| Phase 7 (Integration Testing) not executed | Full pipeline not verified end-to-end | High |
+| `email-validator` not used (optional) | Email normalization uses stdlib only | Low |
+| No refresh token mechanism | Tokens expire after configured lifetime (default 60min) | Medium |
+| No admin UI/API for user/permission management | Users and permissions must be managed via direct DB queries | Medium |
+
+### 33.3 Git History
+
+| Commit | Phase | Files |
+|---|---|---|
+| `f3669785` | docs | MEMORY.md Phase 6 update |
+| `20af2fd5` | 6 | 4 route files — require_permission on all 9 endpoints |
+| `96bf7000` | 5 fix | Trailing newlines in seed_data.py and migration |
+| `adc10dee` | 5 | 3 new files (seed_data, index_maintainer, composite index) |
+| `ad0c4cbd` | 4 | 3 new files (middleware, dependencies, permissions) |
+| `30dbf884` | 1-3 | 11 new files (migrations, auth infrastructure, login endpoint) |
+
+### 33.4 SSH/VM Access Notes
+
+- `ftd-postgres-vm` is RUNNING at external IP `34.94.216.101` (changed from `35.236.126.62` after stop/start)
+- SSH daemon (`sshd`) does not respond to banner exchange after VM restart — needs investigation
+- `gcloud compute ssh --command=` for inline DB commands works intermittently
+- `gcloud compute start-iap-tunnel` for local port forwarding fails consistently
+- `gcloud compute ssh -- -L` port forwarding worked once but is unreliable
+- Workaround documented in MEMORY.md §30
+
+### 33.5 Next Steps
+
+1. Fix SSH daemon on `ftd-postgres-vm` (restart VM or investigate sshd initialization)
+2. Create a seed admin user with all permissions in `user_permissions`
+3. Execute Phase 7 integration tests (full auth lifecycle end-to-end)
+4. Build user creation/management API or seed script
+5. Consider additional phases beyond the original 7 (user management, permission assignment UI, refresh tokens)
