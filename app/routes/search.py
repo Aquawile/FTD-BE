@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from app.auth.dependencies import require_permission
 from app.crud import search_content
 from app.models import SearchResult
 
@@ -27,6 +28,7 @@ def route_search(
     q: str = Query(..., min_length=1, description="Keyword to search across content"),
     source: Annotated[str | None, Query(description="Filter by source (finnhub, gnews, sec)")] = None,
     limit: int = Query(50, ge=1, le=200),
+    permission: str = require_permission("search.read"),
 ) -> list[SearchResponse]:
     results = search_content(q, source, limit)
     return [SearchResponse(**r.model_dump()) for r in results]

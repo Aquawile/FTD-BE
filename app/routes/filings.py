@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from app.auth.dependencies import require_permission
 from app.crud import get_filing_elements
 from app.models import FilingElement
 
@@ -17,5 +18,6 @@ def route_get_elements(
     accession_number: str,
     item_number: Annotated[str | None, Query(description="Item number filter")] = None,
     element_type: Annotated[str | None, Query(description="Element type filter (narrative or quantitative)")] = None,
+    permission: str = require_permission("filings.read"),
 ) -> list[FilingElement]:
     return get_filing_elements(accession_number, item_number, element_type)

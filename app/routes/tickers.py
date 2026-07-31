@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from app.auth.dependencies import require_permission
 from app.crud import (
     get_ticker_filings,
     get_ticker_fiscal_year_end,
@@ -30,6 +31,7 @@ class TickerSearchResponse(BaseModel):
 def route_search_tickers(
     q: str = Query(..., min_length=1, description="Ticker symbol or partial match"),
     limit: int = Query(20, ge=1, le=100),
+    permission: str = require_permission("tickers.search"),
 ) -> list[TickerSearchResponse]:
     return search_tickers(q, limit)
 
@@ -39,6 +41,7 @@ def route_get_prices(
     ticker: str,
     start: Annotated[date, Query(description="Start date (YYYY-MM-DD)")],
     end: Annotated[date, Query(description="End date (YYYY-MM-DD)")],
+    permission: str = require_permission("tickers.prices"),
 ) -> list[PriceRow]:
     return get_ticker_prices(ticker, start, end)
 
@@ -49,6 +52,7 @@ def route_get_news(
     start: Annotated[date, Query(description="Start date (YYYY-MM-DD)")],
     end: Annotated[date, Query(description="End date (YYYY-MM-DD)")],
     limit: int = Query(50, ge=1, le=200),
+    permission: str = require_permission("tickers.news"),
 ) -> list[NewsRow]:
     return get_ticker_news(ticker, start, end, limit)
 
@@ -68,6 +72,7 @@ def route_get_filings(
     start: Annotated[date | None, Query(description="Start date (YYYY-MM-DD)")] = None,
     end: Annotated[date | None, Query(description="End date (YYYY-MM-DD)")] = None,
     form_type: Annotated[str | None, Query(description="Form type (e.g. 10-K, 8-K)")] = None,
+    permission: str = require_permission("tickers.filings"),
 ) -> list[FilingSummaryResponse]:
     from app.crud import get_ticker_filings as _get_filings
     results = _get_filings(ticker)
@@ -94,6 +99,7 @@ def route_get_timeline(
     sources: str | None = Query(None, description="Comma-separated sources (finnhub,gnews,sec)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    permission: str = require_permission("tickers.timeline"),
 ) -> list[TimelineEvent]:
     source_list = None
     if sources:
@@ -102,7 +108,10 @@ def route_get_timeline(
 
 
 @router.get("/{ticker}/fiscal-year-end", response_model=FiscalYearEnd)
-def route_get_fiscal_year_end(ticker: str) -> FiscalYearEnd:
+def route_get_fiscal_year_end(
+    ticker: str,
+    permission: str = require_permission("tickers.fiscal_year_end"),
+) -> FiscalYearEnd:
     result = get_ticker_fiscal_year_end(ticker)
     if result is None:
         from fastapi import HTTPException
