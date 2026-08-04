@@ -4,10 +4,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.auth.firebase_auth import validate_firebase_token
 from app.auth.token import verify_token
 
 
-PUBLIC_PATHS = {"/health", "/auth/login"}
+PUBLIC_PATHS = {"/health", "/auth/login", "/auth/me"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -36,6 +37,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Missing token"},
             )
 
+        firebase_user = validate_firebase_token(token)
+        if firebase_user is not None:
+            request.state.firebase_uid = firebase_user.get("firebase_uid")
+            request.state.email = firebase_user.get("email")
+            request.state.auth_method = "firebase"
+            return await call_next(request)
+
         payload = verify_token(token)
         if payload is None:
             return JSONResponse(
@@ -59,5 +67,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Invalid user identifier in token"},
             )
         request.state.email = email
+        request.state.auth_method = "internal"
 
         return await call_next(request)
