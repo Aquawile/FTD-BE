@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from starlette.requests import Request
 
+from app.auth.models import User
 from app.auth.permissions import ALL_PERMISSIONS
 from app.db import query_dict
 
@@ -33,6 +35,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             detail="Token missing required claims",
         )
     return {"user_id": int(user_id), "email": email}
+
+
+async def get_current_application_user(request: Request) -> User:
+    current_user = getattr(request.state, "current_user", None)
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    return current_user
 
 
 async def get_current_permissions(user_id: int = Depends(get_current_user)) -> set[str]:

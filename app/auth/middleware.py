@@ -5,6 +5,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.auth.firebase_auth import validate_firebase_token
+from app.auth.models import User
+from app.auth.repository import get_user_by_firebase_uid, get_user_by_id
 from app.auth.token import verify_token
 
 
@@ -39,9 +41,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         firebase_user = validate_firebase_token(token)
         if firebase_user is not None:
-            request.state.firebase_uid = firebase_user.get("firebase_uid")
+            firebase_uid = firebase_user.get("firebase_uid")
+            if not firebase_uid:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Authenticated Firebase token did not contain a UID"},
+                )
+            request.state.firebase_uid = firebase_uid
             request.state.email = firebase_user.get("email")
             request.state.auth_method = "firebase"
+            try:
+                user_data = get_user_by_firebase_uid(firebase_uid)
+            except Exception:
+                return JSONResponse(
+                    status_code=500,
+                    content={"detail": "Internal server error"},
+                )
+            if user_data is None:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Authenticated Firebase identity has no associated application user"},
+                )
+            request.state.current_user = User(**user_data)
             return await call_next(request)
 
         payload = verify_token(token)
@@ -60,13 +81,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         try:
-            request.state.user_id = int(user_id)
+            resolved_user_id = int(user_id)
         except (ValueError, TypeError):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid user identifier in token"},
             )
+        request.state.user_id = resolved_user_id
         request.state.email = email
         request.state.auth_method = "internal"
+        try:
+            user_data = get_user_by_id(resolved_user_id)
+        except Exception:
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"},
+            )
+        if user_data is None:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authenticated token has no associated application user"},
+            )
+        request.state.current_user = User(**user_data)
 
         return await call_next(request)

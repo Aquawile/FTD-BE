@@ -13,3 +13,23 @@ def get_user_by_email(email: str) -> dict | None:
     if rows:
         return rows[0]
     return None
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    rows = query_dict(
+        "SELECT id, firebase_uid, email, is_active, created_at, updated_at FROM users WHERE id = %s",
+        (user_id,),
+    )
+    if rows:
+        return rows[0]
+    return None
+
+
+def get_user_by_firebase_uid(firebase_uid: str) -> dict | None:
+    rows = query_dict(
+        "SELECT id, firebase_uid, email, is_active, created_at, updated_at FROM users WHERE firebase_uid = %s",
+        (firebase_uid,),
+    )
+    if rows:
+        return rows[0]
+    return None

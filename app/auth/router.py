@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from starlette.requests import Request
 
 from app.auth.firebase_auth import validate_firebase_token
 from app.auth.hasher import verify_password
-from app.auth.models import LoginRequest, LoginResponse, normalize_email
+from app.auth.models import LoginRequest, LoginResponse, User, normalize_email
 from app.auth.token import create_access_token
 from app.auth.repository import get_user_by_email
+from app.auth.dependencies import get_current_application_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -55,3 +56,8 @@ def auth_me(request: Request):
         "user_id": int(user_id),
         "email": email,
     }
+
+
+@router.get("/me/user", response_model=User)
+def auth_me_user(current_user: User = Depends(get_current_application_user)) -> User:
+    return current_user
