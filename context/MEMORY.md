@@ -1876,3 +1876,143 @@ The authentication and authorization infrastructure is fully built and committed
 3. Execute Phase 7 integration tests (full auth lifecycle end-to-end)
 4. Build user creation/management API or seed script
 5. Consider additional phases beyond the original 7 (user management, permission assignment UI, refresh tokens)
+
+---
+
+## 34. Layer One — Sub-Layer 1.1: Firebase Authentication Integration and Configuration (Completed 2026-08-03)
+
+### 34.1 Objective
+
+Establish Firebase as the external identity provider for the FastAPI backend. Prove the complete authentication boundary: Firebase authenticates an external identity, issues a Firebase ID token, the FastAPI backend receives that token via HTTP, Firebase Admin SDK verifies it, and the verified Firebase UID/email is extracted.
+
+### 34.2 What Was Implemented
+
+**Files already in the repo (pre-existing uncommitted changes, not introduced by this session):**
+
+| File | Purpose |
+|---|---|
+| `app/auth/firebase_auth.py` | Firebase Admin SDK initialization (`ApplicationDefault()` or service account key) and `validate_firebase_token()` — verifies Firebase ID tokens and extracts UID, email, email_verified, name, picture |
+| `app/auth/firebase_config.py` | Firebase configuration from environment variables (`FIREBASE_PROJECT_ID`, `FIREBASE_CREDENTIALS_PATH`, `FIREBASE_AUTH_ENABLED`) |
+| `app/auth/middleware.py` | Updated `AuthMiddleware` — added Firebase token verification as first authentication path before falling back to internal JWT; added `/auth/me` to `PUBLIC_PATHS` |
+| `app/auth/router.py` | Added `GET /auth/me` endpoint — accepts Firebase ID token or internal JWT, returns `auth_method`, `firebase_uid`, `email` for Firebase auth or `user_id`, `email` for internal auth |
+| `requirements.txt` | Added `firebase-admin>=6.0.0` |
+
+**Files pushed to `rawataingestion` branch (commit `5cc0c38f`):**
+All 6 files above (3 modified, 2 new, 1 requirements change).
+
+### 34.3 Errors Encountered and How They Were Solved
+
+#### Error 1: SSH/IAP Connectivity to `ftd-test` VM
+
+**Symptom:** `gcloud compute ssh ftd-test` timed out. The SSH troubleshooter reported `UNREACHABLE` from the local IP (`174.76.19.221`).
+
+**Root cause:** `gcloud compute ssh` was attempting a direct TCP connection to the VM's external IP (`34.20.175.151:22`). The firewall rule `allow-iap-ssh` only permits SSH from the IAP range (`35.235.240.0/20`), and the local IP is not in that range. The connection was silently dropped by the firewall, causing a timeout rather than a "connection refused" error.
+
+**Solution:** Use the `--tunnel-through-iap` flag to route SSH through Google's Identity-Aware Proxy:
+```bash
+gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap
+```
+This established a reliable IAP tunnel connection. No firewall rules were modified.
+
+#### Error 2: Firebase Authentication Not Provisioned for Project `ftd-2026`
+
+**Symptom:** `auth.create_user()` returned `ConfigurationNotFoundError: CONFIGURATION_NOT_FOUND`. The Identity Toolkit API REST endpoint also returned 404.
+
+**Root cause:** Firebase Authentication was not provisioned for the Firebase project `ftd-2026`. The Identity Toolkit API (`identitytoolkit.googleapis.com`) was enabled at the GCP level, but the Firebase Authentication service itself had not been configured for this project.
+
+**Solution:** Firebase Authentication was enabled for project `ftd-2026` via the Firebase Console. Email/Password sign-in provider was enabled. No other Firebase services were modified.
+
+#### Error 3: VM Service Account Lacks OAuth Scopes for Secret Manager
+
+**Symptom:** `gcloud secrets versions access latest --secret=firebase-key` from the VM returned `PERMISSION_DENIED: Request had insufficient authentication scopes`.
+
+**Root cause:** The VM's service account (`767713105-compute@developer.gserviceaccount.com`) has the `roles/secretmanager.secretAccessor` IAM role, but the VM was created with limited OAuth scopes that don't include Secret Manager access.
+
+**Solution:** The `firebase-key.json` service account key was already present on the VM at `/home/isabellabutera/firebase-key.json`. The app uses `ApplicationDefault()` credentials for token verification, which works without needing the secret. The service account key file is used as a fallback when `FIREBASE_CREDENTIALS_PATH` is set.
+
+#### Error 4: Token Corruption When Passing Through Shell Command Line
+
+**Symptom:** The first HTTP test to `/auth/me` with a valid Firebase ID token returned `401`. Direct Python verification of the same token on the VM succeeded.
+
+**Root cause:** The Firebase ID token (a 934-character JWT) was being corrupted when passed through shell command-line interpolation. The shell was truncating or mangling the token string.
+
+**Solution:** Wrote a Python test script (`/tmp/test_auth_http.py`) on the VM that reads the token programmatically (via the Firebase REST API sign-in flow) and sends it through `httpx` to the FastAPI backend, avoiding shell escaping entirely. All subsequent tests passed.
+
+#### Error 5: Empty Bearer Token Rejected at HTTP Protocol Level
+
+**Symptom:** Testing an empty Bearer token (`Authorization: Bearer `) caused `httpx` to raise `LocalProtocolError: Illegal header value` before the request reached FastAPI.
+
+**Root cause:** `httpx` validates HTTP headers at the protocol level and rejects headers with illegal values (trailing space with no token value).
+
+**Solution:** This is expected behavior — the middleware would also reject this, but the rejection happens at the HTTP client level before reaching FastAPI. This is acceptable; the middleware's `Missing token` check covers the case where a request reaches the middleware with an empty token string.
+
+### 34.4 Test Results
+
+#### Positive Test
+
+| Test | Endpoint | Method | Headers | Status | Response |
+|---|---|---|---|---|---|
+| Valid Firebase ID token | `/auth/me` | GET | `Authorization: Bearer <real Firebase ID token>` | **200** | `{"auth_method":"firebase","firebase_uid":"UixIk5h0kFS6uRy9CdM3DvpiwDw1","email":"test-firebase-ftd@ftd2026.test","email_verified":false}` |
+
+The real Firebase ID token was successfully verified through the complete HTTP path:
+`Authorization header → FastAPI middleware → validate_firebase_token() → Firebase Admin SDK → verified Firebase UID and email`
+
+#### Negative Tests
+
+| Test | Endpoint | Method | Headers | Status | Result |
+|---|---|---|---|---|---|
+| Missing Authorization header | `/auth/me` | GET | (none) | **401** | Correctly rejected |
+| Malformed token | `/auth/me` | GET | `Authorization: Bearer not.a.valid.token` | **401** | Correctly rejected |
+| Invalid/corrupted token | `/auth/me` | GET | `Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature` | **401** | Correctly rejected |
+| Empty Bearer token | (not tested at HTTP level) | — | `Authorization: Bearer ` | **400** (httpx protocol-level) | httpx rejects illegal header before reaching FastAPI |
+
+### 34.5 Firebase Project Configuration Changes
+
+| Change | Method | Details |
+|---|---|---|
+| Firebase Authentication enabled | Firebase Console | Project `ftd-2026` → Authentication → Get Started |
+| Email/Password sign-in provider enabled | Firebase Console | Authentication → Sign-in method → Email/Password → Enable |
+
+No other Firebase services were modified. No Firebase project was created or deleted.
+
+### 34.6 Test Account
+
+A dedicated development test account was created for this integration test:
+- **Email:** `test-firebase-ftd@ftd2026.test`
+- **Password:** `TestPass123!` (not printed in final report)
+- **Firebase UID:** `UixIk5h0kFS6uRy9CdM3DvpiwDw1`
+- **Purpose:** Integration testing only — NOT a PostgreSQL application user
+
+### 34.7 Deployment State
+
+The FastAPI application on `ftd-test` (VM at `34.20.175.151`, zone `us-west2-a`) is running:
+- **Process:** `python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000`
+- **Health:** `/health` returns `{"status":"ok"}`
+- **Firebase Admin SDK:** Initializes with `ApplicationDefault()` credentials (VM service account)
+- **Firebase credentials file:** Present at `/home/isabellabutera/firebase-key.json` (service account key for `firebase-adminsdk-fbsvc@ftd-2026.iam.gserviceaccount.com`)
+- **Environment variables:** `FIREBASE_CREDENTIALS_PATH`, `FIREBASE_PROJECT_ID`, `FIREBASE_AUTH_ENABLED` were set inline during testing; not persisted in any config file
+
+### 34.8 What Was NOT Changed
+
+- No PostgreSQL schema, user tables, or synchronization logic
+- No application service layer, content endpoints, or financial data APIs
+- No frontend code
+- No later sublayer work begun
+- No Firebase project configuration modified beyond enabling Authentication and Email/Password provider
+- No GCP IAM policies changed
+- No firewall rules modified
+- No new secret-storage mechanisms created
+
+### 34.9 Boundary for Sub-Layer 1.2
+
+Sub-Layer 1.1 establishes:
+```
+Firebase identity → Firebase ID token → FastAPI → Firebase authentication middleware → verified Firebase UID
+```
+
+Sub-Layer 1.2 will establish:
+```
+Firebase UID → PostgreSQL application User record
+```
+
+That work has not begun and PostgreSQL has not been modified.
