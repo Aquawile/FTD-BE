@@ -2016,3 +2016,153 @@ Firebase UID → PostgreSQL application User record
 ```
 
 That work has not begun and PostgreSQL has not been modified.
+
+---
+
+## 35. Layer One — Sub-Layer 1.2: PostgreSQL User Domain Model (Completed 2026-08-03)
+
+### 35.1 Objective
+
+Establish the PostgreSQL application-level User domain model that future sublayers will use to represent authenticated users inside the application database. Firebase Authentication remains the external identity provider (already complete in Sublayer 1.1). PostgreSQL becomes the application's persistent source of truth for its own user records.
+
+The architectural boundary: Firebase owns authentication/credentials/ID tokens. PostgreSQL owns the durable application user record. Sublayer 1.2 creates only the database-side representation. Sublayer 1.3 will later establish Firebase-to-PostgreSQL synchronization.
+
+### 35.2 Existing Schema Analysis
+
+Before making any changes, the existing `users` table was inspected:
+
+| Column | Type | Constraints | Purpose |
+|---|---|---|---|
+| `id` | `SERIAL` | `PRIMARY KEY` | Internal PostgreSQL user identifier |
+| `email` | `TEXT` | `UNIQUE NOT NULL` | User email address |
+| `password_hash` | `TEXT` | `NOT NULL` | bcrypt password hash for internal authentication |
+| `created_at` | `TIMESTAMP` | `NOT NULL DEFAULT NOW()` | Record creation timestamp |
+| `is_active` | `BOOLEAN` | `NOT NULL DEFAULT TRUE` | Account active/inactive status |
+
+The existing `id SERIAL PRIMARY KEY` was preserved as the internal application identifier. It is independent of Firebase UID. The existing `email TEXT UNIQUE NOT NULL` constraint was preserved exactly. The existing `password_hash TEXT NOT NULL` column was preserved because `app/auth/repository.py`, `app/auth/router.py`, and `app/auth/hasher.py` all depend on it for the internal authentication flow.
+
+No ORM (SQLAlchemy, etc.) exists in this repository. The project uses raw SQL via `psycopg2` with a connection pool in `app/db.py`. Migrations are raw `.sql` files applied manually, not Alembic.
+
+### 35.3 What Was Implemented
+
+**Files created or modified:**
+
+| File | Action | Description |
+|---|---|---|
+| `app/auth/migrations/004_add_firebase_fields_to_users.sql` | **Created** | Extends the existing `users` table with `firebase_uid` and `updated_at` columns, plus a trigger for automatic timestamp updates |
+| `app/auth/models.py` | **Modified** | Added `User` Pydantic domain model |
+
+### 35.4 Database Schema Changes
+
+Migration `004_add_firebase_fields_to_users.sql` adds two columns to the existing `users` table:
+
+**Column 1: `firebase_uid`**
+- Type: `TEXT`
+- Constraint: `UNIQUE`
+- Nullable: Yes (nullable to safely accommodate existing internal-auth users that do not yet have Firebase UIDs)
+- Purpose: External Firebase identity reference. The database-level `UNIQUE` constraint enforces the invariant: one Firebase UID maps to at most one PostgreSQL User row.
+
+**Column 2: `updated_at`**
+- Type: `TIMESTAMPTZ` (timezone-aware, per Layer One requirement)
+- Constraint: `NOT NULL DEFAULT NOW()`
+- Purpose: Records the most recent modification to the application user record.
+
+**Trigger: `trg_update_users_updated_at`**
+- Fires `BEFORE UPDATE ON users FOR EACH ROW`
+- Sets `NEW.updated_at = NOW()` on every row modification
+- Wrapped in `CREATE OR REPLACE FUNCTION` and `DROP TRIGGER IF EXISTS` for idempotent re-application
+
+**Important timestamp note:** `created_at` remains `TIMESTAMP` (without time zone). It was not modified in this sublayer because it is an existing column and the authoritative project context did not explicitly require changing it. The new `updated_at` is `TIMESTAMPTZ` (with time zone) to satisfy the Layer One requirement for timezone-aware timestamps on new fields.
+
+### 35.5 User Pydantic Domain Model
+
+Added to `app/auth/models.py`:
+
+```python
+class User(BaseModel):
+    """Application-level identity representation for a PostgreSQL user record.
+
+    This is a domain/schema model, not an ORM model. The repository uses raw SQL
+    rather than an ORM, so this Pydantic model serves as the canonical typed
+    representation of the users table shape for response serialization and
+    internal typing. It intentionally omits ``password_hash`` because
+    authentication credentials must not be exposed through the application
+    domain layer.
+    """
+
+    id: int
+    firebase_uid: Optional[str] = None
+    email: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+```
+
+**Role clarification:** This is a domain/schema representation, not an ORM model. The repository uses raw SQL via `psycopg2`, so this Pydantic model serves as the canonical typed representation of the `users` table shape for response serialization and internal typing.
+
+**Intentional omission of `password_hash`:** The model intentionally omits `password_hash` because authentication credentials must never be exposed through the application domain layer. The `password_hash` column remains in the database and is used by existing internal authentication code (`app/auth/repository.py`, `app/auth/router.py`, `app/auth/hasher.py`), but it is not part of the application-level identity representation.
+
+### 35.6 Identity Boundary Established
+
+The database now supports the required relationship:
+
+```
+internal PostgreSQL user ID (id SERIAL PRIMARY KEY)
+    ↓
+PostgreSQL User (application-level identity record)
+    ↓
+unique Firebase UID (firebase_uid TEXT UNIQUE) — external identity
+```
+
+Database invariants:
+- Internal PostgreSQL user ID is independent of Firebase UID ✓
+- Firebase UID is a unique external identity reference, not the primary key ✓
+- Database enforces at most one User row per Firebase UID ✓
+- No authentication credentials, tokens, or secrets stored in the User domain model ✓
+
+### 35.7 What Was NOT Changed
+
+- No existing Sublayer 1.1 files were modified
+- No Firebase authentication logic was altered
+- No `get_or_create_user()`, synchronization service, or Firebase-to-PostgreSQL bridge was created
+- No new endpoints were added
+- No application service layer was created
+- No authorization roles or permissions were added
+- No workspace, profile, or future-layer functionality was introduced
+- The existing `users` table was extended, not recreated
+- The existing `id SERIAL PRIMARY KEY` was not replaced with a UUID
+- The existing `email TEXT UNIQUE NOT NULL` constraint was preserved exactly
+- The existing `password_hash TEXT NOT NULL` column was preserved
+
+### 35.8 Tests Executed
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_hasher.py` (5 tests) | ✅ All pass |
+| `tests/test_token.py` (8 tests) | ✅ All pass |
+| **Total** | **13/13 pass** |
+
+No database integration tests were executed because no PostgreSQL instance was available in this environment. The migration file was manually inspected for correctness but was not applied against a running PostgreSQL database.
+
+### 35.9 Migration Safety Verification
+
+The migration `004_add_firebase_fields_to_users.sql` was inspected and confirmed to:
+- Contain only the intended `ALTER TABLE users` additions (no unrelated schema changes)
+- Use `ADD COLUMN IF NOT EXISTS` for idempotency
+- Define `firebase_uid TEXT UNIQUE` (not nullable, but nullable in practice for existing rows)
+- Define `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` (timezone-aware)
+- Include the trigger function and trigger for automatic `updated_at` maintenance
+- Not modify any existing columns, tables, or constraints
+- Not rewrite migration history
+- Not squash or modify migrations 001, 002, or 003
+
+### 35.10 Next Steps (For Approval Before Proceeding)
+
+Sublayer 1.2 is complete. The database foundation for Sublayer 1.3 (Firebase-to-PostgreSQL user synchronization) is now in place.
+
+**Pending approval before Sublayer 1.3:**
+- Synchronization service (`get_or_create_user()` logic)
+- Database writes from `/auth/me`
+- Protected endpoint that creates users
+- Firebase verification connected to SQLAlchemy sessions
+- Race-condition handling for user provisioning
