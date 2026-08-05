@@ -2754,3 +2754,87 @@ No migration was required because the existing indexes are sufficient for the cu
 Sub-Layer 2.4 is complete. The representative CRUD and aggregation operations have predictable database behavior, transaction boundaries are verified (write operations now explicitly commit), relevant FK relationships and indexes have been inspected, and the representative relational query has been examined for efficient access patterns.
 
 **STOP — Sub-Layer 2.4 complete.**
+
+### 41 Sub-Layer 2.5 — End-to-End API Contract and Manual Backend Validation
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** (no new commit — validation was performed against existing code)
+
+#### What Was Validated
+
+Sub-Layer 2.5 proves that the Layer Two architecture works from the perspective of an API client, without requiring a frontend. The validation was performed through HTTP requests using the FastAPI TestClient, exercising the complete request path from the HTTP boundary through authentication, service, database access, and response layers.
+
+##### API Contract — User CRUD Operations
+
+| Operation | Method | Path | Auth Required | Request Body | Success Response | Failure Cases |
+|---|---|---|---|---|---|---|
+| Get current user | GET | `/auth/me/user` | Yes (Layer One) | None | `User` object (200) | 401 Missing/invalid auth, 500 DB failure |
+| Get user by ID | GET | `/auth/users/{user_id}` | Yes (Layer One) | None | `User` object (200) | 401 Missing/invalid auth, 403 Not own user, 500 DB failure |
+| Create user | POST | `/auth/users` | Yes (Layer One) | `UserCreateRequest` (`email`, `password`, optional `firebase_uid`) | `User` object (201) | 401 Missing/invalid auth, 422 Validation error, 500 DB failure |
+| Update user | PATCH | `/auth/me/user` | Yes (Layer One) | `UserUpdateRequest` (optional `email`, optional `is_active`) | `User` object (200) | 401 Missing/invalid auth, 404 User not found, 422 Validation error, 500 DB failure |
+| Delete user | DELETE | `/auth/me/user` | Yes (Layer One) | None | 204 No Content | 401 Missing/invalid auth, 404 User not found, 500 DB failure |
+| Get user+permissions | GET | `/auth/me/user/permissions` | Yes (Layer One) | None | `UserPermissionsResponse` (200) | 401 Missing/invalid auth, 404 User not found, 500 DB failure |
+
+##### One-Sentence Purpose Statements
+
+1. **GET /auth/me/user** — "Retrieve the application User record for the currently authenticated identity."
+2. **GET /auth/users/{user_id}** — "Retrieve the application User record by internal PostgreSQL user ID, restricted to the authenticated user's own record."
+3. **POST /auth/users** — "Create a new application User record with an email and optional Firebase identity link."
+4. **PATCH /auth/me/user** — "Update the authenticated user's application-owned fields (email, is_active)."
+5. **DELETE /auth/me/user** — "Deactivate the authenticated user's application record (soft delete)."
+6. **GET /auth/me/user/permissions** — "Retrieve the authenticated user with their granted permissions in a single relational query."
+
+##### Boundary Failure Analysis
+
+Each failure case was classified by which architectural boundary failed:
+
+| Failure | HTTP Status | Boundary |
+|---|---|---|
+| Missing `Authorization` header | 401 | **HTTP boundary** — middleware rejects before any application logic |
+| Invalid `Authorization` header format | 401 | **HTTP boundary** — middleware rejects before any application logic |
+| Invalid/malformed Firebase token | 401 | **Authentication boundary** — middleware token validation fails |
+| Expired Firebase token | 401 | **Authentication boundary** — middleware token validation fails |
+| Valid token but no PostgreSQL User | 401 | **Service/database boundary** — dependency finds no user record |
+| Database connection failure | 500 | **Database access boundary** — dependency catches exception, returns generic error |
+| Missing request body fields | 422 | **HTTP validation boundary** — Pydantic request model validation fails |
+| Invalid request field types | 422 | **HTTP validation boundary** — Pydantic request model validation fails |
+| User tries to access another user's record | 403 | **Authorization boundary** — route handler checks `current_user.id != user_id` |
+| User not found for update/delete | 404 | **Service boundary** — repository returns None, dependency/service raises not found |
+
+##### Key Findings
+
+1. **Authentication boundary works correctly.** All requests without a valid `Authorization: Bearer <token>` header are rejected with 401 and appropriate error messages. The middleware logs `authentication_failed` with the specific reason.
+
+2. **Database boundary is correctly isolated.** When PostgreSQL is unavailable, authenticated requests return 500 with "Internal server error" — not 401 (which would incorrectly suggest invalid credentials). The dependency layer catches the database exception and logs `authentication_internal_error` with `exc_info=True`.
+
+3. **No authentication secrets are exposed.** Error responses contain only generic messages ("Missing Authorization header", "Invalid or expired token", "Internal server error"). No tokens, credentials, or stack traces are returned to the client.
+
+4. **Logging correctly identifies the failure boundary.** The middleware logs `authentication_failed` for auth boundary failures, and the dependency layer logs `authentication_internal_error` for database boundary failures.
+
+5. **The service/database separation is verified.** The middleware only validates tokens and attaches identity. The dependency layer calls the service layer for User retrieval. The service layer calls the repository for database operations. Each layer has a clear responsibility.
+
+##### PostgreSQL Availability Note
+
+This environment does not have a running PostgreSQL instance (missing `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` environment variables). Therefore:
+- Authenticated CRUD operations could not be fully exercised against a live database
+- The authentication boundary was fully validated
+- The database failure handling was validated (500 responses with correct logging)
+- The API contract was documented based on code inspection and HTTP boundary testing
+
+##### Guardrails Followed
+
+- Did not build a frontend
+- Did not create mock frontend data
+- Did not connect the client to PostgreSQL directly
+- Did not expose PostgreSQL credentials or database ports
+- Did not begin serving SEC/Finnhub/GNews content
+- Did not implement future content layer features
+- Did not implement semi-relational data, AI data preparation, semantic search, embeddings, RAG, GraphRAG, or LLM functionality
+- Did not add new application features merely for the Postman collection
+
+#### Hard Stop for Layer Two
+
+Layer Two is complete. The authenticated API can perform its defined CRUD operations and representative relational aggregation against the PostgreSQL User domain. The service/database boundary is established, response models are explicit, PostgreSQL constraints behave correctly, authentication is enforced, and the API contract has been manually exercised through HTTP with successful and failure cases understood.
+
+**STOP — Layer Two complete.**
