@@ -41,5 +41,32 @@ class User(BaseModel):
     updated_at: datetime
 
 
+class UserCreateRequest(BaseModel):
+    """Request model for creating a new application User.
+
+    Only application-owned fields are accepted. The ``firebase_uid`` is
+    optional because a User can exist without a linked Firebase identity
+    (internal authentication only). The ``password`` is required for
+    internal authentication but is never stored or returned in this model;
+    it is consumed by the service layer and forwarded to the hasher.
+    """
+
+    email: str
+    password: str
+    firebase_uid: Optional[str] = None
+
+
+class UserUpdateRequest(BaseModel):
+    """Request model for updating an existing application User.
+
+    Only application-owned fields that the user is permitted to modify
+    are accepted. The ``firebase_uid``, ``id``, ``created_at``, and
+    ``password_hash`` are not updatable through this model.
+    """
+
+    email: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()

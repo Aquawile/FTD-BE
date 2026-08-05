@@ -5,11 +5,23 @@ from starlette.requests import Request
 
 from app.auth.firebase_auth import validate_firebase_token
 from app.auth.hasher import verify_password
-from app.auth.models import LoginRequest, LoginResponse, User, normalize_email
+from app.auth.models import (
+    LoginRequest,
+    LoginResponse,
+    User,
+    UserCreateRequest,
+    UserUpdateRequest,
+    normalize_email,
+)
 from app.auth.token import create_access_token
 from app.auth.repository import get_user_by_email
 from app.auth.dependencies import get_current_application_user
-from app.services.user_service import get_authenticated_user
+from app.services.user_service import (
+    get_authenticated_user,
+    create_user,
+    update_user,
+    delete_user,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -62,3 +74,64 @@ def auth_me(request: Request):
 @router.get("/me/user", response_model=User)
 def auth_me_user(current_user: User = Depends(get_current_application_user)) -> User:
     return current_user
+
+
+@router.get("/users/{user_id}", response_model=User)
+def auth_get_user(
+    user_id: int,
+    current_user: User = Depends(get_current_application_user),
+) -> User:
+    """Retrieve a User by internal ID.
+
+    The authenticated user may only retrieve their own record.
+    """
+    if current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    return current_user
+
+
+@router.post("/users", response_model=User, status_code=status.HTTP_201_CREATED)
+def auth_create_user(
+    request: UserCreateRequest,
+    current_user: User = Depends(get_current_application_user),
+) -> User:
+    """Create a new application User record.
+
+    Requires authentication. The authenticated user's identity
+    establishes the context for the operation.
+    """
+    return create_user(request)
+
+
+@router.patch("/me/user", response_model=User)
+def auth_update_user(
+    request: UserUpdateRequest,
+    current_user: User = Depends(get_current_application_user),
+) -> User:
+    """Update the authenticated user's application-owned fields.
+
+    Only ``email`` and ``is_active`` may be modified. The
+    ``firebase_uid``, ``id``, ``created_at``, and ``password_hash``
+    are not updatable through this endpoint.
+    """
+    updated = update_user(current_user.id, request)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return updated
+
+
+@router.delete("/me/user", status_code=status.HTTP_204_NO_CONTENT)
+def auth_delete_user(
+    current_user: User = Depends(get_current_application_user),
+) -> None:
+    """Deactivate the authenticated user's application record.
+
+    This is a soft delete: the PostgreSQL row remains but
+    ``is_active`` is set to ``False``. The Firebase identity
+    is not modified because Firebase owns authentication
+    credentials independently of the application User record.
+    """
+    success = delete_user(current_user.id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return None

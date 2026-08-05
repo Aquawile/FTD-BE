@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import logging
 
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.auth.exceptions import AuthenticationError
 from app.routes import filings, search, tickers
 from app.auth.router import router as auth_router
 from app.auth.middleware import AuthMiddleware
+
+logger = logging.getLogger("app")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 app = FastAPI(
     title="FTD Lakehouse API",
