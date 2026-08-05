@@ -2955,3 +2955,119 @@ No new models, tables, workspaces, or domain entities were introduced.
 Sub-Layer 3.1 is complete. The service-layer boundary is clearly defined through which application operations can be implemented without depending on FastAPI. The boundary is demonstrated with the user domain model: `get_user_permissions` and `get_user_with_permissions` operate on authenticated application identities provided to them, route all database access through the repository, enforce application-level rules (email normalization, password hashing, response model shaping), and return predictable application-level results.
 
 **STOP — Sub-Layer 3.1 complete.**
+
+### 43 Sub-Layer 3.2 — User Domain Service and CRUD Operations
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** 765198db
+
+#### What Was Implemented
+
+Sub-Layer 3.2 implements the actual application service operations for the User domain. Before implementing each operation, its application behavior is defined in one sentence. The service layer handles expected database failures at its boundary using non-HTTP application exceptions that can later be translated by the API layer into appropriate HTTP responses.
+
+##### Service Operation Definitions
+
+| Function | Application Behavior |
+|---|---|
+| `get_authenticated_user(firebase_uid)` | Locate the application user record that corresponds to a verified Firebase identity. |
+| `get_authenticated_user_by_id(user_id)` | Retrieve an application user by its internal database identifier. |
+| `get_user_permissions(user_id)` | Determine which permission names are granted to a specific application user. |
+| `get_user_with_permissions(user_id)` | Assemble an application user's identity together with their granted permissions in a single result. |
+| `create_user(request)` | Register a new application user with a normalized email and hashed password, optionally linking a Firebase identity. |
+| `update_user(user_id, request)` | Modify the application-owned fields of an existing user. |
+| `delete_user(user_id)` | Soft-delete an application user by deactivating their account status. |
+
+##### Service-Layer Exceptions
+
+**`app/services/exceptions.py`** — New file introducing application-level exceptions that do not carry HTTP status codes:
+
+- `UserServiceError` — Base exception for all user service errors.
+- `UserNotFoundError` — Raised when an application user cannot be found.
+- `UserAlreadyExistsError` — Raised when a user creation or update would violate a uniqueness constraint.
+
+These exceptions allow the API layer to translate service failures into appropriate HTTP responses (404, 409, etc.) without the service layer depending on FastAPI.
+
+##### Service Layer Changes
+
+**`app/services/user_service.py`** — Updated all seven service functions:
+
+1. **`get_authenticated_user`** — Now raises `UserNotFoundError` when no application user is linked to the provided Firebase identity.
+2. **`get_authenticated_user_by_id`** — Now raises `UserNotFoundError` when no application user matches the provided internal identifier.
+3. **`get_user_permissions`** — Returns raw rows from the repository. Does not raise for missing users because the auth layer ensures user existence before calling this function.
+4. **`get_user_with_permissions`** — Now raises `UserNotFoundError` when no application user matches the provided identifier. Returns a typed `UserPermissionsResponse` with normalized permissions.
+5. **`create_user`** — Catches `psycopg2.IntegrityError` (unique constraint violation on `email` or `firebase_uid`) and raises `UserAlreadyExistsError`.
+6. **`update_user`** — Raises `UserNotFoundError` when no user matches the identifier. Catches `psycopg2.IntegrityError` (e.g., duplicate email) and raises `UserAlreadyExistsError`.
+7. **`delete_user`** — Returns `bool` indicating whether an active user was deactivated. Returns `False` for already-inactive or non-existent users (idempotent soft-delete semantics).
+
+##### Dependency Layer Updates
+
+**`app/auth/dependencies.py`** — Updated `get_current_application_user` to catch `UserNotFoundError` and translate it to HTTP 401 with the appropriate log message (`authentication_failed: reason=postgres_user_not_found`). Unexpected exceptions still produce HTTP 500 with `authentication_internal_error`.
+
+##### Router Updates
+
+**`app/auth/router.py`** — Updated existing endpoints to catch the new service exceptions and translate them to HTTP responses:
+- `POST /auth/users` — Catches `UserAlreadyExistsError` → 409 Conflict
+- `PATCH /auth/me/user` — Catches `UserNotFoundError` → 404, `UserAlreadyExistsError` → 409
+- `GET /auth/me/user/permissions` — Catches `UserNotFoundError` → 404
+
+##### Direct PostgreSQL Tests
+
+**`tests/test_user_service.py`** — 16 tests exercising the service functions directly against the actual PostgreSQL database using controlled test records:
+
+| Test | What It Verifies |
+|---|---|
+| `test_get_authenticated_user_returns_user_for_valid_firebase_uid` | Firebase UID lookup returns typed `User` |
+| `test_get_authenticated_user_raises_for_unknown_firebase_uid` | Unknown Firebase UID raises `UserNotFoundError` |
+| `test_get_authenticated_user_by_id_returns_user_for_valid_id` | Internal ID lookup returns typed `User` |
+| `test_get_authenticated_user_by_id_raises_for_unknown_id` | Unknown internal ID raises `UserNotFoundError` |
+| `test_get_user_permissions_returns_empty_for_user_without_permissions` | User without permissions returns empty list |
+| `test_get_user_with_permissions_returns_user_and_permissions` | Relational join returns typed response with permissions |
+| `test_get_user_with_permissions_raises_for_unknown_id` | Unknown ID raises `UserNotFoundError` |
+| `test_create_user_creates_new_user` | New user persisted with normalized email and hashed password |
+| `test_create_user_raises_for_duplicate_email` | Duplicate email raises `UserAlreadyExistsError` |
+| `test_create_user_raises_for_duplicate_firebase_uid` | Duplicate Firebase UID raises `UserAlreadyExistsError` |
+| `test_update_user_modifies_email_and_active_status` | Update modifies owned fields only |
+| `test_update_user_raises_for_unknown_id` | Unknown ID raises `UserNotFoundError` |
+| `test_update_user_raises_for_duplicate_email` | Duplicate email on update raises `UserAlreadyExistsError` |
+| `test_delete_user_deactivates_active_user` | Soft delete sets `is_active = FALSE` |
+| `test_delete_user_returns_false_for_already_inactive_user` | Idempotent delete returns `False` |
+| `test_delete_user_returns_false_for_unknown_user` | Non-existent user delete returns `False` |
+
+Each test creates controlled records in the `users`, `permissions`, and `user_permissions` tables, exercises the service function, verifies the result, and cleans up via `addCleanup`. Tests that require a live PostgreSQL connection are skipped with `@unittest.skipUnless(_postgres_available(), ...)`.
+
+**`tests/test_auth_middleware.py`** — Updated `test_valid_firebase_token_without_application_user_returns_401` to mock `get_authenticated_user` as raising `UserNotFoundError` instead of returning `None`, matching the new service-layer behavior.
+
+##### Firebase UID as Identity Connection
+
+The service layer uses the Firebase UID as the connection between an authenticated Firebase identity and its corresponding PostgreSQL application user. `get_authenticated_user(firebase_uid)` locates the PostgreSQL user through this identity relationship. The service layer never independently parses Firebase tokens; Firebase token verification remains the responsibility of the authentication layer.
+
+##### Guardrails Followed
+
+- Service layer contains no FastAPI, Starlette, or HTTP-specific imports
+- Service layer never creates or modifies passwords, Firebase credentials, or tokens
+- Service layer returns application-level domain models (`User`, `UserPermissionsResponse`) rather than raw database rows where appropriate
+- Service exceptions carry no HTTP status codes; the API layer translates them
+- Database constraints (unique email, unique firebase_uid) remain the final integrity boundary
+- Soft delete preserves Firebase identity independence
+- No new tables, workspaces, or domain entities were introduced
+- Existing PostgreSQL models and database-access mechanisms were reused
+
+#### Test Results
+
+All 23 non-PostgreSQL tests pass. 19 tests are skipped because this environment does not have a running PostgreSQL instance (the `ftd-postgres-vm` is not accessible from this shell due to IAP tunneling requirements). When run against a live PostgreSQL database, all 16 new `test_user_service.py` tests execute and verify the service layer against the real relational schema.
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_auth_middleware.py` (8 tests) | ✅ All pass |
+| `tests/test_hasher.py` (4 tests) | ✅ All pass |
+| `tests/test_token.py` (7 tests) | ✅ All pass |
+| `tests/test_user_sync.py` (4 pass, 3 skip) | ✅ Pass |
+| `tests/test_user_service.py` (16 tests) | ⏭️ Skipped (no PostgreSQL) |
+| **Total** | **23/23 pass, 19 skipped** |
+
+#### Hard Stop for 3.2
+
+Sub-Layer 3.2 is complete. The User service CRUD operations are implemented with clear application behavior definitions, non-HTTP service-layer exceptions for expected database failures, and direct PostgreSQL tests using controlled records. The service layer operates on authenticated application identities, never touches authentication secrets, and routes all database access through the repository.
+
+**STOP — Sub-Layer 3.2 complete.**
