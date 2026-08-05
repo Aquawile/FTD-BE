@@ -2325,3 +2325,119 @@ Sub-Layer 1.5 is complete. The identity system is now fully observable and consi
 - ✅ The authentication system remains independently testable through HTTP without requiring frontend implementation
 
 **STOP — Layer One identity system validation complete.**
+
+### 37 Sub-Layer 2.1 — Database Access Boundary and Service Architecture Foundation
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** bab59f6c (follows 6815eacf, the Sub-Layer 1.5 commit)
+
+#### What Was Implemented
+
+Sub-Layer 2.1 establishes the structural separation between the FastAPI route layer, the service layer, and the database-access layer. The User domain from Layer One is the first concrete example used to prove the architecture.
+
+##### New Files Created
+
+1. **`app/services/__init__.py`** — Empty package init file, making `app.services` a Python package.
+
+2. **`app/services/user_service.py`** — Service layer for User domain operations. Contains three functions, each with an explicit purpose statement:
+   - `get_authenticated_user(firebase_uid: str) -> User | None` — "Retrieve the application User corresponding to the authenticated Firebase identity." Calls `get_user_by_firebase_uid` from the repository layer.
+   - `get_authenticated_user_by_id(user_id: int) -> User | None` — "Retrieve the application User by internal PostgreSQL user ID." Calls `get_user_by_id` from the repository layer.
+   - `get_user_permissions(user_id: int) -> list[dict[str, object]]` — "Retrieve the permission names for the given user." Calls `query_dict` from the database-access layer.
+
+##### Modified Files
+
+1. **`app/auth/middleware.py`** — Refactored to only validate tokens and attach identity to `request.state`:
+   - Removed User lookup from both Firebase and internal JWT paths (no longer calls `get_user_by_firebase_uid` or `get_user_by_id`)
+   - Removed `from app.auth.models import User` import (no longer constructs User objects)
+   - Removed `from app.auth.repository import get_user_by_firebase_uid, get_user_by_id` imports
+   - Middleware now only attaches `firebase_uid`, `user_id`, `email`, and `auth_method` to `request.state`
+   - Authentication success logs remain (`authentication_succeeded` with method and identifiers)
+   - Authentication failure logs remain (all `authentication_failed` with reason tags)
+   - Database failure logs were removed from the middleware (now handled in the dependency layer)
+
+2. **`app/auth/dependencies.py`** — Refactored to consume authenticated identity through the service layer:
+   - Removed `from app.db import query_dict` import (no longer calls database directly)
+   - Added `from app.services.user_service import get_authenticated_user, get_authenticated_user_by_id`
+   - Added `import logging` and `logger = logging.getLogger(__name__)`
+   - `get_current_application_user` now calls the service layer instead of reading `request.state.current_user`
+   - Added try/except blocks around service calls to catch database failures and log `authentication_internal_error` with `exc_info=True`
+   - Added `logger.warning` for `postgres_user_not_found` cases (distinguishable from invalid credentials)
+   - `get_current_permissions` now calls `get_user_permissions` from the service layer instead of calling `query_dict` directly
+
+3. **`app/auth/router.py`** — Added import of `get_authenticated_user` from the service layer (demonstrates route-to-service dependency). The `/auth/me/user` endpoint continues to use `get_current_application_user` dependency which now consumes the service layer.
+
+4. **`tests/test_auth_middleware.py`** — Updated tests to reflect the new architecture:
+   - Monkeypatch targets changed from `app.auth.middleware.get_user_by_firebase_uid`/`get_user_by_id` to `app.auth.dependencies.get_authenticated_user`/`get_authenticated_user_by_id`
+   - Added `from app.auth.models import User` import for constructing User objects in tests
+   - `test_valid_firebase_token_without_application_user_returns_401` now checks `app.auth.dependencies` logger for `postgres_user_not_found` log
+   - `test_database_failure_during_firebase_user_lookup_returns_500` now checks `app.auth.dependencies` logger for `postgres_lookup_failed` error log
+   - `test_database_failure_during_internal_user_lookup_returns_500` now checks `app.auth.dependencies` logger for `postgres_lookup_failed` error log
+
+##### Request Path Through the Architecture
+
+The complete request path for a successful authenticated request is now:
+
+```text
+HTTP request
+→ FastAPI router (app/auth/router.py)
+→ AuthMiddleware (app/auth/middleware.py) — validates Firebase token, attaches firebase_uid to request.state
+→ get_current_application_user dependency (app/auth/dependencies.py) — calls service layer
+→ get_authenticated_user service (app/services/user_service.py) — expresses application intent
+→ get_user_by_firebase_uid repository (app/auth/repository.py) — performs SQL query
+→ query_dict database utility (app/db.py) — manages connection pool
+→ PostgreSQL
+→ User object returned through service layer
+→ dependency returns User to route
+→ HTTP response
+```
+
+##### Key Architectural Decisions
+
+1. **Middleware only validates tokens, does not look up Users.** The middleware's responsibility is establishing identity (validating Firebase tokens, extracting UIDs). User retrieval is a Layer Two concern.
+
+2. **Service layer wraps repository calls with application-level intent.** Each service function has a clear purpose statement. The service layer does not contain raw SQL or connection management — it delegates to the repository layer.
+
+3. **Database session lifecycle remains controlled.** The repository functions use `query_dict` which manages its own connection lifecycle (opens connection from pool, executes query, returns connection to pool). The service layer calls repository functions, so each call is independently managed.
+
+4. **Dependencies consume the service layer.** FastAPI dependencies (`get_current_application_user`, `get_current_permissions`) call service functions rather than repository functions directly. This keeps the route layer free of database logic.
+
+5. **Error handling is consistent.** Database failures in the dependency layer produce `authentication_internal_error` log messages with `exc_info=True` and return HTTP 500 with generic "Internal server error" to the client. Missing User records produce `authentication_failed: reason=postgres_user_not_found` log messages and return HTTP 401 with specific error messages.
+
+##### Guardrails Followed
+
+- Did not implement full CRUD surface — only User retrieval service
+- Did not implement content endpoints (SEC, Finnhub, GNews)
+- Did not alter Firebase authentication (token validation logic unchanged)
+- Did not move authorization into this layer (permissions data access moved to service, but authorization logic stays in `require_permission`)
+- Did not restructure PostgreSQL schema
+- Did not introduce new frameworks, ORMs, or database drivers
+- Continued using existing `psycopg2` connection pool and `query_dict` pattern
+
+#### Issues Encountered and Resolutions
+
+1. **Middleware monkeypatch targets changed after refactoring.** The middleware no longer imports `get_user_by_firebase_uid` or `get_user_by_id`, so tests that monkeypatched those names in the middleware module failed with `AttributeError`. Resolution: Updated tests to monkeypatch the service layer (`app.services.user_service`) and dependency layer (`app.auth.dependencies`) instead.
+
+2. **Python monkeypatch import vs. attribute patching.** When `dependencies.py` does `from app.services.user_service import get_authenticated_user`, the name `get_authenticated_user` in `dependencies.py`'s namespace is a direct reference to the function object. Monkeypatching `app.services.user_service.get_authenticated_user` changes the attribute on the service module but doesn't update the reference in the dependencies module. Resolution: Monkeypatch `app.auth.dependencies.get_authenticated_user` (the name in the dependency module's namespace) instead of `app.services.user_service.get_authenticated_user`.
+
+3. **Database failure exception handling in dependencies.** When the service layer raises an exception (e.g., database connection lost), it propagates through the dependency to FastAPI, which returns a 500 error with a stack trace. This exposes internal implementation details. Resolution: Added try/except blocks in `get_current_application_user` to catch exceptions, log them as `authentication_internal_error`, and return a generic "Internal server error" HTTP 500 response.
+
+4. **Duplicate test function.** The test file had a duplicate `test_database_failure_during_internal_user_lookup_returns_500` function — one updated to use the service layer and one still using the old middleware monkeypatch target. Resolution: Removed the duplicate with old monkeypatch targets.
+
+#### Test Results
+
+All 23 tests pass (3 skipped due to PostgreSQL not being available for integration tests):
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_auth_middleware.py` (8 tests) | ✅ All pass |
+| `tests/test_user_sync.py` (2 pass, 3 skip) | ✅ Pass |
+| `tests/test_token.py` (7 tests) | ✅ All pass |
+| `tests/test_hasher.py` (4 tests) | ✅ All pass |
+| **Total** | **23/23 pass** |
+
+#### Hard Stop for 2.1
+
+Sub-Layer 2.1 is complete. The service/database boundary exists, the existing User data passes through that boundary, the database session lifecycle is verified, and the architecture is demonstrated with the User retrieval operation.
+
+**STOP — Sub-Layer 2.1 complete.**
