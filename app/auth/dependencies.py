@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import logging
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from starlette.requests import Request
 
 from app.auth.models import User
 from app.auth.permissions import ALL_PERMISSIONS
-from app.db import query_dict
+from app.services.user_service import get_authenticated_user, get_authenticated_user_by_id
+
+logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -38,20 +42,49 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 async def get_current_application_user(request: Request) -> User:
-    current_user = getattr(request.state, "current_user", None)
-    if current_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-    return current_user
+    firebase_uid = getattr(request.state, "firebase_uid", None)
+    user_id = getattr(request.state, "user_id", None)
+    if firebase_uid is not None:
+        try:
+            user = get_authenticated_user(firebase_uid)
+        except Exception:
+            logger.error("authentication_internal_error: reason=postgres_lookup_failed firebase_uid=%s", firebase_uid, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error",
+            )
+        if user is None:
+            logger.warning("authentication_failed: reason=postgres_user_not_found firebase_uid=%s", firebase_uid)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authenticated Firebase identity has no associated application user",
+            )
+        return user
+    if user_id is not None:
+        try:
+            user = get_authenticated_user_by_id(user_id)
+        except Exception:
+            logger.error("authentication_internal_error: reason=postgres_lookup_failed user_id=%s", user_id, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error",
+            )
+        if user is None:
+            logger.warning("authentication_failed: reason=postgres_user_not_found user_id=%s", user_id)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authenticated token has no associated application user",
+            )
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+    )
 
 
 async def get_current_permissions(user_id: int = Depends(get_current_user)) -> set[str]:
-    rows = query_dict(
-        "SELECT permission_name FROM user_permissions_index WHERE user_id = %s",
-        (user_id,),
-    )
+    from app.services.user_service import get_user_permissions
+    rows = get_user_permissions(user_id)
     return {row["permission_name"] for row in rows}
 
 

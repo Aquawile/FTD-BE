@@ -8,8 +8,6 @@ from starlette.responses import JSONResponse
 
 from app.auth.exceptions import AuthenticationError, AuthenticationInternalError
 from app.auth.firebase_auth import validate_firebase_token_with_reason
-from app.auth.models import User
-from app.auth.repository import get_user_by_firebase_uid, get_user_by_id
 from app.auth.token import verify_token
 
 logger = logging.getLogger(__name__)
@@ -59,22 +57,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.firebase_uid = firebase_uid
             request.state.email = firebase_user.get("email")
             request.state.auth_method = "firebase"
-            try:
-                user_data = get_user_by_firebase_uid(firebase_uid)
-            except Exception:
-                logger.error("authentication_internal_error: reason=postgres_lookup_failed firebase_uid=%s path=%s", firebase_uid, path, exc_info=True)
-                return JSONResponse(
-                    status_code=500,
-                    content={"detail": "Internal server error"},
-                )
-            if user_data is None:
-                logger.warning("authentication_failed: reason=postgres_user_not_found firebase_uid=%s path=%s", firebase_uid, path)
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Authenticated Firebase identity has no associated application user"},
-                )
-            request.state.current_user = User(**user_data)
-            logger.info("authentication_succeeded: method=firebase firebase_uid=%s user_id=%s path=%s", firebase_uid, user_data["id"], path)
+            logger.info("authentication_succeeded: method=firebase firebase_uid=%s path=%s", firebase_uid, path)
             return await call_next(request)
 
         if firebase_reason == "expired":
@@ -110,21 +93,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user_id = resolved_user_id
         request.state.email = email
         request.state.auth_method = "internal"
-        try:
-            user_data = get_user_by_id(resolved_user_id)
-        except Exception:
-            logger.error("authentication_internal_error: reason=postgres_lookup_failed user_id=%s path=%s", resolved_user_id, path, exc_info=True)
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "Internal server error"},
-            )
-        if user_data is None:
-            logger.warning("authentication_failed: reason=postgres_user_not_found user_id=%s path=%s", resolved_user_id, path)
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Authenticated token has no associated application user"},
-            )
-        request.state.current_user = User(**user_data)
         logger.info("authentication_succeeded: method=internal user_id=%s path=%s", resolved_user_id, path)
 
         return await call_next(request)

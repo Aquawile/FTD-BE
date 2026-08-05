@@ -9,6 +9,7 @@ from app.auth.models import LoginRequest, LoginResponse, User, normalize_email
 from app.auth.token import create_access_token
 from app.auth.repository import get_user_by_email
 from app.auth.dependencies import get_current_application_user
+from app.services.user_service import get_authenticated_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
