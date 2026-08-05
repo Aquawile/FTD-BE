@@ -2838,3 +2838,120 @@ This environment does not have a running PostgreSQL instance (missing `PGHOST`, 
 Layer Two is complete. The authenticated API can perform its defined CRUD operations and representative relational aggregation against the PostgreSQL User domain. The service/database boundary is established, response models are explicit, PostgreSQL constraints behave correctly, authentication is enforced, and the API contract has been manually exercised through HTTP with successful and failure cases understood.
 
 **STOP — Layer Two complete.**
+
+### 42 Sub-Layer 3.1 — Service Layer Architecture and Data Access Boundary
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** 2395704c
+
+#### What Was Implemented
+
+Sub-Layer 3.1 establishes the structural boundary between the backend's HTTP framework, application service logic, and PostgreSQL data access. The service layer contains application operations rather than HTTP routes. A service function accepts the information necessary to perform an application operation, obtains the appropriate database resources through the existing database-access mechanism, executes the required data operation, enforce the application-level rules relevant to that operation, and returns a predictable application-level result.
+
+The service layer must not construct `JSONResponse`, inspect HTTP headers, read bearer tokens, or directly manipulate FastAPI request objects.
+
+##### Repository Layer Changes
+
+**`app/auth/repository.py`** — Added `get_user_permissions(user_id)` to encapsulate the raw database query:
+
+```python
+def get_user_permissions(user_id: int) -> list[dict[str, object]]:
+    """Retrieve permission names for a user."""
+    rows = query_dict(
+        "SELECT permission_name FROM user_permissions_index WHERE user_id = %s",
+        (user_id,),
+    )
+    return rows
+```
+
+This function was previously implemented directly inside `app/services/user_service.py` with a local import of `query_dict` from `app.db`. Moving it to the repository ensures the service layer never bypasses the repository boundary.
+
+##### Service Layer Refactoring
+
+**`app/services/user_service.py`** — The service layer was refactored to eliminate direct database access and fix pre-existing naming conflicts:
+
+1. **`get_user_permissions`** — Now routes through `repo_get_user_permissions` (aliased repository import) instead of directly importing `query_dict` from `app.db`.
+
+2. **`get_user_with_permissions`** — Refactored from a raw passthrough to a meaningful service operation:
+   - Returns a typed `UserPermissionsResponse` Pydantic model instead of a raw `dict | None`
+   - Enforces the application contract by normalizing the permissions collection to a `list[str]` (handles `None` and non-list values from `ARRAY_AGG`)
+   - Transforms the raw database row into the domain model, omitting internal fields like `created_at` and `updated_at` that are not part of the API response contract
+
+3. **Naming conflict fixes** — The following service functions had pre-existing bugs where they would recursively call themselves instead of the repository function because the imported names shadowed the local function names:
+   - `create_user` service → aliased to `repo_create_user`
+   - `update_user` service → aliased to `repo_update_user`
+   - `get_user_with_permissions` service → aliased to `repo_get_user_with_permissions`
+
+4. **No FastAPI imports** — The service layer contains no imports from `fastapi`, `starlette`, or any HTTP framework. It operates purely on application-level domain models (`User`, `UserPermissionsResponse`, `UserCreateRequest`, `UserUpdateRequest`) and the repository layer.
+
+##### Package Exports
+
+**`app/services/__init__.py`** — Added explicit exports for all service functions:
+
+```python
+from app.services.user_service import (
+    create_user,
+    delete_user,
+    get_authenticated_user,
+    get_authenticated_user_by_id,
+    get_user_permissions,
+    get_user_with_permissions,
+    update_user,
+)
+
+__all__ = [
+    "create_user",
+    "delete_user",
+    "get_authenticated_user",
+    "get_authenticated_user_by_id",
+    "get_user_permissions",
+    "get_user_with_permissions",
+    "update_user",
+]
+```
+
+##### Router Adaptation
+
+**`app/auth/router.py`** — Updated the existing `/auth/me/user/permissions` endpoint to consume the new `UserPermissionsResponse` return type directly from the service layer, removing redundant model construction in the route handler.
+
+##### Service Layer Boundary
+
+The completed service-layer boundary:
+
+```text
+HTTP request (FastAPI/Starlette)
+  ↓ [HTTP boundary]
+FastAPI router / dependency
+  ↓ [Auth boundary]
+Authenticated user identity (Firebase UID or internal user ID)
+  ↓ [Service boundary]
+Service function (app/services/user_service.py)
+  ↓ [Repository boundary]
+Repository function (app/auth/repository.py)
+  ↓ [Database boundary]
+query_dict / get_connection (app/db.py)
+  ↓
+PostgreSQL
+```
+
+- **Service layer receives an already-established authenticated user identity** or internal PostgreSQL user representation rather than independently parsing Firebase tokens. Firebase token verification remains the responsibility of the authentication layer (`app/auth/dependencies.py` and `app/auth/middleware.py`).
+- **Service layer does not construct JSON responses, inspect HTTP headers, read bearer tokens, or manipulate FastAPI request objects.**
+- **Repository layer encapsulates all raw SQL and database connection management.** The service layer only calls repository functions and transforms results into domain models.
+
+##### Existing Models Reused
+
+- `User` — Application-level identity representation
+- `UserCreateRequest` — Request model for creating users
+- `UserUpdateRequest` — Request model for updating users
+- `UserPermissionsResponse` — Response model for user with permissions
+- `normalize_email` — Email normalization utility
+- `hash_password` — Password hashing utility
+
+No new models, tables, workspaces, or domain entities were introduced.
+
+#### Hard Stop for 3.1
+
+Sub-Layer 3.1 is complete. The service-layer boundary is clearly defined through which application operations can be implemented without depending on FastAPI. The boundary is demonstrated with the user domain model: `get_user_permissions` and `get_user_with_permissions` operate on authenticated application identities provided to them, route all database access through the repository, enforce application-level rules (email normalization, password hashing, response model shaping), and return predictable application-level results.
+
+**STOP — Sub-Layer 3.1 complete.**
