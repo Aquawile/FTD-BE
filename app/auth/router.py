@@ -17,6 +17,7 @@ from app.auth.models import (
 from app.auth.token import create_access_token
 from app.auth.repository import get_user_by_email
 from app.auth.dependencies import get_current_application_user
+from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError
 from app.services.user_service import (
     get_authenticated_user,
     create_user,
@@ -102,7 +103,13 @@ def auth_create_user(
     Requires authentication. The authenticated user's identity
     establishes the context for the operation.
     """
-    return create_user(request)
+    try:
+        return create_user(request)
+    except UserAlreadyExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email or Firebase identity already exists",
+        )
 
 
 @router.patch("/me/user", response_model=User)
@@ -116,9 +123,15 @@ def auth_update_user(
     ``firebase_uid``, ``id``, ``created_at``, and ``password_hash``
     are not updatable through this endpoint.
     """
-    updated = update_user(current_user.id, request)
-    if updated is None:
+    try:
+        updated = update_user(current_user.id, request)
+    except UserNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    except UserAlreadyExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email already exists",
+        )
     return updated
 
 
@@ -152,7 +165,7 @@ def auth_me_user_permissions(
     application-level JSON rather than needing to understand the
     foreign-key relationship or make separate requests.
     """
-    row = get_user_with_permissions(current_user.id)
-    if row is None:
+    try:
+        return get_user_with_permissions(current_user.id)
+    except UserNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return row

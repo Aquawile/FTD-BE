@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 from app.auth.models import User
 from app.auth.permissions import ALL_PERMISSIONS
+from app.services.exceptions import UserNotFoundError
 from app.services.user_service import get_authenticated_user, get_authenticated_user_by_id
 
 logger = logging.getLogger(__name__)
@@ -47,33 +48,33 @@ async def get_current_application_user(request: Request) -> User:
     if firebase_uid is not None:
         try:
             user = get_authenticated_user(firebase_uid)
+        except UserNotFoundError:
+            logger.warning("authentication_failed: reason=postgres_user_not_found firebase_uid=%s", firebase_uid)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authenticated Firebase identity has no associated application user",
+            )
         except Exception:
             logger.error("authentication_internal_error: reason=postgres_lookup_failed firebase_uid=%s", firebase_uid, exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error",
             )
-        if user is None:
-            logger.warning("authentication_failed: reason=postgres_user_not_found firebase_uid=%s", firebase_uid)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authenticated Firebase identity has no associated application user",
-            )
         return user
     if user_id is not None:
         try:
             user = get_authenticated_user_by_id(user_id)
+        except UserNotFoundError:
+            logger.warning("authentication_failed: reason=postgres_user_not_found user_id=%s", user_id)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authenticated token has no associated application user",
+            )
         except Exception:
             logger.error("authentication_internal_error: reason=postgres_lookup_failed user_id=%s", user_id, exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error",
-            )
-        if user is None:
-            logger.warning("authentication_failed: reason=postgres_user_not_found user_id=%s", user_id)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authenticated token has no associated application user",
             )
         return user
     raise HTTPException(

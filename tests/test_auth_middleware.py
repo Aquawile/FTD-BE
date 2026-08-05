@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.auth.models import User
+from app.services.exceptions import UserNotFoundError
+from app.services.user_service import get_authenticated_user
 
 client = TestClient(app)
 
@@ -48,7 +50,7 @@ def test_valid_firebase_token_without_application_user_returns_401(monkeypatch, 
     )
     monkeypatch.setattr(
         "app.auth.dependencies.get_authenticated_user",
-        lambda uid: None,
+        lambda uid: (_ for _ in ()).throw(UserNotFoundError("test")),
     )
 
     with caplog.at_level(logging.WARNING, logger="app.auth.dependencies"):
