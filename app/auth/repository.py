@@ -70,6 +70,29 @@ def update_user(user_id: int, email: str | None, is_active: bool | None) -> dict
     return rows[0]
 
 
+def get_user_with_permissions(user_id: int) -> dict | None:
+    """Retrieve a user and their permission names in a single relational query.
+
+    This joins the ``users`` table with ``user_permissions_index`` on the
+    foreign-key column ``user_permissions_index.user_id`` referencing
+    ``users.id``. The query selects only the fields required by the
+    application response contract, avoiding an entire table scan or
+    unnecessary column retrieval.
+    """
+    rows = query_dict(
+        "SELECT u.id, u.firebase_uid, u.email, u.is_active, u.created_at, u.updated_at, "
+        "ARRAY_AGG(upi.permission_name) AS permissions "
+        "FROM users u "
+        "LEFT JOIN user_permissions_index upi ON upi.user_id = u.id "
+        "WHERE u.id = %s "
+        "GROUP BY u.id, u.firebase_uid, u.email, u.is_active, u.created_at, u.updated_at",
+        (user_id,),
+    )
+    if rows:
+        return rows[0]
+    return None
+
+
 def deactivate_user(user_id: int) -> bool:
     """Soft-delete a user by setting is_active to FALSE. Returns True if a row was updated."""
     result = query(

@@ -10,6 +10,7 @@ from app.auth.models import (
     LoginResponse,
     User,
     UserCreateRequest,
+    UserPermissionsResponse,
     UserUpdateRequest,
     normalize_email,
 )
@@ -19,8 +20,9 @@ from app.auth.dependencies import get_current_application_user
 from app.services.user_service import (
     get_authenticated_user,
     create_user,
-    update_user,
     delete_user,
+    get_user_with_permissions,
+    update_user,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -135,3 +137,28 @@ def auth_delete_user(
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return None
+
+
+@router.get("/me/user/permissions", response_model=UserPermissionsResponse)
+def auth_me_user_permissions(
+    current_user: User = Depends(get_current_application_user),
+) -> UserPermissionsResponse:
+    """Retrieve the authenticated user with their granted permissions.
+
+    This endpoint demonstrates a relational aggregation: a single
+    query joins the ``users`` table with ``user_permissions_index``
+    to assemble the user identity and their permissions into one
+    coherent response object. The client receives the result as
+    application-level JSON rather than needing to understand the
+    foreign-key relationship or make separate requests.
+    """
+    row = get_user_with_permissions(current_user.id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return UserPermissionsResponse(
+        id=row["id"],
+        firebase_uid=row.get("firebase_uid"),
+        email=row["email"],
+        is_active=row["is_active"],
+        permissions=row.get("permissions") or [],
+    )

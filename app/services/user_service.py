@@ -6,6 +6,7 @@ from app.auth.repository import (
     deactivate_user,
     get_user_by_firebase_uid,
     get_user_by_id,
+    get_user_with_permissions,
     update_user,
 )
 from app.auth.hasher import hash_password
@@ -53,6 +54,18 @@ def get_user_permissions(user_id: int) -> list[dict[str, object]]:
         "SELECT permission_name FROM user_permissions_index WHERE user_id = %s",
         (user_id,),
     )
+
+
+def get_user_with_permissions(user_id: int) -> dict | None:
+    """Retrieve a user and their permissions in a single relational query.
+
+    This service operation expresses the intent of assembling an
+    application-level response that combines user identity with
+    their granted permissions. The database-access layer performs
+    the join; this function orchestrates the call and returns
+    the raw result row.
+    """
+    return get_user_with_permissions(user_id)
 
 
 def create_user(request: UserCreateRequest) -> User:

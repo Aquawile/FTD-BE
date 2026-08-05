@@ -68,5 +68,21 @@ class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
+class UserPermissionsResponse(BaseModel):
+    """Response model for a user with their granted permissions.
+
+    This model assembles the user identity fields with a list of
+    permission names retrieved through a relational join. It exposes
+    only the fields the API contract intends to return, not the
+    full PostgreSQL row.
+    """
+
+    id: int
+    firebase_uid: Optional[str] = None
+    email: str
+    is_active: bool
+    permissions: list[str]
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()
