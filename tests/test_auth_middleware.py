@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -11,43 +13,51 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_missing_authorization_header_returns_401() -> None:
-    response = client.get("/auth/me/user")
+def test_missing_authorization_header_returns_401(caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user")
     assert response.status_code == 401
     assert response.json() == {"detail": "Missing Authorization header"}
+    assert any("authentication_failed" in r.message and "reason=missing_authorization_header" in r.message for r in caplog.records)
 
 
-def test_invalid_authorization_header_format_returns_401() -> None:
-    response = client.get("/auth/me/user", headers={"Authorization": "Token abc"})
+def test_invalid_authorization_header_format_returns_401(caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers={"Authorization": "Token abc"})
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid Authorization header format"}
+    assert any("authentication_failed" in r.message and "reason=invalid_header_format" in r.message for r in caplog.records)
 
 
-def test_invalid_token_returns_401(monkeypatch) -> None:
-    monkeypatch.setattr("app.auth.middleware.validate_firebase_token", lambda token: None)
+def test_invalid_token_returns_401(monkeypatch, caplog) -> None:
+    monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "invalid"))
     monkeypatch.setattr("app.auth.middleware.verify_token", lambda token: None)
 
-    response = client.get("/auth/me/user", headers=_bearer("invalid-token"))
+    with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers=_bearer("invalid-token"))
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid or expired token"}
+    assert any("authentication_failed" in r.message and "reason=firebase_token_invalid" in r.message for r in caplog.records)
 
 
-def test_valid_firebase_token_without_application_user_returns_401(monkeypatch) -> None:
+def test_valid_firebase_token_without_application_user_returns_401(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
-        "app.auth.middleware.validate_firebase_token",
-        lambda token: {"firebase_uid": "firebase-uid-123", "email": "user@example.com"},
+        "app.auth.middleware.validate_firebase_token_with_reason",
+        lambda token: ({"firebase_uid": "firebase-uid-123", "email": "user@example.com"}, None),
     )
     monkeypatch.setattr("app.auth.middleware.get_user_by_firebase_uid", lambda uid: None)
 
-    response = client.get("/auth/me/user", headers=_bearer("valid-token"))
+    with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers=_bearer("valid-token"))
     assert response.status_code == 401
     assert response.json() == {"detail": "Authenticated Firebase identity has no associated application user"}
+    assert any("authentication_failed" in r.message and "reason=postgres_user_not_found" in r.message for r in caplog.records)
 
 
-def test_valid_firebase_token_resolves_postgres_user(monkeypatch) -> None:
+def test_valid_firebase_token_resolves_postgres_user(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
-        "app.auth.middleware.validate_firebase_token",
-        lambda token: {"firebase_uid": "firebase-uid-456", "email": "user@example.com"},
+        "app.auth.middleware.validate_firebase_token_with_reason",
+        lambda token: ({"firebase_uid": "firebase-uid-456", "email": "user@example.com"}, None),
     )
     monkeypatch.setattr(
         "app.auth.middleware.get_user_by_firebase_uid",
@@ -61,7 +71,8 @@ def test_valid_firebase_token_resolves_postgres_user(monkeypatch) -> None:
         },
     )
 
-    response = client.get("/auth/me/user", headers=_bearer("valid-token"))
+    with caplog.at_level(logging.INFO, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers=_bearer("valid-token"))
     assert response.status_code == 200
     assert response.json() == {
         "id": 42,
@@ -71,3 +82,50 @@ def test_valid_firebase_token_resolves_postgres_user(monkeypatch) -> None:
         "created_at": "2026-08-04T00:00:00",
         "updated_at": "2026-08-04T00:00:00",
     }
+    assert any("authentication_succeeded" in r.message and "method=firebase" in r.message for r in caplog.records)
+
+
+def test_database_failure_during_firebase_user_lookup_returns_500(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(
+        "app.auth.middleware.validate_firebase_token_with_reason",
+        lambda token: ({"firebase_uid": "firebase-uid-789", "email": "user@example.com"}, None),
+    )
+    monkeypatch.setattr(
+        "app.auth.middleware.get_user_by_firebase_uid",
+        lambda uid: (_ for _ in ()).throw(RuntimeError("database connection lost")),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers=_bearer("valid-token"))
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert any("authentication_internal_error" in r.message and "reason=postgres_lookup_failed" in r.message for r in caplog.records)
+
+
+def test_expired_firebase_token_returns_401(monkeypatch, caplog) -> None:
+    monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "expired"))
+    monkeypatch.setattr("app.auth.middleware.verify_token", lambda token: None)
+
+    with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers=_bearer("expired-token"))
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid or expired token"}
+    assert any("authentication_failed" in r.message and "reason=firebase_token_expired" in r.message for r in caplog.records)
+
+
+def test_database_failure_during_internal_user_lookup_returns_500(monkeypatch, caplog) -> None:
+    monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "invalid"))
+    monkeypatch.setattr(
+        "app.auth.middleware.verify_token",
+        lambda token: {"sub": "99", "email": "user@example.com"},
+    )
+    monkeypatch.setattr(
+        "app.auth.middleware.get_user_by_id",
+        lambda uid: (_ for _ in ()).throw(RuntimeError("database connection lost")),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.auth.middleware"):
+        response = client.get("/auth/me/user", headers=_bearer("valid-token"))
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert any("authentication_internal_error" in r.message and "reason=postgres_lookup_failed" in r.message for r in caplog.records)

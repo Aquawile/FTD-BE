@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 import psycopg2
@@ -7,6 +8,8 @@ import psycopg2.extras
 
 from app.auth.models import User, normalize_email
 from app.db import get_connection
+
+logger = logging.getLogger(__name__)
 
 
 def _row_to_user(row: Mapping[str, Any]) -> User:
@@ -24,11 +27,13 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
     """Synchronize a verified Firebase identity to the PostgreSQL users table."""
     firebase_uid = verified_identity.get("firebase_uid")
     if not isinstance(firebase_uid, str) or not firebase_uid.strip():
+        logger.error("user_sync_failed: reason=missing_firebase_uid identity=%s", verified_identity.get("firebase_uid"))
         raise ValueError("firebase_uid is required")
 
     email = verified_identity.get("email")
     normalized_email = normalize_email(email) if isinstance(email, str) else ""
     if not normalized_email:
+        logger.error("user_sync_failed: reason=missing_email firebase_uid=%s", firebase_uid)
         raise ValueError("email is required")
 
     firebase_uid = firebase_uid.strip()
@@ -46,6 +51,7 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
             existing_row = cur.fetchone()
             if existing_row is not None:
                 conn.commit()
+                logger.info("user_sync_reused: firebase_uid=%s user_id=%s", firebase_uid, existing_row["id"])
                 return _row_to_user(existing_row)
 
             try:
@@ -59,6 +65,7 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
             except psycopg2.IntegrityError as exc:
                 conn.rollback()
                 if getattr(exc, "pgcode", None) != "23505":
+                    logger.error("user_sync_failed: reason=database_error firebase_uid=%s", firebase_uid, exc_info=True)
                     raise
 
                 cur.execute(
@@ -68,9 +75,13 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
                 )
                 existing_row = cur.fetchone()
                 if existing_row is None:
+                    logger.error("user_sync_failed: reason=integrity_error_no_row firebase_uid=%s", firebase_uid)
                     raise
+                logger.info("user_sync_reused: firebase_uid=%s user_id=%s", firebase_uid, existing_row["id"])
                 return _row_to_user(existing_row)
 
             if created_row is None:
+                logger.error("user_sync_failed: reason=empty_insert_result firebase_uid=%s", firebase_uid)
                 raise RuntimeError("Failed to create application user")
+            logger.info("user_sync_created: firebase_uid=%s user_id=%s", firebase_uid, created_row["id"])
             return _row_to_user(created_row)
