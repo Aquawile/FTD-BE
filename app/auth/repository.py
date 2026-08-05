@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import psycopg2
+import psycopg2.extras
+
 from app.auth.models import normalize_email
-from app.db import query, query_dict
+from app.db import get_connection, query_dict
 
 
 def get_user_by_email(email: str) -> dict | None:
@@ -37,14 +40,19 @@ def get_user_by_firebase_uid(firebase_uid: str) -> dict | None:
 
 def create_user(email: str, password_hash: str, firebase_uid: str | None) -> dict:
     """Insert a new user record and return the created row."""
-    rows = query_dict(
-        "INSERT INTO users (email, password_hash, firebase_uid) VALUES (%s, %s, %s) "
-        "RETURNING id, firebase_uid, email, is_active, created_at, updated_at",
-        (email, password_hash, firebase_uid),
-    )
-    if not rows:
-        raise RuntimeError("Failed to create user")
-    return rows[0]
+    with get_connection() as conn:
+        conn.autocommit = False
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "INSERT INTO users (email, password_hash, firebase_uid) VALUES (%s, %s, %s) "
+                "RETURNING id, firebase_uid, email, is_active, created_at, updated_at",
+                (email, password_hash, firebase_uid),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            if row is None:
+                raise RuntimeError("Failed to create user")
+            return dict(row)
 
 
 def update_user(user_id: int, email: str | None, is_active: bool | None) -> dict | None:
@@ -60,14 +68,19 @@ def update_user(user_id: int, email: str | None, is_active: bool | None) -> dict
     if not updates:
         return get_user_by_id(user_id)
     params.append(user_id)
-    rows = query_dict(
-        f"UPDATE users SET {', '.join(updates)} WHERE id = %s "
-        "RETURNING id, firebase_uid, email, is_active, created_at, updated_at",
-        tuple(params),
-    )
-    if not rows:
-        return None
-    return rows[0]
+    with get_connection() as conn:
+        conn.autocommit = False
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"UPDATE users SET {', '.join(updates)} WHERE id = %s "
+                "RETURNING id, firebase_uid, email, is_active, created_at, updated_at",
+                tuple(params),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            if row is None:
+                return None
+            return dict(row)
 
 
 def get_user_with_permissions(user_id: int) -> dict | None:
@@ -95,8 +108,13 @@ def get_user_with_permissions(user_id: int) -> dict | None:
 
 def deactivate_user(user_id: int) -> bool:
     """Soft-delete a user by setting is_active to FALSE. Returns True if a row was updated."""
-    result = query(
-        "UPDATE users SET is_active = FALSE WHERE id = %s AND is_active = TRUE RETURNING id",
-        (user_id,),
-    )
-    return len(result) > 0
+    with get_connection() as conn:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET is_active = FALSE WHERE id = %s AND is_active = TRUE RETURNING id",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row is not None
