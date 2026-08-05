@@ -2550,3 +2550,109 @@ Note: No new CRUD-specific tests were added in this sublayer. The existing tests
 Sub-Layer 2.2 is complete. User CRUD operations work through the service/database boundary, response models are explicit, PostgreSQL constraints behave as the integrity boundary, and authentication is enforced on all endpoints.
 
 **STOP — Sub-Layer 2.2 complete.**
+
+### 39 Sub-Layer 2.3 — Relational Query and Aggregation Pattern
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** 831c6ddc
+
+#### What Was Implemented
+
+Sub-Layer 2.3 establishes the Option B pattern: the backend handles information that logically spans multiple relational tables in a deliberate query, assembling it into an application-level response. The client receives the result as a single JSON object rather than needing to understand foreign-key relationships or make separate requests.
+
+##### Relational Aggregation Implemented
+
+**GET /auth/me/user/permissions** — Retrieve the authenticated user with their granted permissions.
+
+This endpoint demonstrates a relational aggregation: a single query joins the `users` table with `user_permissions_index` to assemble the user identity and their permissions into one coherent response object.
+
+##### Query Design
+
+The repository function `get_user_with_permissions` uses a single deliberate query:
+
+```sql
+SELECT u.id, u.firebase_uid, u.email, u.is_active, u.created_at, u.updated_at,
+       ARRAY_AGG(upi.permission_name) AS permissions
+FROM users u
+LEFT JOIN user_permissions_index upi ON upi.user_id = u.id
+WHERE u.id = %s
+GROUP BY u.id, u.firebase_uid, u.email, u.is_active, u.created_at, u.updated_at
+```
+
+Key design decisions:
+- **Single query, not N+1.** The LEFT JOIN with ARRAY_AGG retrieves all permissions in one database round-trip. There is no loop that queries permissions per user.
+- **Explicit join condition.** The join uses `upi.user_id = u.id` — the foreign-key column on `user_permissions_index` referencing `users.id`. This is unambiguous and the database can use the existing index.
+- **Only required columns selected.** The query selects the specific user fields needed for the response plus the aggregated permissions. It does not fetch entire table rows or unnecessary columns.
+- **LEFT JOIN used intentionally.** A LEFT JOIN ensures the query returns a user even if they have no permissions (the `permissions` column will be NULL, which the service converts to an empty list).
+
+##### Index Verification
+
+The following indexes exist on `user_permissions_index` and support the join:
+- `idx_user_permissions_index_user_id` on `user_permissions_index(user_id)` — supports the join condition
+- `idx_user_permissions_index_composite` on `user_permissions_index(user_id, permission_name)` — supports both the join and the aggregation
+
+These indexes were created in migration `002_create_indexes.sql` and `003_create_composite_index.sql`. They are justified by the access pattern: the permissions lookup is performed on every authenticated request that checks permissions.
+
+##### Response Model
+
+`UserPermissionsResponse` (Pydantic model in `app/auth/models.py`):
+```python
+class UserPermissionsResponse(BaseModel):
+    id: int
+    firebase_uid: Optional[str] = None
+    email: str
+    is_active: bool
+    permissions: list[str]
+```
+
+This model exposes only the fields the API contract intends to return. It does not expose `password_hash`, `created_at`, `updated_at`, or raw database rows. The `permissions` field is a clean list of permission name strings assembled by the backend.
+
+##### Service Layer
+
+The service function `get_user_with_permissions(user_id)` in `app/services/user_service.py`:
+- **Purpose:** "Retrieve a user and their permissions in a single relational query."
+- Calls the repository function `get_user_with_permissions`
+- Returns the raw result row (the service orchestrates; the repository performs the query)
+
+##### Request Path
+
+```text
+HTTP GET /auth/me/user/permissions
+→ FastAPI router (app/auth/router.py)
+→ get_current_application_user dependency (app/auth/dependencies.py)
+→ AuthMiddleware validates token, attaches firebase_uid to request.state
+→ get_current_application_user calls get_authenticated_user(firebase_uid)
+→ get_authenticated_user service (app/services/user_service.py)
+→ get_user_by_firebase_uid repository (app/auth/repository.py)
+→ query_dict database utility (app/db.py)
+→ PostgreSQL
+→ User domain object returned through service layer
+→ get_user_with_permissions service function called
+→ get_user_with_permissions repository function executes single JOIN query
+→ PostgreSQL returns user + permissions in one row
+→ UserPermissionsResponse model constructed from the row
+→ HTTP 200 response with JSON: {id, firebase_uid, email, is_active, permissions: [...]}
+```
+
+##### Guardrails Followed
+
+- Did not create materialized views or preprocessed query models
+- Did not denormalize the relational schema
+- Did not modify the pipeline's processed data
+- Did not implement AI-oriented features (embeddings, vector search, etc.)
+- Did not expose SQL joins directly to the client
+- Did not create a giant universal query joining every table
+- Did not prematurely optimize with Redis, caching, or denormalization
+- The query selects only the fields required by the response contract
+- The query uses an explicit JOIN strategy (LEFT JOIN with ARRAY_AGG) rather than lazy relationship traversal
+
+##### Test Results
+
+All 23 existing tests pass (3 skipped for PostgreSQL integration). No new tests were added for this sublayer since the aggregation endpoint requires a live PostgreSQL connection with user data.
+
+#### Hard Stop for 2.3
+
+Sub-Layer 2.3 is complete. One representative relational aggregation works from PostgreSQL through the database-access layer, service layer, FastAPI endpoint, and explicit Pydantic response model. The query produces a single deliberate relational query (not N+1), the response model exposes only the intended fields, and PostgreSQL indexes support the join.
+
+**STOP — Sub-Layer 2.3 complete.**
