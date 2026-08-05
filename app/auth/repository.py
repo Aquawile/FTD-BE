@@ -38,6 +38,15 @@ def get_user_by_firebase_uid(firebase_uid: str) -> dict | None:
     return None
 
 
+def get_user_permissions(user_id: int) -> list[dict[str, object]]:
+    """Retrieve permission names for a user."""
+    rows = query_dict(
+        "SELECT permission_name FROM user_permissions_index WHERE user_id = %s",
+        (user_id,),
+    )
+    return rows
+
+
 def create_user(email: str, password_hash: str, firebase_uid: str | None) -> dict:
     """Insert a new user record and return the created row."""
     with get_connection() as conn:

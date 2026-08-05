@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from app.auth.models import User, UserCreateRequest, UserUpdateRequest
+from app.auth.models import User, UserCreateRequest, UserPermissionsResponse, UserUpdateRequest
+from app.auth.hasher import hash_password
+from app.auth.models import normalize_email
 from app.auth.repository import (
-    create_user,
+    create_user as repo_create_user,
     deactivate_user,
     get_user_by_firebase_uid,
     get_user_by_id,
-    get_user_with_permissions,
-    update_user,
+    get_user_permissions as repo_get_user_permissions,
+    get_user_with_permissions as repo_get_user_with_permissions,
+    update_user as repo_update_user,
 )
-from app.auth.hasher import hash_password
-from app.auth.models import normalize_email
 
 
 def get_authenticated_user(firebase_uid: str) -> User | None:
@@ -49,23 +50,31 @@ def get_user_permissions(user_id: int) -> list[dict[str, object]]:
     knows how to query PostgreSQL; this function orchestrates the call and
     returns the raw rows.
     """
-    from app.db import query_dict
-    return query_dict(
-        "SELECT permission_name FROM user_permissions_index WHERE user_id = %s",
-        (user_id,),
-    )
+    return repo_get_user_permissions(user_id)
 
 
-def get_user_with_permissions(user_id: int) -> dict | None:
-    """Retrieve a user and their permissions in a single relational query.
+def get_user_with_permissions(user_id: int) -> UserPermissionsResponse | None:
+    """Retrieve a user and their permissions as a typed application response.
 
-    This service operation expresses the intent of assembling an
-    application-level response that combines user identity with
-    their granted permissions. The database-access layer performs
-    the join; this function orchestrates the call and returns
-    the raw result row.
+    This service operation assembles an application-level response that combines
+    user identity with their granted permissions. The database-access layer
+    performs the relational join; this function enforces the application
+    contract by transforming the raw row into a typed response model and
+    ensuring the permissions collection is always a list.
     """
-    return get_user_with_permissions(user_id)
+    raw = repo_get_user_with_permissions(user_id)
+    if raw is None:
+        return None
+    permissions = raw.get("permissions") or []
+    if not isinstance(permissions, list):
+        permissions = list(permissions) if permissions else []
+    return UserPermissionsResponse(
+        id=raw["id"],
+        firebase_uid=raw.get("firebase_uid"),
+        email=raw["email"],
+        is_active=raw["is_active"],
+        permissions=permissions,
+    )
 
 
 def create_user(request: UserCreateRequest) -> User:
@@ -78,7 +87,7 @@ def create_user(request: UserCreateRequest) -> User:
     """
     email = normalize_email(request.email)
     password_hash = hash_password(request.password)
-    return User(**create_user(email, password_hash, request.firebase_uid))
+    return User(**repo_create_user(email, password_hash, request.firebase_uid))
 
 
 def update_user(user_id: int, request: UserUpdateRequest) -> User | None:
@@ -91,7 +100,7 @@ def update_user(user_id: int, request: UserUpdateRequest) -> User | None:
     """
     email = normalize_email(request.email) if request.email is not None else None
     is_active = request.is_active
-    result = update_user(user_id, email, is_active)
+    result = repo_update_user(user_id, email, is_active)
     if result is None:
         return None
     return User(**result)

@@ -155,10 +155,4 @@ def auth_me_user_permissions(
     row = get_user_with_permissions(current_user.id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return UserPermissionsResponse(
-        id=row["id"],
-        firebase_uid=row.get("firebase_uid"),
-        email=row["email"],
-        is_active=row["is_active"],
-        permissions=row.get("permissions") or [],
-    )
+    return row
