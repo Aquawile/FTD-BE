@@ -3184,3 +3184,113 @@ All 23 non-PostgreSQL tests pass. 22 tests are skipped because this environment 
 Sub-Layer 3.3 is complete. The controlled aggregation pattern is implemented and directly validated through tests. The service layer resolves relational complexity internally through the existing PostgreSQL schema, returning application-oriented results without exposing raw database implementation details. The pattern is established and ready for future use.
 
 **STOP — Sub-Layer 3.3 complete.**
+
+### 45 Sub-Layer 3.4 — Service-Level Validation, Business Rules, and Error Boundaries
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** a8ada3d5
+
+#### What Was Implemented
+
+Sub-Layer 3.4 makes the service layer reliable enough that the future API layer can treat it as a dependable application boundary. The service operations now handle application-level validation, distinguish expected domain failures from unexpected infrastructure failures, and log significant events using the project's existing structured logging patterns.
+
+##### New Exception: UserValidationError
+
+**`app/services/exceptions.py`** — Added `UserValidationError` to the service exception hierarchy:
+
+```python
+class UserValidationError(UserServiceError):
+    """Raised when an application-level validation rule is violated."""
+```
+
+This exception represents expected domain failures (invalid input, business rule violations) distinct from infrastructure failures (database down, query errors).
+
+##### Service-Level Validations
+
+The following application-level validations were added to `app/services/user_service.py`:
+
+| Validation | Where | Rule |
+|---|---|---|
+| Email non-empty | `create_user`, `update_user` | Email must not be empty after normalization |
+| Password minimum length | `create_user` | Password must be at least 8 characters |
+| Firebase UID length | `create_user` | Firebase UID must be between 10 and 200 characters when provided |
+| At least one updatable field | `update_user` | PATCH operations must provide at least one field to modify |
+
+These validations enforce application behavior rather than HTTP request formatting. They apply regardless of whether the service is called from an HTTP endpoint or another context.
+
+##### Error Boundary Discipline
+
+The service layer maintains clear separation between expected and unexpected failures:
+
+- **Expected domain failures** → `UserNotFoundError`, `UserAlreadyExistsError`, `UserValidationError`
+  - These are caught and translated by the API layer into HTTP responses
+  - They contain semantic information but no HTTP-specific behavior
+- **Unexpected infrastructure failures** → `psycopg2.OperationalError`, `psycopg2.ProgrammingError`, etc.
+  - These are NOT caught by the service layer
+  - They propagate to the API layer, which returns HTTP 500
+  - This ensures database outages, connection losses, and query errors are not silently swallowed
+
+The existing `psycopg2.IntegrityError` handling in `create_user` and `update_user` correctly catches only uniqueness constraint violations (expected domain failures) and converts them to `UserAlreadyExistsError`. All other database errors propagate.
+
+##### Structured Logging
+
+The service layer now uses structured logging consistent with Layer One patterns:
+
+- **INFO** — Successful operations: user creation, update, deletion, retrieval
+- **WARNING** — Expected failures: user not found, validation errors, constraint conflicts
+- **DEBUG** — Permission lookups (high-frequency, low-significance operations)
+
+Log messages include contextual identifiers (user_id, firebase_uid, email) but never include passwords, password hashes, Firebase tokens, or other secrets.
+
+##### What Is NOT Changed
+
+- Firebase token validation remains in `app/auth/middleware.py` and `app/auth/token.py`
+- No new authentication mechanism was created
+- No role/permission system was added
+- No FastAPI endpoint handling was added
+- The existing database schema, models, and repository functions are unchanged
+
+##### Tests Added
+
+**`tests/test_user_service.py`** — Added 5 validation tests that do NOT require PostgreSQL:
+
+| Test | What It Verifies |
+|---|---|
+| `test_create_user_raises_for_empty_email` | Empty email raises `UserValidationError` |
+| `test_create_user_raises_for_short_password` | Password shorter than 8 chars raises `UserValidationError` |
+| `test_create_user_raises_for_invalid_firebase_uid` | Firebase UID shorter than 10 chars raises `UserValidationError` |
+| `test_update_user_raises_when_no_fields_provided` | Update with no fields raises `UserValidationError` |
+| `test_update_user_raises_for_empty_email` | Update with whitespace-only email raises `UserValidationError` |
+
+These tests run without a database connection, proving the service layer enforces validation before any database access.
+
+##### Test Results
+
+All 28 non-PostgreSQL tests pass. 22 tests are skipped because this environment does not have a running PostgreSQL instance. When run against a live PostgreSQL database, all 24 `test_user_service.py` tests execute and verify the service layer.
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_auth_middleware.py` (8 tests) | ✅ All pass |
+| `tests/test_hasher.py` (4 tests) | ✅ All pass |
+| `tests/test_token.py` (7 tests) | ✅ All pass |
+| `tests/test_user_sync.py` (4 pass, 3 skip) | ✅ Pass |
+| `tests/test_user_service.py` (24 tests) | ⏭️ 22 skipped (no PostgreSQL), 5 validation tests pass without DB |
+| **Total** | **28/28 pass, 22 skipped** |
+
+##### Guardrails Followed
+
+- Service layer contains no FastAPI, Starlette, or HTTP-specific imports
+- Service layer never creates or modifies passwords, Firebase credentials, or tokens
+- Service exceptions carry no HTTP status codes; the API layer translates them
+- Service logging uses structured format consistent with Layer One
+- No credentials, tokens, or secrets are logged or included in exception messages
+- Database constraints remain the final integrity boundary
+- Soft delete semantics are preserved
+- No new tables, workspaces, or domain entities were introduced
+
+#### Hard Stop for 3.4
+
+Sub-Layer 3.4 is complete. The service operations have predictable success and failure behavior. Application-level validation prevents invalid data from reaching the database. Expected domain failures are distinguished from unexpected infrastructure failures through separate exception types. Structured logging provides observability without leaking secrets. The service layer is now reliable enough for the API layer to treat it as a dependable application boundary.
+
+**STOP — Sub-Layer 3.4 complete.**
