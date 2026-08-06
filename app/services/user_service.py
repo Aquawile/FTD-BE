@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import psycopg2
 
-from app.auth.models import User, UserCreateRequest, UserPermissionsResponse, UserUpdateRequest
+from app.auth.models import User, UserCreateRequest, UserPermissionsResponse, UserUpdateRequest, UserWithPermissionDetails, PermissionDetail
 from app.auth.hasher import hash_password
 from app.auth.models import normalize_email
 from app.auth.repository import (
@@ -10,6 +10,7 @@ from app.auth.repository import (
     deactivate_user,
     get_user_by_firebase_uid,
     get_user_by_id,
+    get_user_permission_details as repo_get_user_permission_details,
     get_user_permissions as repo_get_user_permissions,
     get_user_with_permissions as repo_get_user_with_permissions,
     update_user as repo_update_user,
@@ -87,6 +88,41 @@ def get_user_with_permissions(user_id: int) -> UserPermissionsResponse:
         firebase_uid=raw.get("firebase_uid"),
         email=raw["email"],
         is_active=raw["is_active"],
+        permissions=permissions,
+    )
+
+
+def get_user_with_permission_details(user_id: int) -> UserWithPermissionDetails:
+    """Assemble an application user's identity with full permission details through the normalized relational schema.
+
+    This service operation expresses the intent of combining a user's identity
+    with rich permission metadata (id, name, description) retrieved by joining
+    ``user_permissions`` with ``permissions``. The relational work is performed
+    entirely inside the backend boundary; the client receives a single
+    application-level response and does not need to understand the junction
+    table or issue separate requests.
+
+    Raises ``UserNotFoundError`` when no application user matches the provided
+    internal identifier.
+    """
+    rows = repo_get_user_permission_details(user_id)
+    if not rows:
+        raise UserNotFoundError(f"No application user found with id: {user_id}")
+    first = rows[0]
+    permissions = [
+        PermissionDetail(
+            id=row["permission_id"],
+            name=row["permission_name"],
+            description=row.get("permission_description"),
+        )
+        for row in rows
+        if row.get("permission_id") is not None
+    ]
+    return UserWithPermissionDetails(
+        id=first["id"],
+        firebase_uid=first.get("firebase_uid"),
+        email=first["email"],
+        is_active=first["is_active"],
         permissions=permissions,
     )
 

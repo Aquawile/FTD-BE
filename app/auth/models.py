@@ -84,5 +84,35 @@ class UserPermissionsResponse(BaseModel):
     permissions: list[str]
 
 
+class PermissionDetail(BaseModel):
+    """Application-level representation of a permission record.
+
+    This model exposes only the fields the application contract needs
+    from the ``permissions`` table. It intentionally omits internal
+    database identifiers that are not part of the API contract.
+    """
+
+    id: int
+    name: str
+    description: Optional[str] = None
+
+
+class UserWithPermissionDetails(BaseModel):
+    """Response model for a user with full permission details.
+
+    This model assembles the user identity fields with a list of
+    permission detail objects retrieved through a relational join
+    across ``users``, ``user_permissions``, and ``permissions``.
+    It exposes only the fields the API contract intends to return,
+    not the full PostgreSQL rows or raw join mechanics.
+    """
+
+    id: int
+    firebase_uid: Optional[str] = None
+    email: str
+    is_active: bool
+    permissions: list[PermissionDetail]
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()

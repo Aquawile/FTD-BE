@@ -115,6 +115,28 @@ def get_user_with_permissions(user_id: int) -> dict | None:
     return None
 
 
+def get_user_permission_details(user_id: int) -> list[dict[str, object]]:
+    """Retrieve a user with full permission details through the normalized relational schema.
+
+    This joins ``users`` → ``user_permissions`` → ``permissions`` to assemble
+    the user identity together with each permission's id, name, and description.
+    The query returns one row per permission; when the user has no permissions,
+    a single row with NULL permission fields is returned so the caller can still
+    identify the user. The caller is responsible for aggregating the rows into
+    the application response shape.
+    """
+    return query_dict(
+        "SELECT u.id, u.firebase_uid, u.email, u.is_active, u.created_at, u.updated_at, "
+        "p.id AS permission_id, p.name AS permission_name, p.description AS permission_description "
+        "FROM users u "
+        "LEFT JOIN user_permissions up ON up.user_id = u.id "
+        "LEFT JOIN permissions p ON p.id = up.permission_id "
+        "WHERE u.id = %s "
+        "ORDER BY p.name",
+        (user_id,),
+    )
+
+
 def deactivate_user(user_id: int) -> bool:
     """Soft-delete a user by setting is_active to FALSE. Returns True if a row was updated."""
     with get_connection() as conn:

@@ -6,7 +6,7 @@ from uuid import uuid4
 import psycopg2
 
 from app.auth.hasher import hash_password
-from app.auth.models import UserCreateRequest, UserUpdateRequest, normalize_email
+from app.auth.models import UserCreateRequest, UserUpdateRequest, UserWithPermissionDetails, normalize_email
 from app.db import get_connection
 from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError
 from app.services.user_service import (
@@ -15,6 +15,7 @@ from app.services.user_service import (
     get_authenticated_user,
     get_authenticated_user_by_id,
     get_user_permissions,
+    get_user_with_permission_details,
     get_user_with_permissions,
     update_user,
 )
@@ -281,6 +282,49 @@ class TestUserService(unittest.TestCase):
     def test_delete_user_returns_false_for_unknown_user(self) -> None:
         result = delete_user(99999)
         self.assertFalse(result)
+
+    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    def test_get_user_with_permission_details_returns_user_with_empty_permissions(self) -> None:
+        firebase_uid = uuid4().hex
+        email = f"test-{uuid4().hex}@example.com"
+        self.addCleanup(_cleanup_user, firebase_uid)
+
+        created = create_user(self._make_create_request(email=email, password="test-pass", firebase_uid=firebase_uid))
+        response = get_user_with_permission_details(created.id)
+        self.assertIsInstance(response, UserWithPermissionDetails)
+        self.assertEqual(response.id, created.id)
+        self.assertEqual(response.email, normalize_email(email))
+        self.assertEqual(response.permissions, [])
+
+    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    def test_get_user_with_permission_details_returns_user_with_full_permissions(self) -> None:
+        firebase_uid = uuid4().hex
+        email = f"test-{uuid4().hex}@example.com"
+        self.addCleanup(_cleanup_user, firebase_uid)
+
+        created = create_user(self._make_create_request(email=email, password="test-pass", firebase_uid=firebase_uid))
+        _assign_permissions(created.id, ["tickers.search", "tickers.prices"])
+
+        response = get_user_with_permission_details(created.id)
+        self.assertIsInstance(response, UserWithPermissionDetails)
+        self.assertEqual(response.id, created.id)
+        self.assertEqual(response.email, normalize_email(email))
+        self.assertEqual(len(response.permissions), 2)
+
+        names = {p.name for p in response.permissions}
+        self.assertIn("tickers.search", names)
+        self.assertIn("tickers.prices", names)
+
+        for p in response.permissions:
+            self.assertIsInstance(p.id, int)
+            self.assertIsInstance(p.name, str)
+            self.assertIsInstance(p.description, (str, type(None)))
+
+    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    def test_get_user_with_permission_details_raises_for_unknown_id(self) -> None:
+        with self.assertRaises(UserNotFoundError) as ctx:
+            get_user_with_permission_details(99999)
+        self.assertIn("99999", str(ctx.exception))
 
 
 if __name__ == "__main__":

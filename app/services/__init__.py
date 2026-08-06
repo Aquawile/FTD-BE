@@ -4,6 +4,7 @@ from app.services.user_service import (
     get_authenticated_user,
     get_authenticated_user_by_id,
     get_user_permissions,
+    get_user_with_permission_details,
     get_user_with_permissions,
     update_user,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "get_authenticated_user",
     "get_authenticated_user_by_id",
     "get_user_permissions",
+    "get_user_with_permission_details",
     "get_user_with_permissions",
     "update_user",
 ]
