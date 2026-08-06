@@ -3485,3 +3485,51 @@ All integration tests in `tests/test_user_service.py` now pass against the isola
 #### Hard Stop
 
 Sub-Layer 3.4 integration validation is complete. The user service layer is verified against real PostgreSQL. No further changes were made to service-layer implementation, database schema, migrations, authentication architecture, or production data.
+
+### 47 Sub-Layer 3.5 — Layer Three Integration Verification
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### What Was Implemented
+
+Sub-Layer 3.5 is the final verification checkpoint for Layer Three. It confirms that the complete service layer works as an independent application component before introducing the external HTTP endpoint layer. The verification exercises the internal sequence: authenticated Firebase identity → PostgreSQL application user → service operations → relational aggregation → predictable application-level result.
+
+##### New Integration Test Class
+
+**`TestLayer3Integration`** added to `tests/test_user_service.py` with 4 tests:
+
+| Test | What It Verifies |
+|---|---|
+| `test_complete_user_lifecycle_firebase_sync_to_service_retrieval` | End-to-end sequence: mock Firebase identity → `synchronize_user()` → `get_authenticated_user()` → assign permissions → `sync_user_permissions_index()` → `get_user_with_permissions()` → `get_user_with_permission_details()` |
+| `test_service_layer_handles_missing_firebase_identity_gracefully` | `get_authenticated_user()` raises `UserNotFoundError` for unknown Firebase UID |
+| `test_relational_permission_details_retrieved_correctly` | `get_user_with_permission_details()` returns correct permission metadata (id, name, description) for 3 assigned permissions |
+| `test_service_layer_has_no_http_dependencies` | Static AST analysis verifies `app/services/user_service.py` and `app/services/exceptions.py` do not import FastAPI, Starlette, or other HTTP-specific modules |
+
+##### Verified Architectural Boundaries
+
+- **Layer One (authentication):** Firebase token validation remains in `app/auth/middleware.py` and `app/auth/firebase_auth.py`. The service layer does not parse Firebase tokens.
+- **Layer Three (service/data):** All CRUD operations, relational aggregation, validation, and error handling remain in `app/services/` and `app/auth/repository.py`.
+- **No HTTP leakage:** The service layer contains no FastAPI, Starlette, or HTTP-specific imports or dependencies.
+
+##### Test Results
+
+**54 passed, 0 failed** across the entire test suite:
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_auth_middleware.py` (8 tests) | ✅ All pass |
+| `tests/test_hasher.py` (4 tests) | ✅ All pass |
+| `tests/test_token.py` (7 tests) | ✅ All pass |
+| `tests/test_user_sync.py` (5 tests) | ✅ All pass |
+| `tests/test_user_service.py` (28 tests) | ✅ All pass (24 existing + 4 new integration tests) |
+| **Total** | **54/54 pass** |
+
+All tests executed against the isolated `ftd_lakehouse_test` database through the IAP TCP forwarding tunnel. Production `ftd_lakehouse` was not modified.
+
+##### Hard Stop for Layer Three
+
+Layer Three is complete. The service layer has been verified as an independent application component ready to be called by a future FastAPI API layer without requiring the service logic itself to be rewritten.
+
+**STOP — Layer Three complete. Do not implement FastAPI endpoints, Postman testing, frontend integration, or client-facing content delivery.**
