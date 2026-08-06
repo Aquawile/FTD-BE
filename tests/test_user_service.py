@@ -6,7 +6,7 @@ from uuid import uuid4
 import psycopg2
 
 from app.auth.hasher import hash_password
-from app.auth.models import UserCreateRequest, UserUpdateRequest, UserWithPermissionDetails, normalize_email
+from app.auth.models import User, UserCreateRequest, UserPermissionsResponse, UserUpdateRequest, UserWithPermissionDetails, normalize_email
 from app.db import get_connection
 from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError, UserValidationError
 from app.services.user_service import (
@@ -192,7 +192,7 @@ class TestUserService(unittest.TestCase):
         sync_user_permissions_index(created.id)
 
         response = get_user_with_permissions(created.id)
-        self.assertIsInstance(response, type(created))
+        self.assertIsInstance(response, UserPermissionsResponse)
         self.assertEqual(response.id, created.id)
         self.assertEqual(response.email, normalize_email(email))
         self.assertIn("tickers.search", response.permissions)

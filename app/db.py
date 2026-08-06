@@ -69,6 +69,14 @@ def query(sql: str, params: Sequence[Any] | None = None) -> list[tuple]:
             return list(cur.fetchall())
 
 
+def execute(sql: str, params: Sequence[Any] | None = None) -> None:
+    """Execute a parameterized statement that does not return rows."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+        conn.commit()
+
+
 def query_dict(sql: str, params: Sequence[Any] | None = None) -> list[dict[str, Any]]:
     """Execute a parameterized SELECT query and return rows as dicts."""
     with get_connection() as conn:

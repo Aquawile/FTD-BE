@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.db import query, query_dict
+from app.db import execute, query, query_dict
 
 
 def rebuild_user_permissions_index() -> None:
-    query("TRUNCATE TABLE user_permissions_index")
+    execute("TRUNCATE TABLE user_permissions_index")
     query(
         """
         INSERT INTO user_permissions_index (user_id, permission_name)
@@ -18,8 +18,8 @@ def rebuild_user_permissions_index() -> None:
 
 
 def sync_user_permissions_index(user_id: int) -> None:
-    query("DELETE FROM user_permissions_index WHERE user_id = %s", (user_id,))
-    rows = query(
+    execute("DELETE FROM user_permissions_index WHERE user_id = %s", (user_id,))
+    execute(
         """
         INSERT INTO user_permissions_index (user_id, permission_name)
         SELECT up.user_id, p.name
@@ -29,7 +29,8 @@ def sync_user_permissions_index(user_id: int) -> None:
         """,
         (user_id,),
     )
-    count = len(rows) if rows else 0
+    rows = query("SELECT COUNT(*) AS count FROM user_permissions_index WHERE user_id = %s", (user_id,))
+    count = rows[0][0] if rows else 0
     print(f"sync_user_permissions_index({user_id}): {count} rows synced")
 
 

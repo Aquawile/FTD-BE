@@ -3294,3 +3294,194 @@ All 28 non-PostgreSQL tests pass. 22 tests are skipped because this environment 
 Sub-Layer 3.4 is complete. The service operations have predictable success and failure behavior. Application-level validation prevents invalid data from reaching the database. Expected domain failures are distinguished from unexpected infrastructure failures through separate exception types. Structured logging provides observability without leaking secrets. The service layer is now reliable enough for the API layer to treat it as a dependable application boundary.
 
 **STOP — Sub-Layer 3.4 complete.**
+
+### 46 Sub-Layer 3.4 Integration Test Debugging and Resolution
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commits:** pending
+
+#### Context
+
+After establishing the isolated `ftd_lakehouse_test` database and IAP TCP forwarding tunnel, the existing `tests/test_user_service.py` integration suite was executed against real PostgreSQL. The initial run produced 3 failures out of 24 tests. Each failure was diagnosed and resolved without redesigning the service layer or database architecture.
+
+#### Failure Chain and Resolution
+
+##### Failure 1 & 2: NameError — `User` not defined
+
+**Observed:**
+```
+NameError: name 'User' is not defined
+```
+
+**Tests affected:**
+- `test_get_authenticated_user_by_id_returns_user_for_valid_id`
+- `test_get_authenticated_user_returns_user_for_valid_firebase_uid`
+
+**Root cause:** `tests/test_user_service.py` referenced `User` in `assertIsInstance(user, User)` but did not import `User` from `app.auth.models`. The file imported `UserCreateRequest`, `UserUpdateRequest`, and `UserWithPermissionDetails` but omitted `User`.
+
+**Fix:** Added `User` to the import line in `tests/test_user_service.py`:
+```python
+from app.auth.models import User, UserCreateRequest, UserUpdateRequest, UserWithPermissionDetails, normalize_email
+```
+
+**Classification:** Test-environment issue (missing import).
+
+---
+
+##### Failure 3a: psycopg2.ProgrammingError — `no results to fetch` on DELETE
+
+**Observed:**
+```
+psycopg2.ProgrammingError: no results to fetch
+app/db.py:69: ProgrammingError
+```
+
+**Test affected:** `test_get_user_with_permissions_returns_user_and_permissions`
+
+**Root cause:** `app/auth/index_maintainer.py:21` called `query("DELETE FROM user_permissions_index WHERE user_id = %s", (user_id,))`. The `query()` helper in `app/db.py` unconditionally executes `cur.fetchall()` after any SQL statement. `DELETE` does not return a result set, so `fetchall()` raises `ProgrammingError`.
+
+**Fix:** Added a new `execute()` helper to `app/db.py` for non-SELECT statements:
+```python
+def execute(sql: str, params: Sequence[Any] | None = None) -> None:
+    """Execute a parameterized statement that does not return rows."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+```
+
+Updated `app/auth/index_maintainer.py` to use `execute()` for the `DELETE`:
+```python
+execute("DELETE FROM user_permissions_index WHERE user_id = %s", (user_id,))
+```
+
+**Classification:** Application defect — `index_maintainer.py` misused `query()` for a DML statement.
+
+---
+
+##### Failure 3b: psycopg2.ProgrammingError — `no results to fetch` on INSERT ... SELECT
+
+**Observed after Fix 3a:**
+```
+psycopg2.ProgrammingError: no results to fetch
+app/db.py:69: ProgrammingError
+```
+
+**Root cause:** Fix 3a resolved the `DELETE` failure but revealed that the subsequent `INSERT INTO user_permissions_index ... SELECT ...` in `sync_user_permissions_index()` also used `query()`. This `INSERT` has no `RETURNING` clause, so it does not produce a result set. The `query()` helper's unconditional `fetchall()` raised again.
+
+**Fix:** Changed the `INSERT` execution in `app/auth/index_maintainer.py` from `query()` to `execute()`:
+```python
+execute(
+    """
+    INSERT INTO user_permissions_index (user_id, permission_name)
+    SELECT up.user_id, p.name
+    FROM user_permissions up
+    JOIN permissions p ON up.permission_id = p.id
+    WHERE up.user_id = %s
+    """,
+    (user_id,),
+)
+```
+
+Added a separate `SELECT COUNT(*)` to preserve the existing count-logging behavior:
+```python
+rows = query("SELECT COUNT(*) AS count FROM user_permissions_index WHERE user_id = %s", (user_id,))
+```
+
+**Classification:** Application defect — same `query()` misuse pattern, second instance.
+
+---
+
+##### Failure 3c: Silent data loss — index sync reported 0 rows synced
+
+**Observed after Fix 3b:**
+```
+sync_user_permissions_index(52): 0 rows synced
+```
+
+**Root cause:** The `execute()` helper did not call `conn.commit()`. PostgreSQL connection pooling via psycopg2 operates in transaction mode by default. Without an explicit `commit()`, the `DELETE` and `INSERT` statements were executed inside an implicit transaction that was rolled back when the connection was returned to the pool. The index appeared empty after `sync_user_permissions_index()` completed.
+
+**Fix:** Added `conn.commit()` to the `execute()` helper:
+```python
+def execute(sql: str, params: Sequence[Any] | None = None) -> None:
+    """Execute a parameterized statement that does not return rows."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+        conn.commit()
+```
+
+Also fixed the count extraction from `len(rows)` to `rows[0][0]`:
+```python
+count = rows[0][0] if rows else 0
+```
+
+**Classification:** Application defect — missing transaction commit in new `execute()` helper.
+
+---
+
+##### Failure 3d: AssertionError — wrong type check in test
+
+**Observed after Fix 3c:**
+```
+AssertionError: UserPermissionsResponse(...) is not an instance of <class 'app.auth.models.User'>
+```
+
+**Root cause:** The test assertion was:
+```python
+self.assertIsInstance(response, type(created))
+```
+
+`type(created)` is `User` (returned by `create_user()`), but `get_user_with_permissions()` returns `UserPermissionsResponse`. These are different Pydantic models with no inheritance relationship. The assertion checked whether a `UserPermissionsResponse` is an instance of `User`, which fails.
+
+**Fix:** Changed the assertion to check the correct type:
+```python
+self.assertIsInstance(response, UserPermissionsResponse)
+```
+
+**Classification:** Test assertion defect.
+
+---
+
+##### Failure 3e: NameError — `UserPermissionsResponse` not defined
+
+**Observed after Fix 3d:**
+```
+NameError: name 'UserPermissionsResponse' is not defined
+```
+
+**Root cause:** The corrected assertion referenced `UserPermissionsResponse`, which was not imported in `tests/test_user_service.py`. The file already imported `UserWithPermissionDetails` but not `UserPermissionsResponse`.
+
+**Fix:** Added `UserPermissionsResponse` to the import line:
+```python
+from app.auth.models import User, UserCreateRequest, UserPermissionsResponse, UserUpdateRequest, UserWithPermissionDetails, normalize_email
+```
+
+**Classification:** Test-environment issue (missing import).
+
+---
+
+#### Final Test Result
+
+**24 passed, 0 failed**
+
+All integration tests in `tests/test_user_service.py` now pass against the isolated `ftd_lakehouse_test` database through the IAP TCP forwarding tunnel.
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `app/db.py` | Added `execute()` helper for non-SELECT statements with `conn.commit()` |
+| `app/auth/index_maintainer.py` | Replaced `query()` with `execute()` for `DELETE` and `INSERT ... SELECT`; fixed count extraction |
+| `tests/test_user_service.py` | Added missing `User` and `UserPermissionsResponse` imports; fixed type assertion |
+
+#### Lessons Learned
+
+1. **`query()` contract violation:** The `query()` helper's implicit `fetchall()` makes it suitable only for SELECT-like statements. DML statements (DELETE, INSERT, UPDATE, TRUNCATE) must use a non-fetching execution path.
+2. **Connection pool transaction behavior:** psycopg2's `SimpleConnectionPool` does not auto-commit. The `execute()` helper must explicitly call `conn.commit()` or changes are silently rolled back when the connection returns to the pool.
+3. **Test type assertions must match return types:** When a service function returns a different Pydantic model than the one used for input, the test must assert against the correct return type.
+4. **Import completeness in tests:** Adding new Pydantic response models to the service layer requires updating test imports accordingly.
+
+#### Hard Stop
+
+Sub-Layer 3.4 integration validation is complete. The user service layer is verified against real PostgreSQL. No further changes were made to service-layer implementation, database schema, migrations, authentication architecture, or production data.
