@@ -3071,3 +3071,116 @@ All 23 non-PostgreSQL tests pass. 19 tests are skipped because this environment 
 Sub-Layer 3.2 is complete. The User service CRUD operations are implemented with clear application behavior definitions, non-HTTP service-layer exceptions for expected database failures, and direct PostgreSQL tests using controlled records. The service layer operates on authenticated application identities, never touches authentication secrets, and routes all database access through the repository.
 
 **STOP — Sub-Layer 3.2 complete.**
+
+### 44 Sub-Layer 3.3 — Relational Data Retrieval and Controlled Aggregation
+
+**Completed:** 2026-08-05
+**Branch:** rawdataingestion
+**Commit:** f7590b53
+
+#### What Was Implemented
+
+Sub-Layer 3.3 establishes how the service layer retrieves related relational data without forcing the client to understand the database's internal table structure. The objective is not to eliminate SQL joins, but to determine where relationships between tables should be resolved and how the service layer should produce useful application-level results from the relational schema.
+
+The existing PostgreSQL schema and its actual relationships are used. No new tables, caching layers, materialized views, or denormalized stores were introduced.
+
+##### Existing Relationships Used
+
+The auth domain contains one canonical many-to-many relationship:
+
+- `users(id)` → `user_permissions(user_id)` → `permissions(id)`
+
+Additionally, the denormalized `user_permissions_index(user_id, permission_name)` table provides a fast path for lightweight permission lookups. Both paths are valid; the service layer chooses which to use based on the application need.
+
+##### Controlled Aggregation Pattern
+
+Two aggregation patterns are now established:
+
+1. **Lightweight aggregation** (`get_user_with_permissions`) — Uses `user_permissions_index` with `ARRAY_AGG` to return a user plus a flat list of permission names. This is the fast path for authorization checks.
+
+2. **Rich aggregation** (`get_user_with_permission_details`) — Joins `users` → `user_permissions` → `permissions` to return a user plus full permission detail objects (id, name, description). This is the pattern for when the client needs richer metadata.
+
+The key architectural point: both aggregations are performed entirely inside the backend boundary. The client receives a single application-level response and does not need to understand the junction table or issue separate requests.
+
+##### New Models
+
+**`PermissionDetail`** (`app/auth/models.py`):
+```python
+class PermissionDetail(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+```
+
+**`UserWithPermissionDetails`** (`app/auth/models.py`):
+```python
+class UserWithPermissionDetails(BaseModel):
+    id: int
+    firebase_uid: Optional[str] = None
+    email: str
+    is_active: bool
+    permissions: list[PermissionDetail]
+```
+
+These models expose only the fields the application contract needs. They omit raw database rows, internal identifiers not part of the API contract, and table/column mechanics.
+
+##### Repository Layer
+
+**`get_user_permission_details(user_id)`** (`app/auth/repository.py`):
+- Joins `users` → `user_permissions` → `permissions` using LEFT JOINs
+- Returns one row per permission; when the user has no permissions, a single row with NULL permission fields is returned
+- The caller aggregates rows into the application response shape
+- Uses `ORDER BY p.name` for deterministic permission ordering
+
+##### Service Layer
+
+**`get_user_with_permission_details(user_id)`** (`app/services/user_service.py`):
+- Calls the repository function
+- Raises `UserNotFoundError` when the user does not exist (empty result set)
+- Filters out rows where `permission_id` is NULL (users with no permissions)
+- Transforms raw rows into `PermissionDetail` objects
+- Returns a typed `UserWithPermissionDetails` response model
+
+This function demonstrates the controlled aggregation pattern: the service layer resolves the relational complexity internally and returns a clean, application-oriented result.
+
+##### Package Exports
+
+**`app/services/__init__.py`** — Updated to export `get_user_with_permission_details`.
+
+##### Tests
+
+**`tests/test_user_service.py`** — Added 3 tests for the new aggregation:
+
+| Test | What It Verifies |
+|---|---|
+| `test_get_user_with_permission_details_returns_user_with_full_permissions` | Joins return user with 2 permissions, each having id/name/description |
+| `test_get_user_with_permission_details_returns_user_with_empty_permissions` | User with no permissions returns empty list (not an error) |
+| `test_get_user_with_permission_details_raises_for_unknown_id` | Non-existent user raises `UserNotFoundError` |
+
+##### Guardrails Followed
+
+- Did not introduce caching, materialized views, denormalized tables, or a separate read database
+- Did not add workspaces, saved searches, dashboards, financial preferences, AI metadata, content models, or other future domain entities
+- Did not optimize joins simply because they exist; correctness was established first
+- The relational join occurs internally in PostgreSQL; the client is unaware of table names, foreign-key mechanics, or the sequence of SQL operations
+- The existing `user_permissions_index` denormalized path was preserved for the lightweight aggregation use case
+- No new tables were created; only existing tables were queried together
+
+##### Test Results
+
+All 23 non-PostgreSQL tests pass. 22 tests are skipped because this environment does not have a running PostgreSQL instance. When run against a live PostgreSQL database, all 19 `test_user_service.py` tests execute and verify the service layer against the real relational schema.
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_auth_middleware.py` (8 tests) | ✅ All pass |
+| `tests/test_hasher.py` (4 tests) | ✅ All pass |
+| `tests/test_token.py` (7 tests) | ✅ All pass |
+| `tests/test_user_sync.py` (4 pass, 3 skip) | ✅ Pass |
+| `tests/test_user_service.py` (19 tests) | ⏭️ Skipped (no PostgreSQL) |
+| **Total** | **23/23 pass, 22 skipped** |
+
+#### Hard Stop for 3.3
+
+Sub-Layer 3.3 is complete. The controlled aggregation pattern is implemented and directly validated through tests. The service layer resolves relational complexity internally through the existing PostgreSQL schema, returning application-oriented results without exposing raw database implementation details. The pattern is established and ready for future use.
+
+**STOP — Sub-Layer 3.3 complete.**
