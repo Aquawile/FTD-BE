@@ -11,3 +11,8 @@ class UserNotFoundError(UserServiceError):
 
 class UserAlreadyExistsError(UserServiceError):
     """Raised when a user creation or update would violate a uniqueness constraint."""
+
+
+class UserValidationError(UserServiceError):
+    """Raised when an application-level validation rule is violated."""
+""
