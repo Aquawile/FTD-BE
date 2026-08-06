@@ -3602,3 +3602,84 @@ HTTP GET /users/me
 Sub-Layer 4.1 is complete. The FastAPI application successfully registers the API boundary and the boundary can be reached by an HTTP request. Unauthenticated requests correctly reach the authentication boundary rather than failing because the router is incorrectly configured.
 
 **STOP — Sub-Layer 4.1 complete. Do not implement the complete user CRUD API, do not add frontend integration, do not add Postman collections, do not modify PostgreSQL schemas, do not modify Firebase configuration, and do not change Layer Three service behavior.**
+
+### 49 Sub-Layer 4.2 — Authenticated User API Operations
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### What Was Implemented
+
+Sub-Layer 4.2 exposes the already-verified Layer Three user service operations through the FastAPI HTTP boundary established in 4.1. This is an implementation task: connect existing components without redesigning architecture or expanding the application domain.
+
+##### Files Modified
+
+1. **`app/routes/users.py`** — Extended the existing `/users` router with two additional endpoints:
+   - `GET /users/me/permissions` — Returns the authenticated user's granted permissions as a flat list of permission names. Calls `get_user_with_permissions(current_user.id)` and returns `UserPermissionsResponse`.
+   - `GET /users/me/permission-details` — Returns the authenticated user's granted permissions with full metadata (id, name, description). Calls `get_user_with_permission_details(current_user.id)` and returns `UserWithPermissionDetails`.
+   - Both routes attach the existing `get_current_application_user` dependency, translate `UserNotFoundError` to HTTP 404, and contain no SQL, no Firebase validation, and no service-layer logic.
+
+##### Files Created
+
+1. **`tests/test_users_router.py`** — 6 HTTP-level tests using FastAPI `TestClient` and `unittest.mock.patch`:
+   - `test_get_current_user_returns_user` — Authenticated `GET /users/me` returns 200 with User JSON
+   - `test_get_current_user_permissions_returns_permissions` — Authenticated `GET /users/me/permissions` returns 200 with permissions list
+   - `test_get_current_user_permission_details_returns_details` — Authenticated `GET /users/me/permission-details` returns 200 with permission detail objects
+   - `test_get_current_user_permissions_handles_user_not_found` — Service `UserNotFoundError` translates to 404
+   - `test_get_current_user_permission_details_handles_user_not_found` — Service `UserNotFoundError` translates to 404
+   - `test_routes_require_authentication` — Missing `Authorization` header returns 401 on all three endpoints
+
+##### Existing Endpoints Remain Unchanged
+
+The `/auth/me/user`, `/auth/users/{user_id}`, `/auth/users`, `/auth/me/user` (PATCH), `/auth/me/user` (DELETE), and `/auth/me/user/permissions` endpoints in `app/auth/router.py` were not modified. The new `/users/me/permissions` endpoint is intentionally a parallel route in the users router, consistent with the 4.1 routing structure.
+
+##### Test Results
+
+**52 passed, 0 failed** across the entire test suite:
+
+| Test Suite | Result |
+|---|---|
+| `tests/test_auth_middleware.py` (8 tests) | ✅ All pass |
+| `tests/test_hasher.py` (5 tests) | ✅ All pass |
+| `tests/test_token.py` (7 tests) | ✅ All pass |
+| `tests/test_user_sync.py` (5 tests) | ✅ All pass |
+| `tests/test_user_service.py` (24 tests) | ✅ All pass (21 pass + 3 skipped for no PostgreSQL) |
+| `tests/test_users_router.py` (6 tests) | ✅ All pass |
+| **Total** | **52/52 pass, 3 skipped** |
+
+##### Request Path Through the Architecture
+
+```text
+HTTP GET /users/me/permissions
+→ FastAPI router (app/routes/users.py)
+→ AuthMiddleware (app/auth/middleware.py) — validates Bearer token
+→ get_current_application_user dependency (app/auth/dependencies.py)
+→ get_authenticated_user service (app/services/user_service.py)
+→ get_user_by_firebase_uid repository (app/auth/repository.py)
+→ query_dict database utility (app/db.py)
+→ PostgreSQL
+→ User domain object returned through service layer
+→ route handler calls get_user_with_permissions(current_user.id)
+→ repository executes LEFT JOIN + ARRAY_AGG
+→ UserPermissionsResponse returned
+→ HTTP 200 response
+```
+
+##### Guardrails Followed
+
+- Did not modify PostgreSQL schemas, migrations, or database credentials
+- Did not modify Firebase configuration or token validation
+- Did not rewrite Layer Three service functions to contain HTTP-specific behavior
+- Did not add frontend code or client-side API calls
+- Did not implement content delivery, financial data endpoints, search endpoints, dashboard endpoints, workspace endpoints, AI functionality, or pipeline-data endpoints
+- Did not introduce a new ORM, database abstraction layer, authentication library, API framework, serialization framework, migration framework, or testing framework
+- Did not introduce authorization logic beyond the existing authentication/application-user boundary
+- Route handlers are thin adapters: they receive HTTP requests, call existing service functions, and return Pydantic response models
+- SQL joins remain in the repository layer; they were not moved into FastAPI route handlers
+
+#### Hard Stop for Sub-Layer 4.2
+
+Sub-Layer 4.2 is complete. The existing Layer Three user operations are reachable through the existing FastAPI application, the existing Layer One authentication dependency successfully establishes the PostgreSQL application-user context, successful authenticated HTTP requests return validated application-level responses, and representative authentication failures produce the expected HTTP behavior.
+
+**STOP — Sub-Layer 4.2 complete. Do not proceed into comprehensive Postman testing, frontend integration, client-side API calls, broader API coverage, content endpoints, or any other Layer Four sublayer.**
