@@ -3636,7 +3636,7 @@ The `/auth/me/user`, `/auth/users/{user_id}`, `/auth/users`, `/auth/me/user` (PA
 
 ##### Test Results
 
-**52 passed, 0 failed** across the entire test suite:
+**52 passed, 0 failed** across the entire test suite (25 skipped):
 
 | Test Suite | Result |
 |---|---|
@@ -3644,9 +3644,37 @@ The `/auth/me/user`, `/auth/users/{user_id}`, `/auth/users`, `/auth/me/user` (PA
 | `tests/test_hasher.py` (5 tests) | ✅ All pass |
 | `tests/test_token.py` (7 tests) | ✅ All pass |
 | `tests/test_user_sync.py` (5 tests) | ✅ All pass |
-| `tests/test_user_service.py` (24 tests) | ✅ All pass (21 pass + 3 skipped for no PostgreSQL) |
+| `tests/test_user_service.py` (24 tests) | ✅ 21 pass + 3 skipped (no PostgreSQL) |
 | `tests/test_users_router.py` (6 tests) | ✅ All pass |
-| **Total** | **52/52 pass, 3 skipped** |
+| **Total** | **52/52 pass, 25 skipped** |
+
+##### Skipped Test Diagnosis
+
+**25 tests are skipped because this environment does not have a running PostgreSQL instance accessible to the test runner.**
+
+The skip mechanism is `@unittest.skipUnless(_postgres_available(), ...)` in `tests/test_user_service.py` and `tests/test_user_sync.py`. The `_postgres_available()` function attempts to acquire a connection from `app.db.get_connection()`, which reads the DSN from environment variables (`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`). When these are unset or the connection fails, the function returns `False` and the tests are skipped.
+
+**Root cause chain:**
+
+1. **No local PostgreSQL server** — There is no PostgreSQL process running on `localhost` or any local port in this environment.
+2. **Remote PostgreSQL (`ftd-postgres-vm`) is not reachable from this shell** — As documented in MEMORY.md §30, the VM's SSH daemon does not respond to banner exchanges after stop/start cycles. `gcloud compute ssh` hangs at banner exchange. `gcloud compute start-iap-tunnel` fails with "failed to connect to backend." The only working access method is `gcloud compute ssh --command=` for inline commands, which is not suitable for the persistent TCP connection required by psycopg2.
+3. **No environment variables set** — `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` are not present in this shell's environment, so even if a tunnel existed, `app/db.py` would raise `EnvironmentError` before attempting a connection.
+
+**How to run the skipped tests:**
+
+The skipped tests require a live PostgreSQL connection to the `ftd_lakehouse_test` database on `ftd-postgres-vm` (`34.94.216.101:5432`). To make them runnable, you would need to either:
+
+- Set up an IAP TCP tunnel that survives from this shell: `gcloud compute start-iap-tunnel ftd-postgres-vm 5432 --zone=us-west2-a --project=ftd2026 --local-host-port=127.0.0.1:5433 &` and export `PGHOST=127.0.0.1 PGPORT=5433 PGDATABASE=ftd_lakehouse_test PGUSER=ftd_app PGPASSWORD=...`
+- Or run the tests from inside the VM itself via `gcloud compute ssh --command="cd /path/to/repo && python3 -m unittest tests.test_user_service"`
+- Or provision a local PostgreSQL instance and point the tests at it
+
+**What was verified without PostgreSQL:**
+
+- Route registration in OpenAPI schema ✅
+- Authentication boundary (401 without token) ✅
+- Service-layer exception translation (UserNotFoundError → 404) ✅
+- Response model serialization ✅
+- All existing Layer One/Layer Three unit tests that do not require a database ✅
 
 ##### Request Path Through the Architecture
 
