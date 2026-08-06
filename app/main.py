@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.auth.exceptions import AuthenticationError
-from app.routes import filings, search, tickers
+from app.routes import filings, search, tickers, users
 from app.auth.router import router as auth_router
 from app.auth.middleware import AuthMiddleware
 
@@ -39,6 +39,7 @@ app.include_router(auth_router)
 app.include_router(tickers.router)
 app.include_router(filings.router)
 app.include_router(search.router)
+app.include_router(users.router)
 
 
 @app.get("/health")

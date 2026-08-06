@@ -3533,3 +3533,72 @@ All tests executed against the isolated `ftd_lakehouse_test` database through th
 Layer Three is complete. The service layer has been verified as an independent application component ready to be called by a future FastAPI API layer without requiring the service logic itself to be rewritten.
 
 **STOP — Layer Three complete. Do not implement FastAPI endpoints, Postman testing, frontend integration, or client-facing content delivery.**
+
+### 48 Sub-Layer 4.1 — FastAPI API Boundary and Application Routing
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### What Was Implemented
+
+Sub-Layer 4.1 establishes the HTTP boundary through which external requests can reach the already-completed service layer. The central architectural boundary is that **FastAPI owns HTTP concerns while the service layer owns application behavior**. FastAPI receives HTTP requests, validates their structure, invokes the appropriate authenticated service operation, translates the service result into an HTTP response, and returns that response to the caller.
+
+The first implementation establishes a small, clearly identifiable API router and registers it with the existing FastAPI application. It is possible to start the application and identify that the router has been mounted correctly.
+
+##### Files Created
+
+1. **`app/routes/users.py`** — New `APIRouter(prefix="/users", tags=["users"])` containing:
+   - `GET /users/me` — Returns the authenticated user's profile. The route receives the HTTP request, obtains authenticated application-user context through the existing `get_current_application_user` dependency (Layer One), validates request parameters through FastAPI/Pydantic, calls the appropriate Layer Three service function, and translates the result into an HTTP response.
+   - The route contains no raw SQL queries, no `psycopg2` calls, no Firebase token verification logic, and no business logic that belongs to the service layer.
+
+##### Files Modified
+
+1. **`app/main.py`** — Updated to import and register the new `users.router`:
+   - Added `users` to the `app.routes` import
+   - Added `app.include_router(users.router)` after the existing router registrations
+
+##### Verification Results
+
+The following checks confirm the API boundary is correctly established:
+
+| Check | Result |
+|---|---|
+| FastAPI application starts successfully via uvicorn | ✅ |
+| `/users/me` appears in the OpenAPI schema | ✅ |
+| Unauthenticated request to `/users/me` returns HTTP 401 | ✅ |
+| 401 response body: `{"detail": "Missing Authorization header"}` | ✅ Confirms `AuthMiddleware` intercepts before route handler |
+
+##### Request Path Through the Architecture
+
+```text
+HTTP GET /users/me
+→ FastAPI router (app/routes/users.py)
+→ AuthMiddleware (app/auth/middleware.py) — validates Bearer token
+→ get_current_application_user dependency (app/auth/dependencies.py)
+→ get_authenticated_user service (app/services/user_service.py)
+→ get_user_by_firebase_uid repository (app/auth/repository.py)
+→ query_dict database utility (app/db.py)
+→ PostgreSQL
+→ User domain object returned through service layer
+→ route handler returns User JSON
+→ HTTP 200 response
+```
+
+##### Guardrails Followed
+
+- Did not implement the complete user CRUD API — only a single boundary endpoint was added
+- Did not add frontend integration
+- Did not add Postman collections
+- Did not modify PostgreSQL schemas
+- Did not modify Firebase configuration
+- Did not change Layer Three service behavior
+- The route handler does not contain SQL queries, database connection management, Firebase token verification logic, or business logic that belongs to the service layer
+- No second web framework, second ORM, second authentication mechanism, or second service abstraction was introduced
+- The existing FastAPI application, existing Pydantic models, existing authentication dependency, existing service layer, and existing database infrastructure were all reused
+
+#### Hard Stop for Sub-Layer 4.1
+
+Sub-Layer 4.1 is complete. The FastAPI application successfully registers the API boundary and the boundary can be reached by an HTTP request. Unauthenticated requests correctly reach the authentication boundary rather than failing because the router is incorrectly configured.
+
+**STOP — Sub-Layer 4.1 complete. Do not implement the complete user CRUD API, do not add frontend integration, do not add Postman collections, do not modify PostgreSQL schemas, do not modify Firebase configuration, and do not change Layer Three service behavior.**
