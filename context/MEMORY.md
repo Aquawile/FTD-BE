@@ -3935,3 +3935,91 @@ All auth and user endpoints now document their possible error responses in the O
 Sub-Layer 4.3 is complete. The API has a coherent request/response contract and predictable HTTP error behavior. Authentication failures originate from Layer One, malformed requests produce 422 validation errors, missing users/resources produce 404, conflicts produce 409, and unexpected internal failures produce 500 without exposing implementation details.
 
 **STOP — Sub-Layer 4.3 complete. Do not proceed into frontend integration, client-side API consumption, content delivery, pipeline data exposure, dashboard functionality, production API deployment, performance optimization, caching, or any other work outside the Layer Four API boundary.**
+
+### 53 Sub-Layer 4.4 — Direct API Testing, Postman Verification, and HTTP-to-Database Integration
+
+**Completed:** 2026-08-07
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Network Path Established
+
+The FastAPI application on `ftd-test` (34.94.194.97) is running on `127.0.0.1:8000`. Access from the local machine is via:
+
+```
+localhost:18000 → SSH IAP tunnel → ftd-test:22 → ftd-test 127.0.0.1:8000 → FastAPI
+```
+
+- IAP tunnel PID: 72058 (local port 2222 → ftd-test:22)
+- SSH forward PID: 82972 (local port 18000 → ftd-test 127.0.0.1:8000)
+- App process: Uvicorn running on `127.0.0.1:8000` (PID varies)
+- Database: `ftd_lakehouse_api_test` via internal VM IP `10.168.0.3:5432`
+
+#### API Test Results
+
+All tests executed against `http://127.0.0.1:18000`:
+
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| 1 | POST /auth/login (valid) | 200 | 200 | ✅ |
+| 2 | POST /auth/login (invalid) | 401 | 401 | ✅ |
+| 3 | POST /auth/login (missing body) | 422 | 422 | ✅ |
+| 4 | GET /users/me (no auth) | 401 | 401 | ✅ |
+| 5 | GET /users/me (invalid token) | 401 | 401 | ✅ |
+| 6 | GET /auth/me/user | 200 | 200 | ✅ |
+| 7 | GET /users/me | 200 | 200 | ✅ |
+| 8 | GET /users/me/permissions | 200 | 200 | ✅ |
+| 9 | GET /users/me/permission-details | 200 | 200 | ✅ |
+| 10 | POST /auth/users (create) | 201 | 201 | ✅ |
+| 11 | GET /auth/users/99999 | 403 | 403 | ✅ |
+| 12 | POST /auth/users (duplicate) | 409 | 409 | ✅ |
+
+#### Request Path Verified
+
+For a successful authenticated request:
+
+```
+HTTP GET /users/me/permissions
+→ FastAPI router (app/routes/users.py)
+→ AuthMiddleware (app/auth/middleware.py) — validates Bearer token
+→ get_current_application_user dependency (app/auth/dependencies.py)
+→ get_authenticated_user service (app/services/user_service.py)
+→ get_user_by_firebase_uid repository (app/auth/repository.py)
+→ query_dict database utility (app/db.py)
+→ PostgreSQL (ftd_lakehouse_api_test via 10.168.0.3:5432)
+→ UserPermissionsResponse returned
+→ HTTP 200 response
+```
+
+#### Layer Two Defect Found
+
+**File:** `app/auth/repository.py:104-115`
+**Function:** `get_user_with_permissions`
+**Issue:** Uses `ARRAY_AGG(upi.permission_name)` without filtering NULLs. When `user_permissions_index` has no matching rows for a user, `ARRAY_AGG(NULL)` produces `[None]` instead of an empty array `[]`. This causes Pydantic validation to fail with:
+
+```
+ValidationError: Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+```
+
+**Workaround used for testing:** Ensured test users have at least one permission in `user_permissions_index` before calling the endpoint.
+
+**Recommended fix:** Add `FILTER (WHERE upi.permission_name IS NOT NULL)` to the `ARRAY_AGG` in the repository query. This is a Layer Two concern and was not modified during Sub-Layer 4.4 testing per the architectural boundary rules.
+
+#### Guardrails Followed
+
+- Did not expose port 8000 publicly or bind to `0.0.0.0`
+- Did not modify firewall rules
+- Did not modify `ftd_lakehouse`, `ftd_lakehouse_test`, or `ftd_lakehouse_api_test` schemas
+- Did not modify Layer One, Layer Two, or Layer Three application code
+- Used existing isolated `ftd_lakehouse_api_test` database for all mutating tests
+- Used existing Firebase/internal authentication mechanisms
+- Did not connect frontend or implement client-side API calls
+- Did not add content delivery, financial data endpoints, or dashboard functionality
+
+#### Hard Stop for Sub-Layer 4.4
+
+Sub-Layer 4.4 is complete. The HTTP boundary has been verified through manual API testing. The complete request path from HTTP → FastAPI → Layer One authentication → PostgreSQL user resolution → Layer Three service → Layer Two database access → PostgreSQL → response model → HTTP response has been confirmed working for the existing user operations.
+
+One Layer Two defect was identified in `get_user_with_permissions` regarding NULL handling in `ARRAY_AGG`. This was documented but not modified, as it belongs to an earlier layer.
+
+**STOP — Sub-Layer 4.4 complete. Do not proceed into frontend integration, client-side API consumption, content delivery, pipeline data exposure, dashboard functionality, production API deployment, performance optimization, caching, or any other work outside the Layer Four API boundary.**
