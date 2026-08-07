@@ -4023,3 +4023,105 @@ Sub-Layer 4.4 is complete. The HTTP boundary has been verified through manual AP
 One Layer Two defect was identified in `get_user_with_permissions` regarding NULL handling in `ARRAY_AGG`. This was documented but not modified, as it belongs to an earlier layer.
 
 **STOP — Sub-Layer 4.4 complete. Do not proceed into frontend integration, client-side API consumption, content delivery, pipeline data exposure, dashboard functionality, production API deployment, performance optimization, caching, or any other work outside the Layer Four API boundary.**
+
+### 54 Sub-Layer 4.5 — Final Layer Four and Full-System Completion Verification
+
+**Completed:** 2026-08-07
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Final System State
+
+The complete four-layer architecture is now functioning as an integrated system with intact architectural boundaries:
+
+| Layer | Responsibility | Implementation |
+|---|---|---|
+| **Layer One** | Firebase authentication identity | `app/auth/middleware.py`, `app/auth/firebase_auth.py` |
+| **Layer Two** | PostgreSQL relational data access | `app/auth/repository.py`, `app/db.py` |
+| **Layer Three** | Application behavior and service operations | `app/services/user_service.py` |
+| **Layer Four** | HTTP API boundary | `app/main.py`, `app/routes/users.py`, `app/auth/router.py` |
+
+#### Complete Request Path Verified
+
+For a successful authenticated request:
+
+```
+HTTP GET /users/me/permissions
+→ FastAPI router (app/routes/users.py)
+→ AuthMiddleware (app/auth/middleware.py) — validates Bearer token
+→ get_current_application_user dependency (app/auth/dependencies.py)
+→ get_authenticated_user service (app/services/user_service.py)
+→ get_user_by_firebase_uid repository (app/auth/repository.py)
+→ query_dict database utility (app/db.py)
+→ PostgreSQL (ftd_lakehouse_api_test via 10.168.0.3:5432)
+→ UserPermissionsResponse returned
+→ HTTP 200 response
+```
+
+#### Final Test Results
+
+**61/61 pass** against `ftd_lakehouse_api_test`:
+
+| Test Suite | Tests | Result |
+|---|---|---|
+| `test_hasher.py` | 5 | ✅ All pass |
+| `test_token.py` | 7 | ✅ All pass |
+| `test_user_service.py` | 24 | ✅ All pass |
+| `test_user_sync.py` | 5 | ✅ All pass |
+| `test_users_router.py` (mocked) | 6 | ✅ All pass |
+| `test_users_router.py` (PostgreSQL) | 14 | ✅ All pass |
+| **Total** | **61** | **61/61 pass** |
+
+#### Manual HTTP Verification (via SSH IAP tunnel)
+
+Executed against `http://127.0.0.1:18000` (forwarded to `ftd-test:8000`):
+
+| Operation | HTTP Status | Response |
+|---|---|---|
+| `POST /auth/login` (valid) | 200 | `{"access_token":"...","token_type":"bearer"}` |
+| `POST /auth/login` (invalid) | 401 | `{"detail":"Invalid credentials"}` |
+| `POST /auth/login` (missing body) | 422 | FastAPI validation error |
+| `GET /users/me` (no auth) | 401 | `{"detail":"Missing Authorization header"}` |
+| `GET /users/me` (invalid token) | 401 | `{"detail":"Invalid or expired token"}` |
+| `GET /auth/me/user` | 200 | User JSON |
+| `GET /users/me` | 200 | User JSON |
+| `GET /users/me/permissions` | 200 | `{"permissions":["search.read"]}` |
+| `GET /users/me/permission-details` | 200 | Permission details array |
+| `POST /auth/users` (create) | 201 | Created user JSON |
+| `GET /auth/users/99999` | 403 | `{"detail":"Forbidden"}` |
+| `POST /auth/users` (duplicate) | 409 | `{"detail":"An application user with this email or Firebase identity already exists"}` |
+
+#### Architectural Boundary Verification
+
+| Boundary | Verification |
+|---|---|
+| **FastAPI → Service** | Route handlers call existing service functions; no SQL in routes |
+| **Service → Database** | Service uses `app.db` utilities; no HTTP objects in service layer |
+| **Database → Client** | PostgreSQL never exposed directly; only via FastAPI responses |
+| **Firebase → Application** | Firebase UID maps to PostgreSQL user; Firebase is not the application's source of truth |
+| **Authentication → Authorization** | Layer One handles auth; Layer Three handles app identity; clear separation maintained |
+| **Error handling** | Authentication failures → 401, validation → 422, not found → 404, conflicts → 409, internal → 500 |
+
+#### Known Issues
+
+1. **Layer Two defect in `get_user_with_permissions`** (`app/auth/repository.py:104-115`): `ARRAY_AGG(upi.permission_name)` returns `[None]` instead of `[]` when a user has no permissions. This was identified during Sub-Layer 4.4 testing and documented but not modified, as it belongs to Layer Two.
+
+#### Guardrails Maintained
+
+- Port 8000 remains bound to `127.0.0.1`; not publicly exposed
+- No firewall rules modified
+- No production databases (`ftd_lakehouse`, `ftd_lakehouse_test`) modified
+- No Layer One, Layer Two, or Layer Three code modified during verification
+- No frontend integration added
+- No new application domains introduced
+
+#### Hard Stop — Layer Four Complete
+
+The four-layer implementation sequence is complete. The application now has:
+
+1. **Authenticated identity system** (Layer One) — Firebase authentication → PostgreSQL application user
+2. **Relational application data** (Layer Two) — Users, permissions, and relationships in PostgreSQL
+3. **Independent service layer** (Layer Three) — Application behavior isolated from HTTP and database details
+4. **HTTP API boundary** (Layer Four) — FastAPI exposing authenticated user operations with predictable error handling
+
+**FINAL HARD STOP FOR LAYER FOUR AND THIS ENTIRE DEVELOPMENT SEQUENCE:** The implementation is complete. Do not proceed into frontend integration, content delivery, financial-data APIs, dashboard construction, search, workspace functionality, AI/RAG integration, production optimization, or any subsequent product layer. Any subsequent development must be treated as a new architectural phase rather than an extension of this implementation task.
