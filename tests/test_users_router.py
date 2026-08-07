@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -8,9 +9,31 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.auth.models import User, UserPermissionsResponse, UserWithPermissionDetails, PermissionDetail
+from app.auth.hasher import hash_password
+from app.db import _POOL, get_connection
 from app.services.exceptions import UserNotFoundError
+from app.auth.index_maintainer import sync_user_permissions_index
 
 client = TestClient(app)
+
+
+def _postgres_api_test_available() -> bool:
+    try:
+        os.environ.setdefault("PGHOST", "127.0.0.1")
+        os.environ.setdefault("PGPORT", "5432")
+        os.environ.setdefault("PGDATABASE", "ftd_lakehouse_api_test")
+        os.environ.setdefault("PGUSER", "ftd_app")
+        os.environ.setdefault("PGPASSWORD", "5Ou+BkyuQT3izP72219jMLy2AobRdI3f")
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT current_database(), current_user")
+                row = cur.fetchone()
+                if row[0] != "ftd_lakehouse_api_test":
+                    return False
+                cur.execute("SELECT to_regclass('public.users')")
+                return cur.fetchone()[0] is not None
+    except Exception:
+        return False
 
 
 def _make_user(**overrides) -> User:
@@ -130,6 +153,159 @@ class TestUsersRouter(unittest.TestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_routes_require_authentication(self) -> None:
+        response = client.get("/users/me")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = client.get("/users/me/permissions")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = client.get("/users/me/permission-details")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+@unittest.skipUnless(_postgres_api_test_available(), "ftd_lakehouse_api_test is unavailable")
+class TestUsersRouterPostgres(unittest.TestCase):
+    """Layer Four API integration tests against ftd_lakehouse_api_test."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._api_test_db = "ftd_lakehouse_api_test"
+        cls._pg_password = "5Ou+BkyuQT3izP72219jMLy2AobRdI3f"
+        cls._test_firebase_uid = "test-firebase-uid-api"
+        cls._test_email = "test-api@example.com"
+
+        os.environ["PGHOST"] = "127.0.0.1"
+        os.environ["PGPORT"] = "5432"
+        os.environ["PGDATABASE"] = cls._api_test_db
+        os.environ["PGUSER"] = "ftd_app"
+        os.environ["PGPASSWORD"] = cls._pg_password
+
+        import app.db
+
+        app.db._POOL = None
+
+        cls._setup_test_data()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._cleanup_test_data()
+        os.environ.pop("PGHOST", None)
+        os.environ.pop("PGPORT", None)
+        os.environ.pop("PGDATABASE", None)
+        os.environ.pop("PGUSER", None)
+        os.environ.pop("PGPASSWORD", None)
+        import app.db
+
+        app.db._POOL = None
+
+    @classmethod
+    def _setup_test_data(cls) -> None:
+        user_id = None
+        with get_connection() as conn:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO permissions (name) VALUES (%s) ON CONFLICT DO NOTHING",
+                    ("tickers.search",),
+                )
+                cur.execute(
+                    "INSERT INTO permissions (name) VALUES (%s) ON CONFLICT DO NOTHING",
+                    ("tickers.prices",),
+                )
+                cur.execute(
+                    "INSERT INTO users (email, password_hash, firebase_uid, is_active) VALUES (%s, %s, %s, %s) ON CONFLICT (email) DO NOTHING",
+                    (cls._test_email, hash_password("test-pass"), cls._test_firebase_uid, True),
+                )
+                cur.execute("SELECT id FROM users WHERE firebase_uid = %s", (cls._test_firebase_uid,))
+                row = cur.fetchone()
+                if row:
+                    user_id = row[0]
+                    cur.execute("SELECT id, name FROM permissions WHERE name = ANY(%s)", (["tickers.search", "tickers.prices"],))
+                    perm_map = {row[1]: row[0] for row in cur.fetchall()}
+                    for name in ["tickers.search", "tickers.prices"]:
+                        perm_id = perm_map.get(name)
+                        if perm_id is not None:
+                            cur.execute(
+                                "INSERT INTO user_permissions (user_id, permission_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                                (user_id, perm_id),
+                            )
+            conn.commit()
+
+        if user_id is not None:
+            sync_user_permissions_index(user_id)
+
+    @classmethod
+    def _cleanup_test_data(cls) -> None:
+        try:
+            with get_connection() as conn:
+                conn.autocommit = False
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM users WHERE firebase_uid = %s", (cls._test_firebase_uid,))
+                    row = cur.fetchone()
+                    if row:
+                        user_id = row[0]
+                        cur.execute("DELETE FROM user_permissions WHERE user_id = %s", (user_id,))
+                        cur.execute("DELETE FROM user_permissions_index WHERE user_id = %s", (user_id,))
+                        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+                    cur.execute("DELETE FROM permissions WHERE name = ANY(%s)", (["tickers.search", "tickers.prices"],))
+                conn.commit()
+        except Exception:
+            pass
+
+    def test_get_current_user_from_postgres(self) -> None:
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": self._test_firebase_uid, "email": self._test_email}, None),
+        ):
+            response = client.get("/users/me", headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data["firebase_uid"], self._test_firebase_uid)
+        self.assertEqual(data["email"], self._test_email)
+        self.assertTrue(data["is_active"])
+
+    def test_get_current_user_permissions_from_postgres(self) -> None:
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": self._test_firebase_uid, "email": self._test_email}, None),
+        ):
+            response = client.get("/users/me/permissions", headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("tickers.search", data["permissions"])
+        self.assertIn("tickers.prices", data["permissions"])
+
+    def test_get_current_user_permission_details_from_postgres(self) -> None:
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": self._test_firebase_uid, "email": self._test_email}, None),
+        ):
+            response = client.get("/users/me/permission-details", headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(len(data["permissions"]), 2)
+        names = {p["name"] for p in data["permissions"]}
+        self.assertIn("tickers.search", names)
+        self.assertIn("tickers.prices", names)
+        for p in data["permissions"]:
+            self.assertIn(p["name"], {"tickers.search", "tickers.prices"})
+            self.assertIsInstance(p["id"], int)
+            self.assertIsInstance(p["description"], (str, type(None)))
+
+    def test_authenticated_request_without_application_user_returns_401(self) -> None:
+        unknown_firebase_uid = "unknown-firebase-uid"
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": unknown_firebase_uid, "email": "unknown@example.com"}, None),
+        ):
+            response = client.get("/users/me", headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_missing_authorization_header_returns_401(self) -> None:
         response = client.get("/users/me")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 

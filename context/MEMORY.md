@@ -3711,3 +3711,132 @@ HTTP GET /users/me/permissions
 Sub-Layer 4.2 is complete. The existing Layer Three user operations are reachable through the existing FastAPI application, the existing Layer One authentication dependency successfully establishes the PostgreSQL application-user context, successful authenticated HTTP requests return validated application-level responses, and representative authentication failures produce the expected HTTP behavior.
 
 **STOP — Sub-Layer 4.2 complete. Do not proceed into comprehensive Postman testing, frontend integration, client-side API calls, broader API coverage, content endpoints, or any other Layer Four sublayer.**
+
+### 50 Sub-Layer 4.2 — Database Safety Isolation and Test Environment Verification
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Objective
+
+Establish an isolated PostgreSQL test environment for Layer Four API testing without disturbing the existing production database (`ftd_lakehouse`) or the existing Layer One/Two/Three test database (`ftd_lakehouse_test`).
+
+#### New Database Created
+
+**`ftd_lakehouse_api_test`** — New disposable database on `ftd-postgres-vm` (`34.94.216.101:5432`), owned by `ftd_app`.
+
+**Schema initialized:** Applied all 5 existing auth migrations:
+- `001_create_auth_tables.sql` — Creates `users`, `permissions`, `user_permissions`, `user_permissions_index`
+- `002_create_indexes.sql` — Creates single-column indexes
+- `003_create_composite_index.sql` — Creates composite index on `user_permissions_index`
+- `004_add_firebase_fields_to_users.sql` — Adds `firebase_uid` and `updated_at` to `users`
+- `005_make_password_hash_nullable.sql` — Makes `password_hash` nullable
+
+**Tables present:**
+- `users` (owner: ftd_app)
+- `permissions` (owner: ftd_app)
+- `user_permissions` (owner: ftd_app)
+- `user_permissions_index` (owner: ftd_app)
+
+**Connection verified:** Python `app.db.get_connection()` successfully connects to `ftd_lakehouse_api_test` as `ftd_app` using the IAP tunnel at `127.0.0.1:5432`.
+
+#### Protected Databases Verified Untouched
+
+| Database | Status | Evidence |
+|---|---|---|
+| `ftd_lakehouse` | ✅ Untouched | `staging_finnhub` still contains 4,473 rows (unchanged). All 9 tables present. No modifications performed. |
+| `ftd_lakehouse_test` | ✅ Untouched | Still contains 4 tables (`permissions`, `user_permissions`, `user_permissions_index`, `users`) owned by `ftd_app`. Schema and data unchanged. |
+
+#### Network Path
+
+```
+Local test process → 127.0.0.1:5432 → IAP TCP forwarding → ftd-postgres-vm:5432 → ftd_lakehouse_api_test
+```
+
+Tunnel established using: `gcloud compute start-iap-tunnel ftd-postgres-vm 5432 --zone=us-west2-a --project=ftd2026 --local-host-port=127.0.0.1:5432`
+
+#### Environment Configuration
+
+The test environment should use:
+```
+PGHOST=127.0.0.1
+PGPORT=5432
+PGDATABASE=ftd_lakehouse_api_test
+PGUSER=ftd_app
+PGPASSWORD=<existing credential>
+```
+
+#### Current State
+
+- `ftd_lakehouse_api_test` exists and is reachable ✅
+- Auth schema initialized ✅
+- `ftd_lakehouse` untouched ✅
+- `ftd_lakehouse_test` untouched ✅
+- Ready for Layer Four API test execution ⏸️
+
+**STOP — Database isolation verified. No API tests executed yet. Awaiting explicit instruction to proceed with Layer Four test execution.**
+
+### 51 Sub-Layer 4.2 — Permission Discrepancy Root Cause and Fix
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Symptom
+
+When running `TestUsersRouterPostgres` against `ftd_lakehouse_api_test`, the test `test_get_current_user_permissions_from_postgres` failed with:
+
+```
+pydantic_core._pydantic_core.ValidationError: 1 validation error for UserPermissionsResponse
+permissions.0
+  Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+```
+
+The service log showed `permission_count=1`, meaning the permissions list contained a single `None` element rather than the expected permission strings.
+
+#### Investigation
+
+Verified that the Python test process connects to `ftd_lakehouse_api_test` as `ftd_app` through the IAP tunnel at `127.0.0.1:5432`. The database identity was confirmed via `SELECT current_database(), current_user`.
+
+Manual inspection of `user_permissions` and `user_permissions_index` for the test Firebase UID showed:
+- `user_permissions` contained the expected rows
+- `user_permissions_index` was empty for the test user
+
+The repository query `get_user_with_permissions()` uses:
+```sql
+SELECT u.id, ..., ARRAY_AGG(upi.permission_name) AS permissions
+FROM users u
+LEFT JOIN user_permissions_index upi ON upi.user_id = u.id
+WHERE u.id = %s
+GROUP BY ...
+```
+
+When `user_permissions_index` has no matching rows, `ARRAY_AGG(NULL)` produces `[None]`, not an empty array `[]`. This is standard PostgreSQL `ARRAY_AGG` behavior.
+
+#### Root Cause
+
+The test setup in `_setup_test_data()` opens a transaction, inserts `user_permissions` rows, and then calls `sync_user_permissions_index(user_id)` **before** `conn.commit()`.
+
+`sync_user_permissions_index()` uses `app.db.execute()`, which calls `get_connection()` and obtains a **separate connection** from the psycopg2 pool. This separate connection cannot see the uncommitted `user_permissions` rows from the test setup's transaction. As a result, `sync_user_permissions_index` inserts 0 rows into `user_permissions_index`.
+
+After `conn.commit()` completes, `user_permissions` has the correct data, but `user_permissions_index` remains empty. The subsequent API test then receives `permissions: [None]` from the repository query, causing Pydantic validation to fail.
+
+#### Fix
+
+Moved the `sync_user_permissions_index(user_id)` call to **after** `conn.commit()` in `_setup_test_data()`. This ensures the permission index is synchronized against committed data that the separate connection can see.
+
+**File modified:** `tests/test_users_router.py`
+- Restructured `_setup_test_data()` to capture `user_id` inside the transaction, commit, then call `sync_user_permissions_index(user_id)` outside the transaction block.
+
+#### Verification
+
+After cleaning stale test data and applying the fix:
+- `test_get_current_user_permissions_from_postgres` passes ✅
+- All 11 `tests.test_users_router` tests pass ✅
+- `sync_user_permissions_index` now reports the correct row count (e.g., `2 rows synced`)
+
+#### Databases Verified Untouched
+
+- `ftd_lakehouse`: No modifications ✅
+- `ftd_lakehouse_test`: No modifications ✅
