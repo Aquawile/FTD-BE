@@ -114,5 +114,9 @@ class UserWithPermissionDetails(BaseModel):
     permissions: list[PermissionDetail]
 
 
+class ErrorResponse(BaseModel):
+    detail: str
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()

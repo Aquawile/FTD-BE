@@ -11,7 +11,7 @@ from app.main import app
 from app.auth.models import User, UserPermissionsResponse, UserWithPermissionDetails, PermissionDetail
 from app.auth.hasher import hash_password
 from app.db import _POOL, get_connection
-from app.services.exceptions import UserNotFoundError
+from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError
 from app.auth.index_maintainer import sync_user_permissions_index
 
 client = TestClient(app)
@@ -314,6 +314,69 @@ class TestUsersRouterPostgres(unittest.TestCase):
 
         response = client.get("/users/me/permission-details")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_malformed_request_body_returns_422(self) -> None:
+        response = client.post(
+            "/auth/login",
+            json={"invalid": "payload"},
+            headers={"Authorization": "Bearer valid-token"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    def test_nonexistent_user_returns_404(self) -> None:
+        user = _make_user()
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": user.firebase_uid, "email": user.email}, None),
+        ), patch(
+            "app.auth.dependencies.get_authenticated_user",
+            return_value=user,
+        ), patch(
+            "app.routes.users.get_user_with_permissions",
+            side_effect=UserNotFoundError("User not found"),
+        ):
+            response = client.get("/users/me/permissions", headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_duplicate_user_creation_returns_409(self) -> None:
+        user = _make_user()
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": user.firebase_uid, "email": user.email}, None),
+        ), patch(
+            "app.auth.dependencies.get_authenticated_user",
+            return_value=user,
+        ), patch(
+            "app.auth.router.create_user",
+            side_effect=UserAlreadyExistsError("User with this email or Firebase identity already exists"),
+        ):
+            response = client.post(
+                "/auth/users",
+                json={"email": user.email, "password": "securepassword123"},
+                headers={"Authorization": "Bearer valid-token"},
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_unexpected_internal_error_returns_500(self) -> None:
+        user = _make_user()
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": user.firebase_uid, "email": user.email}, None),
+        ), patch(
+            "app.auth.dependencies.get_authenticated_user",
+            return_value=user,
+        ), patch(
+            "app.routes.users.get_user_with_permissions",
+            side_effect=RuntimeError("Unexpected database failure"),
+        ):
+            failing_client = TestClient(app, raise_server_exceptions=False)
+            response = failing_client.get("/users/me/permissions", headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        data = response.json()
+        self.assertEqual(data["detail"], "Internal server error")
 
 
 if __name__ == "__main__":

@@ -29,7 +29,14 @@ from app.services.user_service import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Invalid credentials", "model": None},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Validation error", "model": None},
+    },
+)
 def login(request: LoginRequest) -> LoginResponse:
     email = normalize_email(request.email)
     user = get_user_by_email(email)
@@ -74,12 +81,28 @@ def auth_me(request: Request):
     }
 
 
-@router.get("/me/user", response_model=User)
+@router.get(
+    "/me/user",
+    response_model=User,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None},
+        status.HTTP_404_NOT_FOUND: {"description": "Application user not found", "model": None},
+    },
+)
 def auth_me_user(current_user: User = Depends(get_current_application_user)) -> User:
     return current_user
 
 
-@router.get("/users/{user_id}", response_model=User)
+@router.get(
+    "/users/{user_id}",
+    response_model=User,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None},
+        status.HTTP_403_FORBIDDEN: {"description": "Forbidden", "model": None},
+        status.HTTP_404_NOT_FOUND: {"description": "Application user not found", "model": None},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Validation error", "model": None},
+    },
+)
 def auth_get_user(
     user_id: int,
     current_user: User = Depends(get_current_application_user),
@@ -93,7 +116,16 @@ def auth_get_user(
     return current_user
 
 
-@router.post("/users", response_model=User, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=User,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None},
+        status.HTTP_409_CONFLICT: {"description": "User with this email or Firebase identity already exists", "model": None},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Validation error", "model": None},
+    },
+)
 def auth_create_user(
     request: UserCreateRequest,
     current_user: User = Depends(get_current_application_user),
@@ -103,16 +135,19 @@ def auth_create_user(
     Requires authentication. The authenticated user's identity
     establishes the context for the operation.
     """
-    try:
-        return create_user(request)
-    except UserAlreadyExistsError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User with this email or Firebase identity already exists",
-        )
+    return create_user(request)
 
 
-@router.patch("/me/user", response_model=User)
+@router.patch(
+    "/me/user",
+    response_model=User,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None},
+        status.HTTP_404_NOT_FOUND: {"description": "User not found", "model": None},
+        status.HTTP_409_CONFLICT: {"description": "User with this email already exists", "model": None},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Validation error", "model": None},
+    },
+)
 def auth_update_user(
     request: UserUpdateRequest,
     current_user: User = Depends(get_current_application_user),
@@ -123,19 +158,17 @@ def auth_update_user(
     ``firebase_uid``, ``id``, ``created_at``, and ``password_hash``
     are not updatable through this endpoint.
     """
-    try:
-        updated = update_user(current_user.id, request)
-    except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    except UserAlreadyExistsError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User with this email already exists",
-        )
-    return updated
+    return update_user(current_user.id, request)
 
 
-@router.delete("/me/user", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/me/user",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None},
+        status.HTTP_404_NOT_FOUND: {"description": "User not found", "model": None},
+    },
+)
 def auth_delete_user(
     current_user: User = Depends(get_current_application_user),
 ) -> None:
@@ -148,11 +181,18 @@ def auth_delete_user(
     """
     success = delete_user(current_user.id)
     if not success:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise UserNotFoundError("User not found")
     return None
 
 
-@router.get("/me/user/permissions", response_model=UserPermissionsResponse)
+@router.get(
+    "/me/user/permissions",
+    response_model=UserPermissionsResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None},
+        status.HTTP_404_NOT_FOUND: {"description": "User not found", "model": None},
+    },
+)
 def auth_me_user_permissions(
     current_user: User = Depends(get_current_application_user),
 ) -> UserPermissionsResponse:
@@ -165,7 +205,4 @@ def auth_me_user_permissions(
     application-level JSON rather than needing to understand the
     foreign-key relationship or make separate requests.
     """
-    try:
-        return get_user_with_permissions(current_user.id)
-    except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return get_user_with_permissions(current_user.id)

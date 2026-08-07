@@ -3840,3 +3840,98 @@ After cleaning stale test data and applying the fix:
 
 - `ftd_lakehouse`: No modifications ✅
 - `ftd_lakehouse_test`: No modifications ✅
+
+### 52 Sub-Layer 4.3 — HTTP Validation, Error Translation, and API Contract
+
+**Completed:** 2026-08-06
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### What Was Implemented
+
+Sub-Layer 4.3 makes the HTTP boundary predictable by establishing centralized error translation, consistent response structures, and explicit OpenAPI documentation for error conditions.
+
+##### Files Modified
+
+1. **`app/main.py`** — Added centralized FastAPI exception handlers:
+   - `user_not_found_handler` — Catches `UserNotFoundError`, returns HTTP 404 with consistent `{"detail": "..."}`
+   - `user_already_exists_handler` — Catches `UserAlreadyExistsError`, returns HTTP 409
+   - `user_validation_error_handler` — Catches `UserValidationError`, returns HTTP 422
+   - `generic_exception_handler` — Catches unhandled `Exception`, returns HTTP 500 with generic message, logs full traceback server-side
+   - Added `ErrorResponse` Pydantic model for consistent error payload structure
+
+2. **`app/auth/models.py`** — Added `ErrorResponse` model with `detail: str` field.
+
+3. **`app/auth/router.py`** — Removed inline `try/except` blocks for service exceptions. Routes now let the centralized handlers translate service errors:
+   - `auth_create_user` — No longer catches `UserAlreadyExistsError` inline
+   - `auth_update_user` — No longer catches `UserNotFoundError` or `UserAlreadyExistsError` inline
+   - `auth_delete_user` — Raises `UserNotFoundError` instead of inline `HTTPException`
+   - `auth_me_user_permissions` — No longer catches `UserNotFoundError` inline
+   - Added explicit `responses` documentation to all routes for OpenAPI schema generation
+
+4. **`app/routes/users.py`** — Removed inline `try/except` for `UserNotFoundError`. Routes now delegate to centralized handler. Added explicit `responses` documentation.
+
+##### Files Created
+
+1. **`tests/test_users_router.py`** — Added 4 new error-contract tests:
+   - `test_malformed_request_body_returns_422` — Invalid JSON to `/auth/login` returns 422
+   - `test_nonexistent_user_returns_404` — Nonexistent Firebase identity returns 404
+   - `test_duplicate_user_creation_returns_409` — Duplicate user creation returns 409
+   - `test_unexpected_internal_error_returns_500` — Unexpected exception returns 500 without exposing internals
+
+##### Error Boundary Behavior
+
+| Error Origin | HTTP Status | Response Body | Logging |
+|---|---|---|---|
+| Missing/invalid auth (Layer One) | 401 | `{"detail": "..."}` | Warning with reason code |
+| Malformed request (FastAPI/Pydantic) | 422 | FastAPI default validation detail | — |
+| Nonexistent application user | 404 | `{"detail": "User not found"}` | Warning with user_id |
+| Duplicate user creation/update | 409 | `{"detail": "..."}` | Warning with email/firebase_uid |
+| Unexpected internal failure | 500 | `{"detail": "Internal server error"}` | Error with full traceback |
+
+##### OpenAPI Schema Verification
+
+All auth and user endpoints now document their possible error responses in the OpenAPI schema:
+
+| Endpoint | Documented Responses |
+|---|---|
+| `POST /auth/login` | 200, 401, 422 |
+| `GET /auth/me/user` | 200, 401, 404 |
+| `GET /auth/users/{user_id}` | 200, 401, 403, 404, 422 |
+| `POST /auth/users` | 201, 401, 409, 422 |
+| `PATCH /auth/me/user` | 200, 401, 404, 409, 422 |
+| `DELETE /auth/me/user` | 204, 401, 404 |
+| `GET /auth/me/user/permissions` | 200, 401, 404 |
+| `GET /users/me` | 200, 401 |
+| `GET /users/me/permissions` | 200, 401, 404 |
+| `GET /users/me/permission-details` | 200, 401, 404 |
+
+##### Test Results
+
+**61/61 pass** against `ftd_lakehouse_api_test`:
+
+| Test Suite | Tests | Result |
+|---|---|---|
+| `test_hasher.py` | 5 | ✅ All pass |
+| `test_token.py` | 7 | ✅ All pass |
+| `test_user_service.py` | 24 | ✅ All pass |
+| `test_user_sync.py` | 5 | ✅ All pass |
+| `test_users_router.py` (mocked) | 6 | ✅ All pass |
+| `test_users_router.py` (PostgreSQL) | 14 | ✅ All pass |
+| **Total** | **61** | **61/61 pass** |
+
+##### Guardrails Followed
+
+- Did not add frontend integration
+- Did not add content endpoints, API gateway, rate limiting, or production deployment infrastructure
+- Did not redesign the service layer
+- Did not expose database exceptions, SQL statements, or Firebase credentials through HTTP responses
+- Unexpected internal failures return generic 500 without sensitive details
+- Centralized handlers remove duplicate exception translation code from route handlers
+- FastAPI/Pydantic validation handles malformed request bodies automatically
+
+#### Hard Stop for Sub-Layer 4.3
+
+Sub-Layer 4.3 is complete. The API has a coherent request/response contract and predictable HTTP error behavior. Authentication failures originate from Layer One, malformed requests produce 422 validation errors, missing users/resources produce 404, conflicts produce 409, and unexpected internal failures produce 500 without exposing implementation details.
+
+**STOP — Sub-Layer 4.3 complete. Do not proceed into frontend integration, client-side API consumption, content delivery, pipeline data exposure, dashboard functionality, production API deployment, performance optimization, caching, or any other work outside the Layer Four API boundary.**
