@@ -24,6 +24,17 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 
+const API_BASE = "http://127.0.0.1:18000";
+
+async function apiRequest(path: string, firebaseUser: FirebaseUser | null): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (firebaseUser) {
+    const token = await firebaseUser.getIdToken();
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return fetch(`${API_BASE}${path}`, { headers });
+}
+
 // ────────────────────────────────────────────────
 // Types
 // ────────────────────────────────────────────────
@@ -2221,7 +2232,7 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 19: Account Settings (Profile)
 // ────────────────────────────────────────────────
-function AccountPage({ navigate, userEmail, userName, userPermissions }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[] }) {
+function AccountPage({ navigate, userEmail, userName, userPermissions, loading }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean }) {
   const [activeTab, setActiveTab] = useState("profile");
   const displayName = userName || "";
   const email = userEmail || "";
@@ -2246,14 +2257,20 @@ function AccountPage({ navigate, userEmail, userName, userPermissions }: { navig
               </div>
               <Btn variant="secondary" size="sm" className="ml-auto" icon={<Edit2 size={12} />}>Edit Photo</Btn>
             </div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value={displayName.split(" ")[0] || ""} /></div>
-                <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value={displayName.split(" ").slice(1).join(" ") || ""} /></div>
+            {loading ? (
+              <div className="flex items-center justify-center py-4">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               </div>
-              <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value={email} icon={<Mail size={14} />} /></div>
-              <Btn variant="primary" size="sm" icon={<Check size={12} />}>Save Profile</Btn>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value={displayName.split(" ")[0] || ""} /></div>
+                  <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value={displayName.split(" ").slice(1).join(" ") || ""} /></div>
+                </div>
+                <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value={email} icon={<Mail size={14} />} /></div>
+                <Btn variant="primary" size="sm" icon={<Check size={12} />}>Save Profile</Btn>
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -2739,10 +2756,37 @@ export default function App() {
   const [selectedTicker, setSelectedTicker] = useState("NVDA");
   const [showReport, setShowReport] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       setFirebaseUser(user);
+      if (user) {
+        setProfileLoading(true);
+        try {
+          const [profileRes, permsRes] = await Promise.all([
+            apiRequest("/auth/me/user", user),
+            apiRequest("/users/me/permissions", user),
+          ]);
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            setUserProfile(profile);
+          }
+          if (permsRes.ok) {
+            const perms = await permsRes.json();
+            setUserPermissions(perms.permissions || []);
+          }
+        } catch {
+          // ignore fetch errors during initial auth state resolution
+        } finally {
+          setProfileLoading(false);
+        }
+      } else {
+        setUserProfile(null);
+        setUserPermissions([]);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -2752,8 +2796,8 @@ export default function App() {
   const publicPages: Page[] = ["landing", "login", "register", "verify-email", "forgot-password", "onboarding-done"];
   const isPublic = publicPages.includes(page);
 
-  const userEmail = firebaseUser?.email || "";
-  const userName = firebaseUser?.displayName || "";
+  const userEmail = firebaseUser?.email || userProfile?.email || "";
+  const userName = firebaseUser?.displayName || userProfile?.email?.split("@")[0] || "";
 
   const renderPage = () => {
     switch (page) {
@@ -2775,7 +2819,7 @@ export default function App() {
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
       case "chat": return <ChatPage navigate={navigate} />;
       case "alerts": return <AlertsPage navigate={navigate} />;
-      case "account": return <AccountPage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={[]} />;
+      case "account": return <AccountPage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
       case "admin": return <AdminDashboard navigate={navigate} />;
       case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
       case "admin-users": return <AdminUsersPage navigate={navigate} />;

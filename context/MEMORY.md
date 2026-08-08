@@ -4259,3 +4259,70 @@ User enters email/password in React login form
 - No second authentication system created
 - No server-side secrets exposed in React code
 - Existing Figma UI preserved
+
+### 57 Sub-Layer 5.3 — Authenticated React API Client and Token Propagation
+
+**Completed:** 2026-08-08
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Objective
+
+Connect the authenticated Firebase session to the existing FastAPI API boundary. React makes authenticated HTTP requests to the backend using the Firebase ID token in the `Authorization: Bearer` header. The backend's Layer One mechanism validates the token and resolves the application user.
+
+#### Changes Made
+
+**File modified:** `context/figma_prototype/src/app/App.tsx`
+
+1. **Minimal authenticated API client added** (lines 26-34):
+   - `API_BASE = "http://127.0.0.1:18000"` — uses existing IAP tunnel path
+   - `apiRequest(path, firebaseUser)` — attaches `Authorization: Bearer <firebase_id_token>` header
+   - No new frameworks, state management, or proxy architecture
+
+2. **App component fetches real user data on auth** (lines 2743-2765):
+   - On Firebase auth state change, calls `/auth/me/user` and `/users/me/permissions` in parallel
+   - Stores `userProfile` and `userPermissions` in component state
+   - Passes real data to `AccountPage` props
+
+3. **AccountPage receives and displays real data**:
+   - `userEmail`, `userName`, `userPermissions` from backend
+   - Loading spinner while profile is being fetched
+   - Avatar initials derived from real user name
+
+#### Token Propagation Flow
+
+```
+Firebase signInWithEmailAndPassword → Firebase ID token
+→ React stores FirebaseUser
+→ apiRequest() calls firebaseUser.getIdToken()
+→ fetch(API_BASE + path, { headers: { Authorization: Bearer <token> } })
+→ Backend AuthMiddleware validates Firebase token
+→ Backend resolves PostgreSQL application user
+→ Response JSON returned to React
+```
+
+#### Backend Endpoints Used
+
+| Endpoint | Purpose | Auth Required |
+|---|---|---|
+| `GET /auth/me/user` | Fetch current user profile | Yes |
+| `GET /users/me/permissions` | Fetch user permissions | Yes |
+
+#### What Was NOT Done
+
+- No direct PostgreSQL connection from React
+- No database credentials in frontend code
+- No FastAPI bypass
+- No second authentication endpoint
+- No Layer Two/Layer Three modifications
+- No financial/content data access
+- No new HTTP framework or state management library
+
+#### Guardrails Followed
+
+- Uses existing IAP tunnel path (`127.0.0.1:18000`)
+- FastAPI remains the only API boundary
+- Firebase ID token propagated as Bearer header
+- Backend validates token; frontend does not interpret cryptographic contents
+- Minimal client-side mechanism (native `fetch` + Firebase SDK)
+- Existing Figma UI preserved
