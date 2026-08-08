@@ -14,6 +14,15 @@ import {
   Calendar, User, UserCheck, XCircle, Copy,
   ThumbsUp, ThumbsDown, Minus, Maximize2
 } from "lucide-react";
+import { initializeApp } from "firebase/app";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+
+const firebaseConfig = {
+  projectId: "ftd2026",
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const firebaseAuth = getAuth(firebaseApp);
 
 // ────────────────────────────────────────────────
 // Types
@@ -558,10 +567,19 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
   const [password, setPassword] = useState("••••••••");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setLoading(true);
-    setTimeout(() => { setLoading(false); navigate("account"); }, 900);
+    setError("");
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+      navigate("account");
+    } catch (err: any) {
+      setError(err.message || "Invalid credentials");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -604,6 +622,11 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
             <h1 className="text-2xl font-bold mb-1">Welcome back</h1>
             <p className="text-muted-foreground text-sm">Sign in to your research account</p>
           </div>
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
+              {error}
+            </div>
+          )}
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Email address</label>
@@ -2715,11 +2738,22 @@ export default function App() {
   const [page, setPage] = useState<Page>("landing");
   const [selectedTicker, setSelectedTicker] = useState("NVDA");
   const [showReport, setShowReport] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      setFirebaseUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const navigate = (p: Page) => setPage(p);
 
   const publicPages: Page[] = ["landing", "login", "register", "verify-email", "forgot-password", "onboarding-done"];
   const isPublic = publicPages.includes(page);
+
+  const userEmail = firebaseUser?.email || "";
+  const userName = firebaseUser?.displayName || "";
 
   const renderPage = () => {
     switch (page) {
@@ -2741,7 +2775,7 @@ export default function App() {
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
       case "chat": return <ChatPage navigate={navigate} />;
       case "alerts": return <AlertsPage navigate={navigate} />;
-      case "account": return <AccountPage navigate={navigate} userEmail="" userName="" userPermissions={[]} />;
+      case "account": return <AccountPage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={[]} />;
       case "admin": return <AdminDashboard navigate={navigate} />;
       case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
       case "admin-users": return <AdminUsersPage navigate={navigate} />;

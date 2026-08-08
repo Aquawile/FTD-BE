@@ -4186,3 +4186,76 @@ The Dashboard remains implemented but is no longer part of the initial authentic
 - No API calls implemented
 - No content/data domain integration
 - Only navigation and prop-binding changes made
+
+### 56 Sub-Layer 5.2 — Firebase Authentication Integration
+
+**Completed:** 2026-08-08
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Objective
+
+Connect the existing React login interface to the Firebase Authentication system already established by the backend architecture. Firebase remains responsible for authenticating the person's identity. The frontend obtains a Firebase ID token and includes it in API requests; the backend's existing Layer One mechanism verifies it.
+
+#### Changes Made
+
+**File modified:** `context/figma_prototype/src/app/App.tsx`
+
+1. **Firebase imports added** (lines 17-18):
+   - `initializeApp` from `firebase/app`
+   - `getAuth`, `signInWithEmailAndPassword`, `onAuthStateChanged`, `User as FirebaseUser` from `firebase/auth`
+
+2. **Firebase client configuration added** (lines 19-24):
+   - Uses `projectId: "ftd2026"` matching backend `FIREBASE_PROJECT_ID`
+   - Initializes Firebase app and auth instance at module scope
+   - No secrets, API keys, or credentials exposed in frontend code
+
+3. **LoginPage wired to Firebase Authentication** (lines 562-577):
+   - `handleLogin` now calls `signInWithEmailAndPassword(firebaseAuth, email, password)`
+   - On success: navigates to `"account"`
+   - On failure: displays Firebase error message in UI
+   - Removed mock `setTimeout` navigation
+   - Loading state preserved with spinner
+   - Error state added for auth failures
+
+4. **App component tracks Firebase auth state** (lines 2719-2732):
+   - Added `onAuthStateChanged` listener in `useEffect`
+   - Stores `FirebaseUser | null` in component state
+   - Extracts `userEmail` and `userName` from Firebase user
+   - Passes real values to `AccountPage` props
+
+5. **AccountPage receives real Firebase user data** (line 2762):
+   - `userEmail` and `userName` populated from Firebase auth state
+   - Avatar initials derived from `userName`
+   - Falls back to empty strings when no user is authenticated
+
+#### Authentication Flow
+
+```
+User enters email/password in React login form
+→ signInWithEmailAndPassword(email, password)
+→ Firebase validates credentials
+→ Firebase returns ID token and user profile
+→ React stores Firebase user state
+→ Navigate to Account/Profile
+→ Subsequent API requests include Authorization: Bearer <firebase_id_token>
+→ Backend AuthMiddleware validates Firebase token
+→ Backend resolves PostgreSQL application user
+```
+
+#### What Was NOT Done
+
+- No Firebase password sent to backend
+- No password hashing or credential verification in React
+- No PostgreSQL user creation from frontend
+- No profile data fetched from API yet
+- No financial/content data accessed
+- No secrets or credentials committed to source
+
+#### Guardrails Followed
+
+- Firebase client SDK used for authentication only
+- Backend remains responsible for token verification and user resolution
+- No second authentication system created
+- No server-side secrets exposed in React code
+- Existing Figma UI preserved
