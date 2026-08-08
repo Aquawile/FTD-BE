@@ -4125,3 +4125,64 @@ The four-layer implementation sequence is complete. The application now has:
 4. **HTTP API boundary** (Layer Four) — FastAPI exposing authenticated user operations with predictable error handling
 
 **FINAL HARD STOP FOR LAYER FOUR AND THIS ENTIRE DEVELOPMENT SEQUENCE:** The implementation is complete. Do not proceed into frontend integration, content delivery, financial-data APIs, dashboard construction, search, workspace functionality, AI/RAG integration, production optimization, or any subsequent product layer. Any subsequent development must be treated as a new architectural phase rather than an extension of this implementation task.
+
+### 55 Sub-Layer 5.1 — React/Figma Flow Rewiring and Profile Entry Point
+
+**Completed:** 2026-08-08
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Objective
+
+Prepare the existing React application for the user journey required by this layer. Preserve the existing Figma-designed interface. Rewire navigation so that successful authentication leads directly to the Profile (Account Settings) page instead of the Dashboard.
+
+#### Changes Made
+
+**File modified:** `context/figma_prototype/src/app/App.tsx`
+
+1. **LoginPage navigation rewired** (line 564):
+   - Before: `navigate("dashboard")` after successful login
+   - After: `navigate("account")` — authenticated users now go directly to Profile/Account Settings
+
+2. **OnboardingPage navigation rewired** (lines 882, 885):
+   - Before: Both "Finish Setup" and "Skip for now" navigated to `dashboard`
+   - After: Both navigate to `account` — consistent post-auth flow
+
+3. **AccountPage converted to accept real user data props** (line 2201+):
+   - Before: Hardcoded mock data (`"Isabella Chen"`, `"isabella@research.co"`, `"IB"` avatar)
+   - After: Accepts `userEmail`, `userName`, `userPermissions` props with empty defaults
+   - Avatar initials derived dynamically from `userName`
+   - Profile fields populated from props rather than hardcoded values
+   - UI layout and Figma design preserved exactly
+
+4. **App component updated to pass props to AccountPage** (line 2741):
+   - Passes `userEmail=""`, `userName=""`, `userPermissions={[]}` as placeholders
+   - Component is now prepared to receive real data from the backend API
+
+#### Navigation Flow After Changes
+
+```
+Login (success) → Account/Profile
+Register → Verify Email → Onboarding → Account/Profile
+```
+
+The Dashboard remains implemented but is no longer part of the initial authenticated flow.
+
+#### What Was NOT Changed
+
+- No Firebase authentication implemented in the frontend yet
+- No API calls to the backend
+- No user records created
+- No profile persistence
+- No financial/content data inspected or connected
+- No Dashboard functionality removed
+- No Figma UI/CSS redesign
+- No mock data introduced (removed hardcoded mock names/emails)
+
+#### Guardrails Followed
+
+- Preserved existing Figma-designed interface
+- No new frontend framework introduced
+- No API calls implemented
+- No content/data domain integration
+- Only navigation and prop-binding changes made

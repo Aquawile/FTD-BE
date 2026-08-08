@@ -561,7 +561,7 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
 
   const handleLogin = () => {
     setLoading(true);
-    setTimeout(() => { setLoading(false); navigate("dashboard"); }, 900);
+    setTimeout(() => { setLoading(false); navigate("account"); }, 900);
   };
 
   return (
@@ -879,10 +879,10 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
               <label className="text-sm font-medium">Add tickers (optional)</label>
               <Input placeholder="NVDA, AMD, TSLA..." icon={<Hash size={14} />} />
             </div>
-            <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("dashboard")}>
+            <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("account")}>
               <Check size={14} /> Finish Setup
             </Btn>
-            <button onClick={() => navigate("dashboard")} className="w-full text-center text-sm text-muted-foreground hover:text-foreground cursor-pointer">Skip for now</button>
+            <button onClick={() => navigate("account")} className="w-full text-center text-sm text-muted-foreground hover:text-foreground cursor-pointer">Skip for now</button>
           </div>
         )}
       </div>
@@ -2196,10 +2196,13 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
 }
 
 // ────────────────────────────────────────────────
-// PAGE 19: Account Settings
+// PAGE 19: Account Settings (Profile)
 // ────────────────────────────────────────────────
-function AccountPage({ navigate }: { navigate: (p: Page) => void }) {
+function AccountPage({ navigate, userEmail, userName, userPermissions }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[] }) {
   const [activeTab, setActiveTab] = useState("profile");
+  const displayName = userName || "";
+  const email = userEmail || "";
+  const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "??";
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Account Settings</h1>
@@ -2212,20 +2215,20 @@ function AccountPage({ navigate }: { navigate: (p: Page) => void }) {
         <div className="space-y-5">
           <Card className="p-5">
             <div className="flex items-center gap-4 mb-5">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold">IB</div>
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold">{initials}</div>
               <div>
-                <div className="font-semibold text-lg">Isabella Chen</div>
-                <div className="text-muted-foreground text-sm">isabella@research.co</div>
+                <div className="font-semibold text-lg">{displayName || "User"}</div>
+                <div className="text-muted-foreground text-sm">{email || "user@example.com"}</div>
                 <Badge variant="purple" className="mt-1">Beta User</Badge>
               </div>
               <Btn variant="secondary" size="sm" className="ml-auto" icon={<Edit2 size={12} />}>Edit Photo</Btn>
             </div>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value="Isabella" /></div>
-                <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value="Chen" /></div>
+                <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value={displayName.split(" ")[0] || ""} /></div>
+                <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value={displayName.split(" ").slice(1).join(" ") || ""} /></div>
               </div>
-              <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value="isabella@research.co" icon={<Mail size={14} />} /></div>
+              <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value={email} icon={<Mail size={14} />} /></div>
               <Btn variant="primary" size="sm" icon={<Check size={12} />}>Save Profile</Btn>
             </div>
           </Card>
@@ -2738,7 +2741,7 @@ export default function App() {
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
       case "chat": return <ChatPage navigate={navigate} />;
       case "alerts": return <AlertsPage navigate={navigate} />;
-      case "account": return <AccountPage navigate={navigate} />;
+      case "account": return <AccountPage navigate={navigate} userEmail="" userName="" userPermissions={[]} />;
       case "admin": return <AdminDashboard navigate={navigate} />;
       case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
       case "admin-users": return <AdminUsersPage navigate={navigate} />;
