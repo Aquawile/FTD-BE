@@ -4324,5 +4324,85 @@ Firebase signInWithEmailAndPassword → Firebase ID token
 - FastAPI remains the only API boundary
 - Firebase ID token propagated as Bearer header
 - Backend validates token; frontend does not interpret cryptographic contents
-- Minimal client-side mechanism (native `fetch` + Firebase SDK)
-- Existing Figma UI preserved
+ - Minimal client-side mechanism (native `fetch` + Firebase SDK)
+ - Existing Figma UI preserved
+
+### 58 Sub-Layer 5.4 — Real PostgreSQL User Retrieval and Profile Rendering
+
+**Status:** BLOCKED AT INFRASTRUCTURE BOUNDARY
+**Completed:** Frontend implementation ready; end-to-end verification pending PostgreSQL VM IAP recovery
+**Branch:** rawdataingestion
+**Commit:** pending
+
+#### Frontend Implementation Complete
+
+**File modified:** `context/figma_prototype/src/app/App.tsx`
+
+1. **AccountPage renders real API response fields**:
+   - `userEmail`, `userName`, `userPermissions` populated from backend responses
+   - Loading spinner shown while profile is being fetched
+   - Avatar initials derived from real user name
+   - Profile fields (`First name`, `Last name`, `Email address`) display actual backend data
+   - No mock data, no hardcoded user names or emails
+
+2. **Complete token propagation chain implemented**:
+   - Firebase authentication → Firebase ID token
+   - React `apiRequest()` attaches Bearer header
+   - Backend validates token via Layer One AuthMiddleware
+   - Backend resolves PostgreSQL application user
+   - Response JSON rendered in React Profile UI
+
+3. **Backend endpoints consumed**:
+   - `GET /auth/me/user` — returns `User` model with `id`, `firebase_uid`, `email`, `is_active`, `created_at`, `updated_at`
+   - `GET /users/me/permissions` — returns `UserPermissionsResponse` with `permissions` array
+
+#### Verification Status
+
+| Verification Item | Status | Notes |
+|---|---|---|
+| React build succeeds | ✅ | `npm run build` passes |
+| Frontend code ready for e2e | ✅ | Login → Profile flow implemented |
+| Firebase SDK integrated | ✅ | `signInWithEmailAndPassword` wired |
+| API client with Bearer token | ✅ | `apiRequest()` attaches Firebase ID token |
+| AccountPage renders real data | ✅ | Props from backend, no mocks |
+| ftd-test VM app running | ✅ | Uvicorn on 127.0.0.1:8000 |
+| ftd-test IAP SSH tunnel | ✅ | Local 18000 → ftd-test 8000 |
+| ftd-postgres-vm IAP SSH | ❌ BLOCKED | Connection times out after 180s |
+| PostgreSQL connectivity | ❌ BLOCKED | Depends on ftd-postgres-vm IAP |
+| End-to-end Login → Profile | ❌ BLOCKED | Cannot reach PostgreSQL |
+
+#### Exact Infrastructure Failure
+
+`gcloud compute ssh ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap` times out after 180 seconds with no response. The IAP TCP tunnel to `ftd-postgres-vm:5432` cannot be established because the SSH path is unavailable.
+
+This is an infrastructure condition, not an application defect. The failure prevents:
+1. Establishing the IAP tunnel to PostgreSQL
+2. Running the FastAPI app with database access
+3. Performing the end-to-end Login → Profile verification against `ftd_lakehouse_api_test`
+
+#### What Is Ready But Not Yet Verified
+
+The following components are implemented and await only the infrastructure recovery:
+
+1. **React Firebase login** — `signInEmailAndPassword` wired, navigates to Account on success
+2. **Authenticated API client** — `apiRequest()` attaches Firebase Bearer token
+3. **Profile data fetching** — `App` component fetches `/auth/me/user` and `/users/me/permissions` on auth state change
+4. **Real data rendering** — `AccountPage` displays `userEmail`, `userName`, `userPermissions` from backend
+5. **Backend API contract** — Endpoints return correct Pydantic models
+6. **Database schema** — `ftd_lakehouse_api_test` has users, permissions, user_permissions, user_permissions_index tables
+
+#### Guardrails Maintained During Blockage
+
+- No `0.0.0.0` binding introduced
+- No public firewall rules added
+- No mock data substituted for real PostgreSQL data
+- No production database (`ftd_lakehouse`) touched
+- No Layer One/Layer Two/Layer Three code modified
+- No SEC/GNews/Finnhub/ticker data accessed
+- No dashboard content implemented
+
+#### Hard Stop — Infrastructure Boundary
+
+The frontend implementation for Sub-Layer 5.4 is complete. The end-to-end browser-based verification is blocked by the unavailability of the `ftd-postgres-vm` IAP SSH path. This is an infrastructure condition that must be resolved through GCP/IAP recovery, not through application code changes.
+
+**STOP — Sub-Layer 5.4 frontend implementation complete. End-to-end verification blocked at PostgreSQL VM IAP infrastructure boundary.**
