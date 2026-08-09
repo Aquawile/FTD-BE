@@ -4406,3 +4406,44 @@ The following components are implemented and await only the infrastructure recov
 The frontend implementation for Sub-Layer 5.4 is complete. The end-to-end browser-based verification is blocked by the unavailability of the `ftd-postgres-vm` IAP SSH path. This is an infrastructure condition that must be resolved through GCP/IAP recovery, not through application code changes.
 
 **STOP — Sub-Layer 5.4 frontend implementation complete. End-to-end verification blocked at PostgreSQL VM IAP infrastructure boundary.**
+
+#### Exact Infrastructure Blocker (Updated 2026-08-08)
+
+`ftd-postgres-vm` (`34.20.129.240`, internal `10.168.0.3`) was restarted on `2026-08-08T15:49:07-07:00` after being stopped the previous day. Since restart:
+
+| Connection | Result | Error |
+|---|---|---|
+| IAP SSH → port 22 | ❌ FAILED | `ConnectionCreationError: failed to connect to backend` |
+| IAP TCP → port 5432 | ❌ FAILED | `Error while connecting [4003: 'failed to connect to backend']` |
+| Internal from `ftd-test` → `10.168.0.3:5432` | ❌ FAILED | Connection refused |
+
+GCP Network Intelligence Center troubleshooting shows:
+- Network connectivity: **REACHABLE**
+- User permissions: **0 issues**
+- VPC settings: **0 issues**
+- VM status: **0 issues**
+- VM boot: **0 issues**
+
+Despite IAP network path being reachable at the GCP level, the VM's SSH daemon (port 22) and PostgreSQL service (port 5432) are not accepting connections after the restart. This is a VM-level service availability issue, not a firewall or IAP configuration problem.
+
+**This is the same failure pattern documented in MEMORY.md §30:** "SSH daemon does not respond to banner exchanges after stop/start cycles."
+
+#### Current State
+
+- **Frontend:** Complete and built successfully
+- **Backend:** Complete, running on `ftd-test` at `127.0.0.1:8000`
+- **IAP tunnel to ftd-test:** Working (local port 18000 → ftd-test 8000)
+- **IAP tunnel to ftd-postgres-vm:** Broken (both SSH and PostgreSQL)
+- **ftd_lakehouse_api_test:** Exists but unreachable
+- **End-to-end verification:** Blocked
+
+#### What Would Need to Happen
+
+The `ftd-postgres-vm` SSH daemon and PostgreSQL service need to be restored to accepting connections. This requires either:
+1. Accessing the VM through an out-of-band mechanism (e.g., GCP Serial Console) to restart the services
+2. Waiting for the VM's services to recover
+3. GCP intervention if the VM is in a degraded state
+
+This is an infrastructure condition, not an application defect. No application code changes can resolve it.
+
+**STOP — Infrastructure boundary reached. Frontend implementation is complete. End-to-end verification requires restoration of `ftd-postgres-vm` SSH/PostgreSQL services.**
