@@ -19,6 +19,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, User as Fireba
 
 const firebaseConfig = {
   projectId: "ftd-2026",
+  apiKey: "AIzaSyA7CWNGUFkNYt9pbRF8Hh-l9lKJWSPnoQ8",
 };
 
 const firebaseApp = initializeApp(firebaseConfig);

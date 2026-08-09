@@ -4524,3 +4524,69 @@ The `ftd-postgres-vm` network interface was restored (VM resized to E2-medium). 
 - Layer 3 test database `ftd_lakehouse_test` untouched (4 users, unchanged)
 
 **Sub-Layer 5.5 is complete.** New Firebase identities automatically synchronize to durable PostgreSQL application users through the existing `synchronize_user` mechanism.
+
+#### Sub-Layer 5.6 — Secure Persistence, Multi-User Verification, and End-to-End User Flow
+
+##### Final Verification Results
+
+| Test | Result |
+|---|---|
+| User A authenticates → Profile retrieved | ✓ PASS (ID=154, email=test-lifecycle-1@ftd2026.test) |
+| User B authenticates → Profile retrieved | ✓ PASS (ID=155, email=test-lifecycle-2@ftd2026.test) |
+| Users are distinct | ✓ PASS (different IDs and emails) |
+| User A re-authenticates → same ID | ✓ PASS (persistence confirmed) |
+| Unauthenticated request → 401 | ✓ PASS |
+| Invalid token → 401 | ✓ PASS |
+| React bundle contains no server-side secrets | ✓ PASS |
+| Production ftd_lakehouse untouched | ✓ PASS (1 user, unchanged) |
+| Layer 3 ftd_lakehouse_test untouched | ✓ PASS (4 users, unchanged) |
+
+##### Security Architecture
+
+**Transport Security:**
+- React dev server: `localhost:5173` (development only)
+- FastAPI: bound to `127.0.0.1:8000` on `ftd-test` VM
+- External access: IAP/SSH tunnel `localhost:18000 → ftd-test:8000`
+- No public exposure of port 8000
+- No `0.0.0.0` binding
+- No public firewall rules added
+
+**Encryption at Rest:**
+- GCP persistent disks use Google-managed encryption keys (default)
+- `enableConfidentialCompute: false` (standard GCP encryption)
+- No additional application-level encryption implemented; existing GCP infrastructure provides encryption at rest
+
+**Secrets Management:**
+- React bundle contains Firebase client-side configuration (`projectId: "ftd-2026"`, `apiKey`)
+- No PostgreSQL passwords, private keys, service account credentials, or internal tokens in client bundle
+- Server-side credentials remain on `ftd-test` VM only
+
+##### Complete Verified Flow
+
+```
+Open application (localhost:5173)
+    ↓
+Login with Firebase credentials
+    ↓
+Firebase authenticates user → ID token
+    ↓
+React sends Authorization: Bearer <ID token> to /users/me
+    ↓
+FastAPI AuthMiddleware validates Firebase token
+    ↓
+get_current_application_user resolves Firebase UID
+    ↓
+If PostgreSQL user missing: synchronize_user() creates it
+    ↓
+Layer 3 service retrieves user from PostgreSQL
+    ↓
+API returns User model (id, firebase_uid, email, is_active, timestamps)
+    ↓
+React AccountPage renders real user data
+    ↓
+Logout → clear Firebase session
+    ↓
+Login as different user → different PostgreSQL user → different profile
+```
+
+**LAYER FIVE IS COMPLETE.** The vertical slice from Firebase Login → Real API → Real PostgreSQL User → Real Profile works for multiple real users with no mock data, no frontend-to-database access, and no production database modifications.
