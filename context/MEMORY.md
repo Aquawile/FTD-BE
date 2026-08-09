@@ -4487,3 +4487,40 @@ The `ftd-postgres-vm` network interface needs to be restored. This requires:
 This is an infrastructure condition that must be resolved through GCP VM recovery, not through application code changes.
 
 **STOP — Infrastructure boundary reached. Frontend implementation is complete. End-to-end verification requires restoration of `ftd-postgres-vm` network interface.**
+
+#### Infrastructure Recovery and Sub-Layer 5.5 Completion
+
+The `ftd-postgres-vm` network interface was restored (VM resized to E2-medium). IAP SSH and PostgreSQL connectivity are verified.
+
+##### Backend Changes
+
+| File | Change |
+|---|---|
+| `app/auth/dependencies.py` | `get_current_application_user` now calls `synchronize_user()` when a valid Firebase identity has no associated PostgreSQL user. Reuses existing Layer One sync mechanism instead of returning 401. |
+| `app/auth/middleware.py` | `AuthMiddleware` bypasses `OPTIONS` requests to allow CORS preflight from the React dev origin. |
+| `app/services/user_service.py` | Filter `None` values from `permissions` list before Pydantic validation (fixes `LEFT JOIN` + `ARRAY_AGG` producing `[None]`). |
+
+##### Test Updates
+
+| File | Change |
+|---|---|
+| `tests/test_auth_middleware.py` | Renamed `test_valid_firebase_token_without_application_user_returns_401` → `test_valid_firebase_token_without_application_user_creates_user`. Added `test_synchronize_user_failure_returns_500`. |
+| `tests/test_users_router.py` | Renamed `test_authenticated_request_without_application_user_returns_401` → `test_authenticated_request_without_application_user_creates_user`. Added cleanup helper. |
+
+##### React Changes
+
+| File | Change |
+|---|---|
+| `context/figma_prototype/src/app/App.tsx` | Fixed `firebaseConfig.projectId` from `"ftd2026"` to `"ftd-2026"` to match actual Firebase project. |
+
+##### End-to-End Verification
+
+- Created two new Firebase identities via Admin SDK: `test-lifecycle-1@ftd2026.test` and `test-lifecycle-2@ftd2026.test`
+- First API login for each user created PostgreSQL records in `ftd_lakehouse_api_test` (IDs 154 and 155)
+- Second API login for each user returned the SAME PostgreSQL record (persistence confirmed)
+- Each Firebase UID maps to a distinct PostgreSQL user
+- React dev server (`localhost:5173`) successfully calls FastAPI (`127.0.0.1:18000`) with CORS preflight working
+- Production `ftd_lakehouse` untouched (1 user, unchanged)
+- Layer 3 test database `ftd_lakehouse_test` untouched (4 users, unchanged)
+
+**Sub-Layer 5.5 is complete.** New Firebase identities automatically synchronize to durable PostgreSQL application users through the existing `synchronize_user` mechanism.

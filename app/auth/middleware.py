@@ -18,6 +18,9 @@ PUBLIC_PATHS = {"/health", "/auth/login", "/auth/me"}
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         path = request.url.path
         if path in PUBLIC_PATHS or path.startswith("/docs") or path == "/openapi.json" or path == "/redoc":
             return await call_next(request)

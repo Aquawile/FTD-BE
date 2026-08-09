@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 from app.auth.models import User
 from app.auth.permissions import ALL_PERMISSIONS
+from app.auth.user_sync import synchronize_user
 from app.services.exceptions import UserNotFoundError
 from app.services.user_service import get_authenticated_user, get_authenticated_user_by_id
 
@@ -49,11 +50,15 @@ async def get_current_application_user(request: Request) -> User:
         try:
             user = get_authenticated_user(firebase_uid)
         except UserNotFoundError:
-            logger.warning("authentication_failed: reason=postgres_user_not_found firebase_uid=%s", firebase_uid)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authenticated Firebase identity has no associated application user",
-            )
+            email = getattr(request.state, "email", "")
+            try:
+                user = synchronize_user({"firebase_uid": firebase_uid, "email": email})
+            except Exception:
+                logger.error("authentication_sync_failed: reason=user_creation_failed firebase_uid=%s", firebase_uid, exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Internal server error",
+                )
         except Exception:
             logger.error("authentication_internal_error: reason=postgres_lookup_failed firebase_uid=%s", firebase_uid, exc_info=True)
             raise HTTPException(

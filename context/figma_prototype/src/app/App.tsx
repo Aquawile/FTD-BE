@@ -18,7 +18,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 
 const firebaseConfig = {
-  projectId: "ftd2026",
+  projectId: "ftd-2026",
 };
 
 const firebaseApp = initializeApp(firebaseConfig);

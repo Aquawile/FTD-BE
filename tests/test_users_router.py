@@ -295,7 +295,7 @@ class TestUsersRouterPostgres(unittest.TestCase):
             self.assertIsInstance(p["id"], int)
             self.assertIsInstance(p["description"], (str, type(None)))
 
-    def test_authenticated_request_without_application_user_returns_401(self) -> None:
+    def test_authenticated_request_without_application_user_creates_user(self) -> None:
         unknown_firebase_uid = "unknown-firebase-uid"
         with patch(
             "app.auth.middleware.validate_firebase_token_with_reason",
@@ -303,7 +303,30 @@ class TestUsersRouterPostgres(unittest.TestCase):
         ):
             response = client.get("/users/me", headers={"Authorization": "Bearer valid-token"})
 
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data["firebase_uid"], unknown_firebase_uid)
+        self.assertEqual(data["email"], "unknown@example.com")
+        self.assertTrue(data["is_active"])
+
+        from app.auth.repository import get_user_by_firebase_uid
+        user = get_user_by_firebase_uid(unknown_firebase_uid)
+        self.assertIsNotNone(user)
+        self.addCleanup(self._cleanup_test_data)
+
+    def _cleanup_test_data(self) -> None:
+        from app.auth.repository import get_user_by_firebase_uid
+        user = get_user_by_firebase_uid("unknown-firebase-uid")
+        if user:
+            import psycopg2
+            from app.db import get_connection
+            with get_connection() as conn:
+                conn.autocommit = False
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM user_permissions WHERE user_id = %s", (user["id"],))
+                    cur.execute("DELETE FROM user_permissions_index WHERE user_id = %s", (user["id"],))
+                    cur.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+                conn.commit()
 
     def test_missing_authorization_header_returns_401(self) -> None:
         response = client.get("/users/me")
