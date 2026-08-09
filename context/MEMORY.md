@@ -4447,3 +4447,43 @@ The `ftd-postgres-vm` SSH daemon and PostgreSQL service need to be restored to a
 This is an infrastructure condition, not an application defect. No application code changes can resolve it.
 
 **STOP — Infrastructure boundary reached. Frontend implementation is complete. End-to-end verification requires restoration of `ftd-postgres-vm` SSH/PostgreSQL services.**
+
+#### Serial Console Diagnosis (2026-08-08)
+
+Using GCP Serial Console (`get-serial-port-output`), the VM boot sequence shows:
+
+| Timestamp (UTC) | Event |
+|---|---|
+| `22:49:39` | `ssh.service` started successfully |
+| `22:49:41` | Startup finished in 25.461s |
+| `23:23:22` | `ens4: Could not set DHCPv4 address: Connection timed out` |
+| `23:28:17` | `ens4: Failed` |
+
+**Root cause identified:** The VM's network interface `ens4` is failing to obtain a DHCPv4 address after the restart. Without a valid network interface configuration, the VM cannot accept SSH connections on port 22 or PostgreSQL connections on port 5432, regardless of firewall rules or IAP configuration.
+
+This explains why:
+- IAP SSH to port 22 fails with `failed to connect to backend`
+- IAP TCP to port 5432 fails with `failed to connect to backend`
+- Internal connectivity from `ftd-test` to `10.168.0.3:5432` fails with connection refused
+
+The VM is running but its primary network interface is non-functional after the restart.
+
+#### Current State
+
+- **Frontend:** Complete and built successfully
+- **Backend:** Complete, running on `ftd-test` at `127.0.0.1:8000`
+- **IAP tunnel to ftd-test:** Working (local port 18000 → ftd-test 8000)
+- **ftd-postgres-vm:** Running but network interface `ens4` failed to configure
+- **ftd_lakehouse_api_test:** Exists but unreachable
+- **End-to-end verification:** Blocked
+
+#### What Would Need to Happen
+
+The `ftd-postgres-vm` network interface needs to be restored. This requires:
+1. Accessing the VM through an out-of-band mechanism (e.g., GCP Serial Console interactive access, or another recovery path)
+2. Restarting the network service or fixing the DHCP configuration
+3. Verifying PostgreSQL and SSH services are listening after network recovery
+
+This is an infrastructure condition that must be resolved through GCP VM recovery, not through application code changes.
+
+**STOP — Infrastructure boundary reached. Frontend implementation is complete. End-to-end verification requires restoration of `ftd-postgres-vm` network interface.**

@@ -124,6 +124,7 @@ def get_user_with_permissions(user_id: int) -> UserPermissionsResponse:
     permissions = raw.get("permissions") or []
     if not isinstance(permissions, list):
         permissions = list(permissions) if permissions else []
+    permissions = [p for p in permissions if p is not None]
     logger.info("service:get_user_with_permissions success user_id=%s permission_count=%s", user_id, len(permissions))
     return UserPermissionsResponse(
         id=raw["id"],
