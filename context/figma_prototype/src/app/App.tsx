@@ -15,7 +15,7 @@ import {
   ThumbsUp, ThumbsDown, Minus, Maximize2
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendEmailVerification, User as FirebaseUser } from "firebase/auth";
 
 const firebaseConfig = {
   projectId: "ftd-2026",
@@ -691,10 +691,20 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setLoading(true);
-    setTimeout(() => { setLoading(false); navigate("verify-email"); }, 900);
+    setError("");
+    try {
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, email, pw);
+      await sendEmailVerification(cred.user);
+      navigate("verify-email");
+    } catch (err: any) {
+      setError(err.message || "Failed to create account");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -715,6 +725,11 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
             <div key={s} className={cn("flex-1 h-1 rounded-full transition-all", s <= step ? "bg-primary" : "bg-secondary")} />
           ))}
         </div>
+        {error && (
+          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
+            {error}
+          </div>
+        )}
         <div className="space-y-4">
           {step === 1 && (
             <>
@@ -776,8 +791,9 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 4: Verify Email
 // ────────────────────────────────────────────────
-function VerifyEmailPage({ navigate }: { navigate: (p: Page) => void }) {
+function VerifyEmailPage({ navigate, userEmail }: { navigate: (p: Page) => void; userEmail?: string }) {
   const [resent, setResent] = useState(false);
+  const displayEmail = userEmail || firebaseAuth.currentUser?.email || "your email";
   return (
     <div className="min-h-screen flex items-center justify-center p-8 bg-background">
       <div className="w-full max-w-sm text-center space-y-6">
@@ -787,7 +803,7 @@ function VerifyEmailPage({ navigate }: { navigate: (p: Page) => void }) {
         <div>
           <h1 className="text-2xl font-bold mb-2">Check your inbox</h1>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            We sent a verification link to <strong className="text-foreground">isabella@research.co</strong>. Click the link to activate your account.
+            We sent a verification link to <strong className="text-foreground">{displayEmail}</strong>. Click the link to activate your account.
           </p>
         </div>
         <div className="p-4 bg-secondary/50 rounded-xl border border-border text-left text-sm space-y-2">
@@ -795,7 +811,7 @@ function VerifyEmailPage({ navigate }: { navigate: (p: Page) => void }) {
           <div className="flex items-center gap-2"><Info size={14} className="text-blue-400" /><span>Link expires in 24 hours</span></div>
           <div className="flex items-center gap-2"><AlertCircle size={14} className="text-orange-400" /><span>Check your spam folder if not received</span></div>
         </div>
-        <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("onboarding-done")}>
+        <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("account")}>
           <Check size={14} /> I verified my email
         </Btn>
         <button
@@ -2805,7 +2821,7 @@ export default function App() {
       case "landing": return <LandingPage navigate={navigate} />;
       case "login": return <LoginPage navigate={navigate} />;
       case "register": return <RegisterPage navigate={navigate} />;
-      case "verify-email": return <VerifyEmailPage navigate={navigate} />;
+      case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email} />;
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
