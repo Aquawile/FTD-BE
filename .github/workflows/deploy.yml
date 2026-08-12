@@ -91,3 +91,44 @@ jobs:
           gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="pip3 install --break-system-packages -r ~/prices/requirements.txt && chmod +x ~/prices/run.sh && (crontab -l 2>/dev/null | grep -v 'prices/run.sh'; echo '0 22 * * * /home/isabellabutera/prices/run.sh') | crontab -" --quiet
           gcloud compute instances stop data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
           echo "Prices VM script, dependencies, and cron updated. VM stopped."
+
+      - name: Deploy Application to ftd-test
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, 'app') ||
+          contains(github.event.head_commit.message, 'backend') ||
+          contains(github.event.head_commit.message, 'frontend') ||
+          contains(github.event.head_commit.message, 'deploy')
+        run: |
+          echo "Starting application deployment to ftd-test..."
+          
+          echo "Stopping existing FastAPI process..."
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --command="pkill -f uvicorn || true" --quiet
+          
+          echo "Syncing backend code..."
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --command="mkdir -p /home/isabellabutera/app" --quiet
+          gcloud compute scp --recurse app/ ftd-test:/home/isabellabutera/app/app/ --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp main.py ftd-test:/home/isabellabutera/main.py --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp models.py ftd-test:/home/isabellabutera/models.py --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp router.py ftd-test:/home/isabellabutera/router.py --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp requirements.txt ftd-test:/home/isabellabutera/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
+          
+          echo "Installing Python dependencies..."
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --command="cd /home/isabellabutera/app && .venv/bin/pip install --break-system-packages -r /home/isabellabutera/requirements.txt" --quiet
+          
+          echo "Building React frontend..."
+          npm ci --prefix context/figma_prototype
+          npm run build --prefix context/figma_prototype
+          
+          echo "Deploying React build..."
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --command="mkdir -p /home/isabellabutera/frontend" --quiet
+          gcloud compute scp --recurse context/figma_prototype/dist/ ftd-test:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
+          
+          echo "Starting FastAPI..."
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --command="bash /home/isabellabutera/start_app.sh" --quiet
+          sleep 5
+          
+          echo "Verifying deployment..."
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --command="curl -s http://127.0.0.1:8000/health" --quiet
+          
+          echo "Application deployment complete"
