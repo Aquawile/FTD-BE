@@ -82,7 +82,23 @@ jobs:
           contains(github.event.head_commit.message, 'deploy')
         run: |
           gcloud compute instances start data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
-          sleep 15
+
+          READY=false
+          for i in $(seq 1 18); do
+            if gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="echo 'data-ingest-vm SSH ready'" --quiet; then
+              echo "SSH ready after $i attempt(s)"
+              READY=true
+              break
+            fi
+            echo "SSH not ready yet, waiting 10s (attempt $i/18)..."
+            sleep 10
+          done
+
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: data-ingest-vm did not become SSH-ready within 3 minutes"
+            exit 1
+          fi
+
           gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="rm -rf ~/prices-ingestion" --quiet
           gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p ~/prices" --quiet
           gcloud compute scp --tunnel-through-iap prices/main.py data-ingest-vm:~/prices/main.py --zone=us-west2-a --project=ftd2026 --quiet
