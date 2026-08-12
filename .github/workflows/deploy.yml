@@ -83,12 +83,12 @@ jobs:
         run: |
           gcloud compute instances start data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
           sleep 15
-          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="rm -rf ~/prices-ingestion" --quiet
-          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="mkdir -p ~/prices" --quiet
-          gcloud compute scp prices/main.py data-ingest-vm:~/prices/main.py --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute scp prices/run.sh data-ingest-vm:~/prices/run.sh --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute scp prices/requirements.txt data-ingest-vm:~/prices/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --command="pip3 install --break-system-packages -r ~/prices/requirements.txt && chmod +x ~/prices/run.sh && (crontab -l 2>/dev/null | grep -v 'prices/run.sh'; echo '0 22 * * * /home/isabellabutera/prices/run.sh') | crontab -" --quiet
+          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="rm -rf ~/prices-ingestion" --quiet
+          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p ~/prices" --quiet
+          gcloud compute scp --tunnel-through-iap prices/main.py data-ingest-vm:~/prices/main.py --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp --tunnel-through-iap prices/run.sh data-ingest-vm:~/prices/run.sh --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp --tunnel-through-iap prices/requirements.txt data-ingest-vm:~/prices/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute ssh data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pip3 install --break-system-packages -r ~/prices/requirements.txt && chmod +x ~/prices/run.sh && (crontab -l 2>/dev/null | grep -v 'prices/run.sh'; echo '0 22 * * * /home/isabellabutera/prices/run.sh') | crontab -" --quiet
           gcloud compute instances stop data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
           echo "Prices VM script, dependencies, and cron updated. VM stopped."
 
