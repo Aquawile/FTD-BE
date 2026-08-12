@@ -119,7 +119,7 @@ jobs:
           echo "Starting application deployment to ftd-test..."
           
           echo "Stopping existing FastAPI process..."
-          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -f uvicorn || true" --quiet
+          gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
           
           echo "Syncing backend code..."
           gcloud compute ssh ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/app" --quiet
