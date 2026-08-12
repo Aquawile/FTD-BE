@@ -124,9 +124,6 @@ jobs:
           echo "Syncing backend code..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/app" --quiet
           gcloud compute scp --tunnel-through-iap --recurse app/ isabellabutera@ftd-test:/home/isabellabutera/app/app/ --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute scp --tunnel-through-iap main.py isabellabutera@ftd-test:/home/isabellabutera/main.py --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute scp --tunnel-through-iap models.py isabellabutera@ftd-test:/home/isabellabutera/models.py --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute scp --tunnel-through-iap router.py isabellabutera@ftd-test:/home/isabellabutera/router.py --zone=us-west2-a --project=ftd2026 --quiet
           gcloud compute scp --tunnel-through-iap requirements.txt isabellabutera@ftd-test:/home/isabellabutera/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
           
           echo "Installing Python dependencies..."
