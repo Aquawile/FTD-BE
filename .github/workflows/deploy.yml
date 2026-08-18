@@ -134,7 +134,7 @@ jobs:
           npm run build --prefix context/figma_prototype
           
           echo "Deploying React build..."
-          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/frontend" --quiet
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/frontend/dist" --quiet
           gcloud compute scp --tunnel-through-iap --recurse context/figma_prototype/dist/ isabellabutera@ftd-test:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
           
           echo "Starting FastAPI..."
