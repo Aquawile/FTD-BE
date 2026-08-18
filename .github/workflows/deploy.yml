@@ -118,6 +118,24 @@ jobs:
         run: |
           echo "Starting application deployment to ftd-test..."
           
+          gcloud compute instances start ftd-test --zone=us-west2-a --project=ftd2026 --quiet
+
+          READY=false
+          for i in $(seq 1 18); do
+            if gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="echo 'ftd-test SSH ready'" --quiet; then
+              echo "SSH ready after $i attempt(s)"
+              READY=true
+              break
+            fi
+            echo "SSH not ready yet, waiting 10s (attempt $i/18)..."
+            sleep 10
+          done
+
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: ftd-test did not become SSH-ready within 3 minutes"
+            exit 1
+          fi
+          
           echo "Stopping existing FastAPI process..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
           
