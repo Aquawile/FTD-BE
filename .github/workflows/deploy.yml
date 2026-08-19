@@ -178,10 +178,16 @@ jobs:
           echo "Stopping existing FastAPI process..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
           
+          echo "Verifying VM deployment prerequisites..."
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="test -f /home/isabellabutera/start_app.sh && test -x /home/isabellabutera/start_app.sh || { echo 'ERROR: /home/isabellabutera/start_app.sh is missing or not executable'; exit 1; }" --quiet
+          
           echo "Syncing backend code..."
-          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/app" --quiet
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="rm -rf /home/isabellabutera/app/app && mkdir -p /home/isabellabutera/app" --quiet
           gcloud compute scp --tunnel-through-iap --recurse app/ isabellabutera@ftd-test:/home/isabellabutera/app/app/ --zone=us-west2-a --project=ftd2026 --quiet
           gcloud compute scp --tunnel-through-iap requirements.txt isabellabutera@ftd-test:/home/isabellabutera/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
+          
+          echo "Ensuring Python virtual environment exists..."
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && python3 -m venv .venv || true" --quiet
           
           echo "Installing Python dependencies..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && .venv/bin/pip install --break-system-packages -r /home/isabellabutera/requirements.txt" --quiet
