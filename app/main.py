@@ -50,6 +50,11 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/version")
+def version_check() -> dict[str, str]:
+    return {"version": "1.5.0", "commit": "c06ad4b0"}
+
+
 @app.exception_handler(UserNotFoundError)
 async def user_not_found_handler(request: Request, exc: UserNotFoundError) -> JSONResponse:
     logger.warning("http:user_not_found detail=%s", exc)
