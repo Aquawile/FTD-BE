@@ -17,6 +17,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Record deployed revision
+        run: |
+          echo "Deploying revision: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit message: $(git log -1 --format=%s)"
+      
       - name: Verify CI passed
         if: github.event_name == 'push'
         env:
