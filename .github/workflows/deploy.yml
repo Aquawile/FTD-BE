@@ -205,18 +205,20 @@ jobs:
           
           echo "Waiting for FastAPI to become healthy..."
           HEALTHY=false
-          for i in $(seq 1 12); do
-            if gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health" --quiet | grep -q '"status":"ok"'; then
+          for i in $(seq 1 24); do
+            RESPONSE=$(gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health || echo 'CURL_FAILED'" --quiet)
+            if echo "$RESPONSE" | grep -q '"status":"ok"'; then
               echo "FastAPI healthy after $i attempt(s)"
               HEALTHY=true
               break
             fi
-            echo "Health check not ready yet, waiting 5s (attempt $i/12)..."
+            echo "Health check attempt $i failed. Response: $RESPONSE"
+            echo "Health check not ready yet, waiting 5s..."
             sleep 5
           done
           
           if [ "$HEALTHY" != "true" ]; then
-            echo "ERROR: FastAPI did not become healthy within 60 seconds"
+            echo "ERROR: FastAPI did not become healthy within 120 seconds"
             exit 1
           fi
           
