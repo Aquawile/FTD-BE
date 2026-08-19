@@ -178,6 +178,10 @@ jobs:
           echo "Stopping existing FastAPI process..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
           
+          echo "Deploying startup script..."
+          gcloud compute scp --tunnel-through-iap scripts/start_app.sh isabellabutera@ftd-test:/home/isabellabutera/start_app.sh --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="chmod +x /home/isabellabutera/start_app.sh" --quiet
+          
           echo "Verifying VM deployment prerequisites..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="test -f /home/isabellabutera/start_app.sh && test -x /home/isabellabutera/start_app.sh || { echo 'ERROR: /home/isabellabutera/start_app.sh is missing or not executable'; exit 1; }" --quiet
           
@@ -185,6 +189,7 @@ jobs:
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="rm -rf /home/isabellabutera/app/app && mkdir -p /home/isabellabutera/app/app" --quiet
           gcloud compute scp --tunnel-through-iap --recurse app/ isabellabutera@ftd-test:/home/isabellabutera/app/app/ --zone=us-west2-a --project=ftd2026 --quiet
           gcloud compute scp --tunnel-through-iap requirements.txt isabellabutera@ftd-test:/home/isabellabutera/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="find /home/isabellabutera/app/app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true" --quiet
           
           echo "Ensuring Python virtual environment exists..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && python3 -m venv .venv || true" --quiet
@@ -201,7 +206,7 @@ jobs:
           gcloud compute scp --tunnel-through-iap --recurse context/figma_prototype/dist/ isabellabutera@ftd-test:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
           
           echo "Starting FastAPI..."
-          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="bash /home/isabellabutera/start_app.sh" --quiet
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="PGPASSWORD='${{ secrets.FTD_TEST_PG_PASSWORD }}' bash /home/isabellabutera/start_app.sh" --quiet
           
           echo "Waiting for FastAPI to become healthy..."
           HEALTHY=false
