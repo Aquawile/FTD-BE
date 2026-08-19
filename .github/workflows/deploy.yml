@@ -202,9 +202,22 @@ jobs:
           
           echo "Starting FastAPI..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="bash /home/isabellabutera/start_app.sh" --quiet
-          sleep 5
           
-          echo "Verifying deployment..."
-          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health" --quiet
+          echo "Waiting for FastAPI to become healthy..."
+          HEALTHY=false
+          for i in $(seq 1 12); do
+            if gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health" --quiet | grep -q '"status":"ok"'; then
+              echo "FastAPI healthy after $i attempt(s)"
+              HEALTHY=true
+              break
+            fi
+            echo "Health check not ready yet, waiting 5s (attempt $i/12)..."
+            sleep 5
+          done
+          
+          if [ "$HEALTHY" != "true" ]; then
+            echo "ERROR: FastAPI did not become healthy within 60 seconds"
+            exit 1
+          fi
           
           echo "Application deployment complete"
