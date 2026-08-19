@@ -23,13 +23,15 @@ jobs:
         run: |
           COMMIT_SHA=${{ github.sha }}
           echo "Waiting for CI to complete for commit $COMMIT_SHA..."
+          CI_FOUND=false
           for i in $(seq 1 18); do
-            CI_STATUS=$(gh run list --workflow="CI.yml" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
+            CI_STATUS=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
             if [ -z "$CI_STATUS" ]; then
               echo "CI not started yet, waiting 10s (attempt $i/18)..."
               sleep 10
               continue
             fi
+            CI_FOUND=true
             if [ "$CI_STATUS" == "success" ]; then
               echo "CI passed after $i attempt(s)"
               break
@@ -41,6 +43,10 @@ jobs:
               sleep 10
             fi
           done
+          if [ "$CI_FOUND" != "true" ]; then
+            echo "ERROR: CI workflow not found for commit $COMMIT_SHA after 3 minutes"
+            exit 1
+          fi
       
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
