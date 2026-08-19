@@ -1,15 +1,12 @@
 name: Deploy to GCP
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
+  push:
+    branches: [rawdataingestion]
   workflow_dispatch:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,6 +15,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Verify CI passed
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMIT_SHA=${{ github.sha }}
+          echo "Waiting for CI to complete for commit $COMMIT_SHA..."
+          for i in $(seq 1 18); do
+            CI_STATUS=$(gh run list --workflow="CI.yml" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
+            if [ -z "$CI_STATUS" ]; then
+              echo "CI not started yet, waiting 10s (attempt $i/18)..."
+              sleep 10
+              continue
+            fi
+            if [ "$CI_STATUS" == "success" ]; then
+              echo "CI passed after $i attempt(s)"
+              break
+            elif [ "$CI_STATUS" == "failure" ]; then
+              echo "ERROR: CI failed for commit $COMMIT_SHA"
+              exit 1
+            else
+              echo "CI status: $CI_STATUS, waiting 10s (attempt $i/18)..."
+              sleep 10
+            fi
+          done
       
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -34,8 +57,8 @@ jobs:
       - name: Deploy Start Price VM Cloud Function
         if: |
           github.event_name == 'workflow_dispatch' ||
-          contains(github.event.workflow_run.head_commit.message, 'start-price-vm') ||
-          contains(github.event.workflow_run.head_commit.message, 'deploy')
+          contains(github.event.head_commit.message, 'start-price-vm') ||
+          contains(github.event.head_commit.message, 'deploy')
         run: |
           gcloud functions deploy start-price-vm \
             --project=ftd2026 \
@@ -56,8 +79,8 @@ jobs:
       - name: Deploy GNews Cloud Function
         if: |
           github.event_name == 'workflow_dispatch' ||
-          contains(github.event.workflow_run.head_commit.message, 'gnews') ||
-          contains(github.event.workflow_run.head_commit.message, 'deploy')
+          contains(github.event.head_commit.message, 'gnews') ||
+          contains(github.event.head_commit.message, 'deploy')
         run: |
           gcloud functions deploy gnews-ingest \
             --project=ftd2026 \
@@ -81,8 +104,8 @@ jobs:
       - name: Deploy Prices VM Script
         if: |
           github.event_name == 'workflow_dispatch' ||
-          contains(github.event.workflow_run.head_commit.message, 'prices') ||
-          contains(github.event.workflow_run.head_commit.message, 'deploy')
+          contains(github.event.head_commit.message, 'prices') ||
+          contains(github.event.head_commit.message, 'deploy')
         run: |
           gcloud compute instances start data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
 
@@ -114,10 +137,10 @@ jobs:
       - name: Deploy Application to ftd-test
         if: |
           github.event_name == 'workflow_dispatch' ||
-          contains(github.event.workflow_run.head_commit.message, 'app') ||
-          contains(github.event.workflow_run.head_commit.message, 'backend') ||
-          contains(github.event.workflow_run.head_commit.message, 'frontend') ||
-          contains(github.event.workflow_run.head_commit.message, 'deploy')
+          contains(github.event.head_commit.message, 'app') ||
+          contains(github.event.head_commit.message, 'backend') ||
+          contains(github.event.head_commit.message, 'frontend') ||
+          contains(github.event.head_commit.message, 'deploy')
         run: |
           echo "Starting application deployment to ftd-test..."
           
