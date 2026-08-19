@@ -178,6 +178,9 @@ jobs:
           echo "Stopping existing FastAPI process..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
           
+          echo "Cleaning stale application files..."
+          gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && rm -rf main.py models.py router.py users.py services tests ._app .pytest_cache" --quiet
+          
           echo "Deploying startup script..."
           gcloud compute scp --tunnel-through-iap scripts/start_app.sh isabellabutera@ftd-test:/home/isabellabutera/start_app.sh --zone=us-west2-a --project=ftd2026 --quiet
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="chmod +x /home/isabellabutera/start_app.sh" --quiet
