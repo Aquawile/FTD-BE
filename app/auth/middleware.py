@@ -13,7 +13,7 @@ from app.auth.token import verify_token
 logger = logging.getLogger(__name__)
 
 
-PUBLIC_PATHS = {"/health", "/auth/login", "/auth/me"}
+PUBLIC_PATHS = {"/health", "/version", "/auth/login", "/auth/me"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
