@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [rawdataingestion]
+    branches: [rawdataingestion, staging]
   pull_request:
-    branches: [rawdataingestion]
+    branches: [rawdataingestion, staging]
   workflow_dispatch:
 
 jobs:
