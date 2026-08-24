@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  validate:
+  ci:
+    name: CI Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
