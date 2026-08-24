@@ -2,20 +2,32 @@ name: Deploy to GCP
 
 on:
   push:
-    branches: [rawdataingestion]
+    branches: [rawdataingestion, staging]
   workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Target environment for deployment'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
 
 jobs:
-  deploy:
+  deploy-development:
+    name: Deploy to Development (ftd-test)
+    if: github.ref == 'refs/heads/rawdataingestion' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'development')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
       actions: read
-    
+    environment: development
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Record deployed revision
         run: |
@@ -146,16 +158,10 @@ jobs:
           gcloud compute ssh isabellabutera@data-ingest-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pip3 install --break-system-packages -r ~/prices/requirements.txt && chmod +x ~/prices/run.sh && (crontab -l 2>/dev/null | grep -v 'prices/run.sh'; echo '0 22 * * * /home/isabellabutera/prices/run.sh') | crontab -" --quiet
           gcloud compute instances stop data-ingest-vm --zone=us-west2-a --project=ftd2026 --quiet
           echo "Prices VM script, dependencies, and cron updated. VM stopped."
-
-      - name: Deploy Application to ftd-test
-        if: |
-          github.event_name == 'workflow_dispatch' ||
-          contains(github.event.head_commit.message, 'app') ||
-          contains(github.event.head_commit.message, 'backend') ||
-          contains(github.event.head_commit.message, 'frontend') ||
-          contains(github.event.head_commit.message, 'deploy')
+      
+      - name: Deploy Application to ftd-test (Development)
         run: |
-          echo "Starting application deployment to ftd-test..."
+          echo "Starting application deployment to ftd-test (development)..."
           
           gcloud compute instances start ftd-test --zone=us-west2-a --project=ftd2026 --quiet
 
@@ -208,6 +214,19 @@ jobs:
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/frontend/dist" --quiet
           gcloud compute scp --tunnel-through-iap --recurse context/figma_prototype/dist/ isabellabutera@ftd-test:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
           
+          echo "Writing version metadata..."
+          cat > /tmp/version.json << EOF
+          {
+            "commit_sha": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "commit_message": "$(git log -1 --format=%s)",
+            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "environment": "development",
+            "workflow_run_id": "${{ github.run_id }}"
+          }
+          EOF
+          gcloud compute scp --tunnel-through-iap /tmp/version.json isabellabutera@ftd-test:/home/isabellabutera/version.json --zone=us-west2-a --project=ftd2026 --quiet
+          
           echo "Starting FastAPI..."
           gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="PGPASSWORD='${{ secrets.FTD_TEST_PG_PASSWORD }}' bash /home/isabellabutera/start_app.sh" --quiet
           
@@ -230,4 +249,177 @@ jobs:
             exit 1
           fi
           
-          echo "Application deployment complete"
+          echo "Verifying version endpoint..."
+          VERSION_RESPONSE=$(gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/version" --quiet)
+          if echo "$VERSION_RESPONSE" | grep -q "${{ github.sha }}"; then
+            echo "Version endpoint verified: $VERSION_RESPONSE"
+          else
+            echo "WARNING: Version endpoint does not match deployed commit. Response: $VERSION_RESPONSE"
+          fi
+          
+          echo "Application deployment to development complete"
+
+  deploy-staging:
+    name: Deploy to Staging (ftd-staging)
+    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'staging')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Record deployed revision
+        run: |
+          echo "Deploying revision: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit message: $(git log -1 --format=%s)"
+      
+      - name: Verify CI passed
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMIT_SHA=${{ github.sha }}
+          echo "Waiting for CI to complete for commit $COMMIT_SHA..."
+          CI_FOUND=false
+          for i in $(seq 1 18); do
+            CI_STATUS=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
+            if [ -z "$CI_STATUS" ]; then
+              echo "CI not started yet, waiting 10s (attempt $i/18)..."
+              sleep 10
+              continue
+            fi
+            CI_FOUND=true
+            if [ "$CI_STATUS" == "success" ]; then
+              echo "CI passed after $i attempt(s)"
+              break
+            elif [ "$CI_STATUS" == "failure" ]; then
+              echo "ERROR: CI failed for commit $COMMIT_SHA"
+              exit 1
+            else
+              echo "CI status: $CI_STATUS, waiting 10s (attempt $i/18)..."
+              sleep 10
+            fi
+          done
+          if [ "$CI_FOUND" != "true" ]; then
+            echo "ERROR: CI workflow not found for commit $COMMIT_SHA after 3 minutes"
+            exit 1
+          fi
+      
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
+          service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ftd2026
+          install_components: beta
+      
+      - name: Deploy Application to ftd-staging (Staging)
+        run: |
+          echo "Starting application deployment to ftd-staging (staging)..."
+          
+          gcloud compute instances start ftd-staging --zone=us-west2-a --project=ftd2026 --quiet
+
+          READY=false
+          for i in $(seq 1 18); do
+            if gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="echo 'ftd-staging SSH ready'" --quiet; then
+              echo "SSH ready after $i attempt(s)"
+              READY=true
+              break
+            fi
+            echo "SSH not ready yet, waiting 10s (attempt $i/18)..."
+            sleep 10
+          done
+
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: ftd-staging did not become SSH-ready within 3 minutes"
+            exit 1
+          fi
+          
+          echo "Stopping existing FastAPI process..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
+          
+          echo "Cleaning stale application files..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && rm -rf main.py models.py router.py users.py services tests ._app .pytest_cache" --quiet
+          
+          echo "Deploying startup script..."
+          gcloud compute scp --tunnel-through-iap scripts/start_app.sh isabellabutera@ftd-staging:/home/isabellabutera/start_app.sh --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="chmod +x /home/isabellabutera/start_app.sh" --quiet
+          
+          echo "Verifying VM deployment prerequisites..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="test -f /home/isabellabutera/start_app.sh && test -x /home/isabellabutera/start_app.sh || { echo 'ERROR: /home/isabellabutera/start_app.sh is missing or not executable'; exit 1; }" --quiet
+          
+          echo "Syncing backend code..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="rm -rf /home/isabellabutera/app/app && mkdir -p /home/isabellabutera/app/app" --quiet
+          gcloud compute scp --tunnel-through-iap --recurse app/ isabellabutera@ftd-staging:/home/isabellabutera/app/app/ --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute scp --tunnel-through-iap requirements.txt isabellabutera@ftd-staging:/home/isabellabutera/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="find /home/isabellabutera/app/app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true" --quiet
+          
+          echo "Ensuring Python virtual environment exists..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && python3 -m venv .venv || true" --quiet
+          
+          echo "Installing Python dependencies..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && .venv/bin/pip install --break-system-packages -r /home/isabellabutera/requirements.txt" --quiet
+          
+          echo "Building React frontend..."
+          npm ci --prefix context/figma_prototype
+          npm run build --prefix context/figma_prototype
+          
+          echo "Deploying React build..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/frontend/dist" --quiet
+          gcloud compute scp --tunnel-through-iap --recurse context/figma_prototype/dist/ isabellabutera@ftd-staging:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
+          
+          echo "Writing version metadata..."
+          cat > /tmp/version.json << EOF
+          {
+            "commit_sha": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "commit_message": "$(git log -1 --format=%s)",
+            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "environment": "staging",
+            "workflow_run_id": "${{ github.run_id }}"
+          }
+          EOF
+          gcloud compute scp --tunnel-through-iap /tmp/version.json isabellabutera@ftd-staging:/home/isabellabutera/version.json --zone=us-west2-a --project=ftd2026 --quiet
+          
+          echo "Starting FastAPI..."
+          gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="PGPASSWORD='${{ secrets.FTD_STAGING_PG_PASSWORD }}' bash /home/isabellabutera/start_app.sh" --quiet
+          
+          echo "Waiting for FastAPI to become healthy..."
+          HEALTHY=false
+          for i in $(seq 1 24); do
+            RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health || echo 'CURL_FAILED'" --quiet)
+            if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+              echo "FastAPI healthy after $i attempt(s)"
+              HEALTHY=true
+              break
+            fi
+            echo "Health check attempt $i failed. Response: $RESPONSE"
+            echo "Health check not ready yet, waiting 5s..."
+            sleep 5
+          done
+          
+          if [ "$HEALTHY" != "true" ]]; then
+            echo "ERROR: FastAPI did not become healthy within 120 seconds"
+            exit 1
+          fi
+          
+          echo "Verifying version endpoint..."
+          VERSION_RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/version" --quiet)
+          if echo "$VERSION_RESPONSE" | grep -q "${{ github.sha }}"; then
+            echo "Version endpoint verified: $VERSION_RESPONSE"
+          else
+            echo "WARNING: Version endpoint does not match deployed commit. Response: $VERSION_RESPONSE"
+          fi
+          
+          echo "Application deployment to staging complete"
