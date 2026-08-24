@@ -9,3 +9,4 @@ Monorepo for the Finance Tracker Dashboard data ingestion pipelines on GCP.
 
 All SEC pipeline commands, config, and deployment scripts are under **`sec/`**. See [sec/README.md](sec/README.md).
 # Version fix test 2026-08-24T02:16:48Z
+# Development deployment test 2 2026-08-24T02:43:34Z
