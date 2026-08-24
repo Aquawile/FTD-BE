@@ -262,7 +262,6 @@ jobs:
   deploy-staging-migrations:
     name: Apply Staging Database Migrations
     if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'staging')
-    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
