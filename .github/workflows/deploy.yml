@@ -530,7 +530,7 @@ jobs:
           gcloud compute scp --tunnel-through-iap /tmp/version.json isabellabutera@ftd-staging-api:/home/isabellabutera/version.json --zone=us-west2-a --project=ftd2026 --quiet
           
           echo "Starting FastAPI..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="PGPASSWORD='${{ secrets.FTD_STAGING_PG_PASSWORD }}' bash /home/isabellabutera/start_app.sh" --quiet
+          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="HOST=0.0.0.0 PGPASSWORD='${{ secrets.FTD_STAGING_PG_PASSWORD }}' bash /home/isabellabutera/start_app.sh" --quiet
           
           echo "Waiting for FastAPI to become healthy..."
           HEALTHY=false

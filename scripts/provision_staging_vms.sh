@@ -96,27 +96,27 @@ setup_web_vm() {
     mkdir -p /home/${OS_USER}/frontend/dist
   " --quiet
 
-  # Deploy nginx config for static serving + API proxy
+# Deploy nginx config for static serving + API proxy
   cat > /tmp/nginx_staging.conf << 'NGINX_EOF'
 server {
     listen 8080;
     server_name _;
 
-    root /home/isabellabutera/frontend/dist;
+    root /home/isabellabutera/frontend/dist/dist;
     index index.html index.htm;
 
     # Serve static files
     location / {
-        try_files \$uri \$uri/ /index.html;
+        try_files $uri $uri/ /index.html;
     }
 
-    # Proxy API requests to Backend VM
+    # Proxy API requests to Backend VM (internal IP)
     location /api/ {
-        proxy_pass http://ftd-staging-api:8000/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_pass http://10.168.0.7:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 30s;
         proxy_send_timeout 30s;
     }
