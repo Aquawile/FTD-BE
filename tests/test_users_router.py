@@ -174,11 +174,11 @@ class TestUsersRouterPostgres(unittest.TestCase):
         cls._test_firebase_uid = "test-firebase-uid-api"
         cls._test_email = "test-api@example.com"
 
-        os.environ["PGHOST"] = "127.0.0.1"
-        os.environ["PGPORT"] = "5432"
-        os.environ["PGDATABASE"] = cls._api_test_db
-        os.environ["PGUSER"] = "ftd_app"
-        os.environ["PGPASSWORD"] = cls._pg_password
+        os.environ.setdefault("PGHOST", "127.0.0.1")
+        os.environ.setdefault("PGPORT", "5432")
+        os.environ.setdefault("PGDATABASE", cls._api_test_db)
+        os.environ.setdefault("PGUSER", "ftd_app")
+        os.environ.setdefault("PGPASSWORD", cls._pg_password)
 
         import app.db
 
