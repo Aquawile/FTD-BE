@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,9 +53,36 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _load_version_metadata() -> dict[str, str]:
+    """Load version metadata from version.json written during deployment."""
+    version_path = Path("/home/isabellabutera/version.json")
+    if version_path.exists():
+        try:
+            with version_path.open("r") as f:
+                data = json.load(f)
+            return {
+                "commit_sha": data.get("commit_sha", "unknown"),
+                "branch": data.get("branch", "unknown"),
+                "commit_message": data.get("commit_message", "unknown"),
+                "deployed_at": data.get("deployed_at", "unknown"),
+                "environment": data.get("environment", "unknown"),
+                "workflow_run_id": data.get("workflow_run_id", "unknown"),
+            }
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load version.json: %s", e)
+    return {
+        "commit_sha": "unknown",
+        "branch": "unknown",
+        "commit_message": "unknown",
+        "deployed_at": "unknown",
+        "environment": "unknown",
+        "workflow_run_id": "unknown",
+    }
+
+
 @app.get("/version")
 def version_check() -> dict[str, str]:
-    return {"version": "1.5.0", "commit": "c06ad4b0"}
+    return _load_version_metadata()
 
 
 @app.exception_handler(UserNotFoundError)
