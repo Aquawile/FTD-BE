@@ -60,3 +60,56 @@ jobs:
           path: db-integration-test-results.xml
           retention-days: 7
       - run: python3 scripts/summarize_tests.py db-integration-test-results.xml "Database Integration Test Results"
+
+  api-contract-tests:
+    name: API Contract Tests
+    needs: db-integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - run: |
+          python -m pytest tests/ -v -m api_contract --junitxml=api-contract-test-results.xml
+          if [ $? -eq 5 ]; then
+            echo "No tests collected for api_contract marker, creating empty JUnit XML"
+            python3 scripts/create_empty_junit.py
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-contract-test-results
+          path: api-contract-test-results.xml
+          retention-days: 7
+      - run: python3 scripts/summarize_tests.py api-contract-test-results.xml "API Contract Test Results"
+
+  ci-complete:
+    name: CI Complete
+    needs: [unit-tests, db-integration-tests, api-contract-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All CI stages passed"
+      - if: always()
+        run: |
+          echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          for job in unit-tests db-integration-tests api-contract-tests; do
+            status="${{ needs.$job.result }}"
+            if [ "$status" = "success" ]; then
+              echo "| $job | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            elif [ "$status" = "failure" ]; then
+              echo "| $job | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            elif [ "$status" = "skipped" ]; then
+              echo "| $job | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| $job | ❓ Unknown |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All test artifacts uploaded with 7-day retention." >> $GITHUB_STEP_SUMMARY
