@@ -215,7 +215,7 @@ jobs:
           gcloud compute scp --tunnel-through-iap --recurse context/figma_prototype/dist/ isabellabutera@ftd-test:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
           
           echo "Writing version metadata..."
-          cat > /tmp/version.json << 'EOF'
+          cat > /tmp/version.json << EOF
           {
             "commit_sha": "${{ github.sha }}",
             "branch": "${{ github.ref_name }}",
@@ -517,7 +517,7 @@ jobs:
           gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && .venv/bin/pip install --break-system-packages -r /home/isabellabutera/requirements.txt" --quiet
           
           echo "Writing version metadata..."
-          cat > /tmp/version.json << 'EOF'
+          cat > /tmp/version.json << EOF
           {
             "commit_sha": "${{ github.sha }}",
             "branch": "${{ github.ref_name }}",
@@ -684,7 +684,7 @@ jobs:
       - name: Write version metadata to Web VM
         run: |
           echo "Writing version metadata..."
-          cat > /tmp/version.json << 'EOF'
+          cat > /tmp/version.json << EOF
           {
             "commit_sha": "${{ github.sha }}",
             "branch": "${{ github.ref_name }}",
