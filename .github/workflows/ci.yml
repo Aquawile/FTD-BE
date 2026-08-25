@@ -99,17 +99,35 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          for job in unit-tests db-integration-tests api-contract-tests; do
-            status="${{ needs.$job.result }}"
-            if [ "$status" = "success" ]; then
-              echo "| $job | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
-            elif [ "$status" = "failure" ]; then
-              echo "| $job | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
-            elif [ "$status" = "skipped" ]; then
-              echo "| $job | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "| $job | ❓ Unknown |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
+          status="${{ needs.unit-tests.result }}"
+          if [ "$status" = "success" ]; then
+            echo "| unit-tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$status" = "failure" ]; then
+            echo "| unit-tests | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$status" = "skipped" ]; then
+            echo "| unit-tests | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| unit-tests | ❓ Unknown |" >> $GITHUB_STEP_SUMMARY
+          fi
+          status="${{ needs.db-integration-tests.result }}"
+          if [ "$status" = "success" ]; then
+            echo "| db-integration-tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$status" = "failure" ]; then
+            echo "| db-integration-tests | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$status" = "skipped" ]; then
+            echo "| db-integration-tests | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| db-integration-tests | ❓ Unknown |" >> $GITHUB_STEP_SUMMARY
+          fi
+          status="${{ needs.api-contract-tests.result }}"
+          if [ "$status" = "success" ]; then
+            echo "| api-contract-tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$status" = "failure" ]; then
+            echo "| api-contract-tests | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$status" = "skipped" ]; then
+            echo "| api-contract-tests | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| api-contract-tests | ❓ Unknown |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "All test artifacts uploaded with 7-day retention." >> $GITHUB_STEP_SUMMARY
