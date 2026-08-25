@@ -12,139 +12,88 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install Python dependencies
-        run: |
+      - run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-
-      - name: Lint and type-check (if configured)
-        run: |
-          echo "Checking for lint/type-check configuration..."
-          if [ -f "pyproject.toml" ] || [ -f "ruff.toml" ] || [ -f "mypy.ini" ] || [ -f ".flake8" ]; then
-            echo "Lint/type-check config found — running checks..."
-          else
-            echo "No lint/type-check configuration found — skipping (add ruff/mypy/flake8 config to enable)"
-          fi
-
-      - name: Run unit tests (no database required)
-        run: python -m pytest tests/ -v -m unit --junitxml=unit-test-results.xml
-        continue-on-error: false
-
-      - name: Upload unit test results
+      - run: python -m pytest tests/ -v -m unit --junitxml=unit-test-results.xml
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
           path: unit-test-results.xml
           retention-days: 7
-
-      - name: Generate unit test summary
-        if: always()
-        run: python3 scripts/summarize_tests.py unit-test-results.xml "Unit Test Results"
+      - run: python3 scripts/summarize_tests.py unit-test-results.xml "Unit Test Results"
 
   db-integration-tests:
     name: Database Integration Tests
     needs: unit-tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install Python dependencies
-        run: |
+      - run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-
-      - name: Run database integration tests
-        env:
+      - env:
           PGHOST: ${{ secrets.CI_PGHOST }}
           PGPORT: ${{ secrets.CI_PGPORT }}
           PGDATABASE: ${{ secrets.CI_PGDATABASE }}
           PGUSER: ${{ secrets.CI_PGUSER }}
           PGPASSWORD: ${{ secrets.CI_PGPASSWORD }}
         run: |
-          echo "Checking for integration test database credentials..."
           if [ -z "${PGHOST}" ] || [ -z "${PGPASSWORD}" ]; then
             echo "Integration test database credentials not configured — skipping integration tests"
             exit 0
           fi
           echo "Running integration tests against ${PGHOST}:${PGPORT}/${PGDATABASE}..."
           python -m pytest tests/ -v -m db_integration --junitxml=db-integration-test-results.xml
-        continue-on-error: false
-
-      - name: Upload db integration test results
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: db-integration-test-results
           path: db-integration-test-results.xml
           retention-days: 7
-
-      - name: Generate db integration test summary
-        if: always()
-        run: python3 scripts/summarize_tests.py db-integration-test-results.xml "Database Integration Test Results"
+      - run: python3 scripts/summarize_tests.py db-integration-test-results.xml "Database Integration Test Results"
 
   api-contract-tests:
     name: API Contract Tests
     needs: db-integration-tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install Python dependencies
-        run: |
+      - run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-
-      - name: Run API contract tests
-        run: |
+      - run: |
           python -m pytest tests/ -v -m api_contract --junitxml=api-contract-test-results.xml
           if [ $? -eq 5 ]; then
             echo "No tests collected for api_contract marker, creating empty JUnit XML"
             python3 scripts/create_empty_junit.py
           fi
-
-      - name: Upload api contract test results
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: api-contract-test-results
           path: api-contract-test-results.xml
           retention-days: 7
-
-      - name: Generate api contract test summary
-        if: always()
-        run: python3 scripts/summarize_tests.py api-contract-test-results.xml "API Contract Test Results"
+      - run: python3 scripts/summarize_tests.py api-contract-test-results.xml "API Contract Test Results"
 
   ci-complete:
     name: CI Complete
     needs: [unit-tests, db-integration-tests, api-contract-tests]
     runs-on: ubuntu-latest
     steps:
-      - name: CI Complete
-        run: echo "All CI stages passed"
-
-      - name: Generate consolidated CI summary
-        if: always()
+      - run: echo "All CI stages passed"
+      - if: always()
         run: |
           echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
