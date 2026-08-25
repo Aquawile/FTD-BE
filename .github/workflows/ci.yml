@@ -58,18 +58,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Reset test databases
-        env:
-          GCP_PROJECT: ftd2026
-          GCE_ZONE: us-west2-a
-          DB_VM_NAME: ftd-postgres-vm
-          DB_USER: ftd_app
-          OS_USER: isabellabutera
-          MIGRATIONS_DIR: app/auth/migrations
-        run: |
-          echo "Resetting test databases..."
-          bash scripts/manage_test_databases.sh reset-test-dbs
-
       - name: Run database integration tests
         env:
           PGHOST: ${{ secrets.CI_PGHOST }}
