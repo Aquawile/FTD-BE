@@ -102,6 +102,12 @@ grant_privileges() {
 create_test_dbs() {
   log "=== Creating Test Databases ==="
 
+  # Check gcloud auth
+  if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q "."; then
+    log "WARNING: No active gcloud account. Skipping database creation."
+    return 0
+  fi
+
   for db in "${TEST_DB_1}" "${TEST_DB_2}"; do
     create_database "${db}"
     apply_migrations "${db}"
@@ -114,6 +120,12 @@ create_test_dbs() {
 
 reset_test_dbs() {
   log "=== Resetting Test Databases ==="
+
+  # Check gcloud auth
+  if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q "."; then
+    log "WARNING: No active gcloud account. Skipping database reset."
+    return 0
+  fi
 
   for db in "${TEST_DB_1}" "${TEST_DB_2}"; do
     log "Resetting ${db}..."
@@ -133,6 +145,12 @@ reset_test_dbs() {
 
 drop_test_dbs() {
   log "=== Dropping Test Databases ==="
+
+  # Check gcloud auth
+  if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q "."; then
+    log "WARNING: No active gcloud account. Skipping database drop."
+    return 0
+  fi
 
   for db in "${TEST_DB_1}" "${TEST_DB_2}"; do
     drop_database "${db}"
