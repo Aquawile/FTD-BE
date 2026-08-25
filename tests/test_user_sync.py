@@ -1,4 +1,5 @@
 import os
+import pytest
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -26,6 +27,7 @@ def _postgres_available() -> bool:
         return False
 
 
+@pytest.mark.db_integration
 class TestUserSync(unittest.TestCase):
     @staticmethod
     def _cleanup_user(firebase_uid: str) -> None:

@@ -1,3 +1,4 @@
+import pytest
 import unittest
 from datetime import timedelta
 
@@ -11,6 +12,7 @@ from app.auth.config import (
 )
 
 
+@pytest.mark.unit
 class TestToken(unittest.TestCase):
     def test_create_access_token_returns_string(self):
         token = create_access_token({"sub": 1, "email": "test@example.com"})

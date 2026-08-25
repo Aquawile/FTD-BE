@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pytest
 import unittest
 from unittest.mock import patch
 
@@ -49,6 +50,8 @@ def _make_user(**overrides) -> User:
     return User(**defaults)
 
 
+@pytest.mark.unit
+@pytest.mark.unit
 class TestUsersRouter(unittest.TestCase):
     def test_get_current_user_returns_user(self) -> None:
         user = _make_user()
@@ -163,7 +166,7 @@ class TestUsersRouter(unittest.TestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-@unittest.skipUnless(_postgres_api_test_available(), "ftd_lakehouse_api_test is unavailable")
+@pytest.mark.api_contract
 class TestUsersRouterPostgres(unittest.TestCase):
     """Layer Four API integration tests against ftd_lakehouse_api_test."""
 

@@ -1,8 +1,10 @@
+import pytest
 import unittest
 
 from app.auth.hasher import hash_password, verify_password
 
 
+@pytest.mark.unit
 class TestHasher(unittest.TestCase):
     def test_hash_password_produces_bcrypt_hash(self):
         result = hash_password("testpass123")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,7 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.mark.unit
 def test_missing_authorization_header_returns_401(caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
         response = client.get("/auth/me/user")
@@ -25,6 +27,7 @@ def test_missing_authorization_header_returns_401(caplog) -> None:
     assert any("authentication_failed" in r.message and "reason=missing_authorization_header" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_invalid_authorization_header_format_returns_401(caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
         response = client.get("/auth/me/user", headers={"Authorization": "Token abc"})
@@ -33,6 +36,7 @@ def test_invalid_authorization_header_format_returns_401(caplog) -> None:
     assert any("authentication_failed" in r.message and "reason=invalid_header_format" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_invalid_token_returns_401(monkeypatch, caplog) -> None:
     monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "invalid"))
     monkeypatch.setattr("app.auth.middleware.verify_token", lambda token: None)
@@ -44,6 +48,7 @@ def test_invalid_token_returns_401(monkeypatch, caplog) -> None:
     assert any("authentication_failed" in r.message and "reason=firebase_token_invalid" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_valid_firebase_token_without_application_user_creates_user(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         "app.auth.middleware.validate_firebase_token_with_reason",
@@ -78,6 +83,7 @@ def test_valid_firebase_token_without_application_user_creates_user(monkeypatch,
     }
 
 
+@pytest.mark.unit
 def test_synchronize_user_failure_returns_500(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         "app.auth.middleware.validate_firebase_token_with_reason",
@@ -99,6 +105,7 @@ def test_synchronize_user_failure_returns_500(monkeypatch, caplog) -> None:
     assert any("authentication_sync_failed" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_valid_firebase_token_resolves_postgres_user(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         "app.auth.middleware.validate_firebase_token_with_reason",
@@ -130,6 +137,7 @@ def test_valid_firebase_token_resolves_postgres_user(monkeypatch, caplog) -> Non
     assert any("authentication_succeeded" in r.message and "method=firebase" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_database_failure_during_firebase_user_lookup_returns_500(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         "app.auth.middleware.validate_firebase_token_with_reason",
@@ -147,6 +155,7 @@ def test_database_failure_during_firebase_user_lookup_returns_500(monkeypatch, c
     assert any("authentication_internal_error" in r.message and "reason=postgres_lookup_failed" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_database_failure_during_internal_user_lookup_returns_500(monkeypatch, caplog) -> None:
     monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "invalid"))
     monkeypatch.setattr(
@@ -165,6 +174,7 @@ def test_database_failure_during_internal_user_lookup_returns_500(monkeypatch, c
     assert any("authentication_internal_error" in r.message and "reason=postgres_lookup_failed" in r.message for r in caplog.records)
 
 
+@pytest.mark.unit
 def test_expired_firebase_token_returns_401(monkeypatch, caplog) -> None:
     monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "expired"))
     monkeypatch.setattr("app.auth.middleware.verify_token", lambda token: None)

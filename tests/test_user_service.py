@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import pytest
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -93,34 +94,43 @@ def _cleanup_user(firebase_uid: str) -> None:
 
 
 class TestUserService(unittest.TestCase):
+    """Unit tests for validation logic (no database required)."""
+
+    @pytest.mark.unit
     def _make_create_request(self, email: str, password: str, firebase_uid: str | None = None) -> UserCreateRequest:
         return UserCreateRequest(email=email, password=password, firebase_uid=firebase_uid)
 
+    @pytest.mark.unit
     def _make_update_request(self, email: str | None = None, is_active: bool | None = None) -> UserUpdateRequest:
         return UserUpdateRequest(email=email, is_active=is_active)
 
     # --- Validation tests (do not require PostgreSQL) ---
 
+    @pytest.mark.unit
     def test_create_user_raises_for_empty_email(self) -> None:
         with self.assertRaises(UserValidationError) as ctx:
             create_user(self._make_create_request(email="", password="test-pass"))
         self.assertIn("empty", str(ctx.exception).lower())
 
+    @pytest.mark.unit
     def test_create_user_raises_for_short_password(self) -> None:
         with self.assertRaises(UserValidationError) as ctx:
             create_user(self._make_create_request(email="valid@example.com", password="short"))
         self.assertIn("at least 8", str(ctx.exception))
 
+    @pytest.mark.unit
     def test_create_user_raises_for_invalid_firebase_uid(self) -> None:
         with self.assertRaises(UserValidationError) as ctx:
             create_user(self._make_create_request(email="valid@example.com", password="test-pass", firebase_uid="short"))
         self.assertIn("Firebase UID", str(ctx.exception))
 
+    @pytest.mark.unit
     def test_update_user_raises_when_no_fields_provided(self) -> None:
         with self.assertRaises(UserValidationError) as ctx:
             update_user(1, self._make_update_request())
         self.assertIn("at least one", str(ctx.exception).lower())
 
+    @pytest.mark.unit
     def test_update_user_raises_for_empty_email(self) -> None:
         with self.assertRaises(UserValidationError) as ctx:
             update_user(1, self._make_update_request(email="  "))
@@ -128,7 +138,7 @@ class TestUserService(unittest.TestCase):
 
     # --- PostgreSQL integration tests ---
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_authenticated_user_returns_user_for_valid_firebase_uid(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -143,14 +153,14 @@ class TestUserService(unittest.TestCase):
         self.assertEqual(user.email, normalize_email(email))
         self.assertEqual(user.id, created.id)
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_authenticated_user_raises_for_unknown_firebase_uid(self) -> None:
         _setup_permissions()
         with self.assertRaises(UserNotFoundError) as ctx:
             get_authenticated_user("nonexistent-firebase-uid")
         self.assertIn("nonexistent-firebase-uid", str(ctx.exception))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_authenticated_user_by_id_returns_user_for_valid_id(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -164,14 +174,14 @@ class TestUserService(unittest.TestCase):
         self.assertEqual(user.id, created.id)
         self.assertEqual(user.email, normalize_email(email))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_authenticated_user_by_id_raises_for_unknown_id(self) -> None:
         _setup_permissions()
         with self.assertRaises(UserNotFoundError) as ctx:
             get_authenticated_user_by_id(99999)
         self.assertIn("99999", str(ctx.exception))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_user_permissions_returns_empty_for_user_without_permissions(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -182,7 +192,7 @@ class TestUserService(unittest.TestCase):
         permissions = get_user_permissions(created.id)
         self.assertEqual(permissions, [])
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_user_with_permissions_returns_user_and_permissions(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -202,14 +212,14 @@ class TestUserService(unittest.TestCase):
         self.assertIn("tickers.search", response.permissions)
         self.assertIn("tickers.prices", response.permissions)
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_user_with_permissions_raises_for_unknown_id(self) -> None:
         _setup_permissions()
         with self.assertRaises(UserNotFoundError) as ctx:
             get_user_with_permissions(99999)
         self.assertIn("99999", str(ctx.exception))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_create_user_creates_new_user(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -230,7 +240,7 @@ class TestUserService(unittest.TestCase):
                 self.assertEqual(row[1], firebase_uid)
                 self.assertTrue(row[2])
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_create_user_raises_for_duplicate_email(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -241,7 +251,7 @@ class TestUserService(unittest.TestCase):
         with self.assertRaises(UserAlreadyExistsError):
             create_user(self._make_create_request(email=email, password="another-pass", firebase_uid=None))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_create_user_raises_for_duplicate_firebase_uid(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -253,7 +263,7 @@ class TestUserService(unittest.TestCase):
         with self.assertRaises(UserAlreadyExistsError):
             create_user(self._make_create_request(email=email2, password="another-pass", firebase_uid=firebase_uid))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_update_user_modifies_email_and_active_status(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -267,14 +277,14 @@ class TestUserService(unittest.TestCase):
         self.assertEqual(updated.email, normalize_email("updated@example.com"))
         self.assertFalse(updated.is_active)
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_update_user_raises_for_unknown_id(self) -> None:
         _setup_permissions()
         with self.assertRaises(UserNotFoundError) as ctx:
             update_user(99999, self._make_update_request(email="updated@example.com"))
         self.assertIn("99999", str(ctx.exception))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_update_user_raises_for_duplicate_email(self) -> None:
         _setup_permissions()
         firebase_uid1 = uuid4().hex
@@ -290,7 +300,7 @@ class TestUserService(unittest.TestCase):
         with self.assertRaises(UserAlreadyExistsError):
             update_user(second.id, self._make_update_request(email=first.email))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_delete_user_deactivates_active_user(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -306,7 +316,7 @@ class TestUserService(unittest.TestCase):
                 cur.execute("SELECT is_active FROM users WHERE id = %s", (created.id,))
                 self.assertFalse(cur.fetchone()[0])
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_delete_user_returns_false_for_already_inactive_user(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -323,13 +333,13 @@ class TestUserService(unittest.TestCase):
         result = delete_user(created.id)
         self.assertFalse(result)
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_delete_user_returns_false_for_unknown_user(self) -> None:
         _setup_permissions()
         result = delete_user(99999)
         self.assertFalse(result)
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_user_with_permission_details_returns_user_with_empty_permissions(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -343,7 +353,7 @@ class TestUserService(unittest.TestCase):
         self.assertEqual(response.email, normalize_email(email))
         self.assertEqual(response.permissions, [])
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_user_with_permission_details_returns_user_with_full_permissions(self) -> None:
         _setup_permissions()
         firebase_uid = uuid4().hex
@@ -368,7 +378,7 @@ class TestUserService(unittest.TestCase):
             self.assertIsInstance(p.name, str)
             self.assertIsInstance(p.description, (str, type(None)))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_get_user_with_permission_details_raises_for_unknown_id(self) -> None:
         _setup_permissions()
         with self.assertRaises(UserNotFoundError) as ctx:
@@ -435,7 +445,7 @@ class TestLayer3Integration(unittest.TestCase):
                         )
             conn.commit()
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_complete_user_lifecycle_firebase_sync_to_service_retrieval(self) -> None:
         self._setup_permissions()
         firebase_uid = uuid4().hex
@@ -476,13 +486,13 @@ class TestLayer3Integration(unittest.TestCase):
         self.assertIn("tickers.search", detail_names)
         self.assertIn("tickers.prices", detail_names)
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_service_layer_handles_missing_firebase_identity_gracefully(self) -> None:
         with self.assertRaises(UserNotFoundError) as ctx:
             get_authenticated_user("nonexistent-firebase-uid")
         self.assertIn("nonexistent-firebase-uid", str(ctx.exception))
 
-    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    @pytest.mark.db_integration
     def test_relational_permission_details_retrieved_correctly(self) -> None:
         self._setup_permissions()
         firebase_uid = uuid4().hex
@@ -507,6 +517,7 @@ class TestLayer3Integration(unittest.TestCase):
             self.assertIsInstance(p.name, str)
             self.assertIsInstance(p.description, (str, type(None)))
 
+    @pytest.mark.unit
     def test_service_layer_has_no_http_dependencies(self) -> None:
         import ast
         import pathlib
