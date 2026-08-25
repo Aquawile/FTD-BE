@@ -166,7 +166,7 @@ class TestUsersRouter(unittest.TestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-@pytest.mark.api_contract
+@pytest.mark.db_integration
 class TestUsersRouterPostgres(unittest.TestCase):
     """Layer Four API integration tests against ftd_lakehouse_api_test."""
 
