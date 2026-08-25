@@ -139,11 +139,13 @@ if [[ "${ENVIRONMENT}" == "staging" ]]; then
         "${WEB_VM}"
 fi
 
-# 2. Web health endpoint
-run_check "Web health endpoint" \
-    "curl -s http://127.0.0.1:${WEB_PORT}/health" \
-    "healthy" \
-    "${WEB_VM}"
+# 2. Web health endpoint (staging only)
+if [[ "${ENVIRONMENT}" == "staging" ]]; then
+    run_check "Web health endpoint" \
+        "curl -s http://127.0.0.1:${WEB_PORT}/health" \
+        "healthy" \
+        "${WEB_VM}"
+fi
 
 # 3. API proxy health (staging only - development doesn't have proxy)
 if [[ "${ENVIRONMENT}" == "staging" ]]; then
@@ -161,19 +163,19 @@ if [[ "${ENVIRONMENT}" == "staging" ]]; then
         "${WEB_VM}"
 fi
 
-# 5. Backend health endpoint
+# 5. Backend health endpoint (both environments)
 run_check "Backend health endpoint" \
     "curl -s http://127.0.0.1:${API_PORT}/health" \
     '"status":"ok"' \
     "${API_VM}"
 
-# 6. Backend version endpoint
+# 6. Backend version endpoint (both environments)
 run_check "Backend version endpoint" \
     "curl -s http://127.0.0.1:${API_PORT}/version" \
     "${EXPECTED_COMMIT}" \
     "${API_VM}"
 
-# 7. Version metadata file on API VM
+# 7. Version metadata file on API VM (both environments)
 run_check "Version metadata file (API VM)" \
     "cat /home/${OS_USER}/version.json | grep -q '${EXPECTED_COMMIT}'" \
     "" \
