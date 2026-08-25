@@ -730,7 +730,7 @@ jobs:
         run: |
           echo "Verifying Web VM serves frontend..."
           RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8080/" --quiet)
-          if echo "$RESPONSE" | grep -q "<html>"; then
+          if echo "$RESPONSE" | grep -qi "<html"; then
             echo "Web VM serves HTML frontend: OK"
           else
             echo "ERROR: Web VM does not serve HTML. Response: $RESPONSE"
