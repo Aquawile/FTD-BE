@@ -48,7 +48,7 @@ jobs:
           path: unit-test-results.xml
           retention-days: 7
 
-      - name: Generate unit test summary
+- name: Generate unit test summary
         if: always()
         run: |
           if [ -f unit-test-results.xml ]; then
@@ -56,12 +56,15 @@ jobs:
 import xml.etree.ElementTree as ET
 tree = ET.parse('unit-test-results.xml')
 root = tree.getroot()
-tests = int(root.attrib.get('tests', 0))
-failures = int(root.attrib.get('failures', 0))
-errors = int(root.attrib.get('errors', 0))
-skipped = int(root.attrib.get('skipped', 0))
+testsuite = root.find('testsuite')
+if testsuite is None:
+    testsuite = root
+tests = int(testsuite.attrib.get('tests', 0))
+failures = int(testsuite.attrib.get('failures', 0))
+errors = int(testsuite.attrib.get('errors', 0))
+skipped = int(testsuite.attrib.get('skipped', 0))
 passed = tests - failures - errors - skipped
-duration = float(root.attrib.get('time', 0))
+duration = float(testsuite.attrib.get('time', 0))
 print(f'## Unit Test Results')
 print(f'| Metric | Count |')
 print(f'|--------|-------|')
@@ -125,7 +128,7 @@ if failures + errors > 0:
           path: db-integration-test-results.xml
           retention-days: 7
 
-      - name: Generate db integration test summary
+- name: Generate db integration test summary
         if: always()
         run: |
           if [ -f db-integration-test-results.xml ]; then
@@ -133,12 +136,15 @@ if failures + errors > 0:
 import xml.etree.ElementTree as ET
 tree = ET.parse('db-integration-test-results.xml')
 root = tree.getroot()
-tests = int(root.attrib.get('tests', 0))
-failures = int(root.attrib.get('failures', 0))
-errors = int(root.attrib.get('errors', 0))
-skipped = int(root.attrib.get('skipped', 0))
+testsuite = root.find('testsuite')
+if testsuite is None:
+    testsuite = root
+tests = int(testsuite.attrib.get('tests', 0))
+failures = int(testsuite.attrib.get('failures', 0))
+errors = int(testsuite.attrib.get('errors', 0))
+skipped = int(testsuite.attrib.get('skipped', 0))
 passed = tests - failures - errors - skipped
-duration = float(root.attrib.get('time', 0))
+duration = float(testsuite.attrib.get('time', 0))
 print(f'## Database Integration Test Results')
 print(f'| Metric | Count |')
 print(f'|--------|-------|')
@@ -190,7 +196,7 @@ if failures + errors > 0:
           path: api-contract-test-results.xml
           retention-days: 7
 
-      - name: Generate api contract test summary
+- name: Generate api contract test summary
         if: always()
         run: |
           if [ -f api-contract-test-results.xml ]; then
@@ -198,12 +204,15 @@ if failures + errors > 0:
 import xml.etree.ElementTree as ET
 tree = ET.parse('api-contract-test-results.xml')
 root = tree.getroot()
-tests = int(root.attrib.get('tests', 0))
-failures = int(root.attrib.get('failures', 0))
-errors = int(root.attrib.get('errors', 0))
-skipped = int(root.attrib.get('skipped', 0))
+testsuite = root.find('testsuite')
+if testsuite is None:
+    testsuite = root
+tests = int(testsuite.attrib.get('tests', 0))
+failures = int(testsuite.attrib.get('failures', 0))
+errors = int(testsuite.attrib.get('errors', 0))
+skipped = int(testsuite.attrib.get('skipped', 0))
 passed = tests - failures - errors - skipped
-duration = float(root.attrib.get('time', 0))
+duration = float(testsuite.attrib.get('time', 0))
 print(f'## API Contract Test Results')
 print(f'| Metric | Count |')
 print(f'|--------|-------|')
