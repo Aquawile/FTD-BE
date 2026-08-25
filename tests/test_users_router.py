@@ -52,6 +52,7 @@ def _make_user(**overrides) -> User:
 
 @pytest.mark.unit
 @pytest.mark.unit
+@pytest.mark.api_contract
 class TestUsersRouter(unittest.TestCase):
     def test_get_current_user_returns_user(self) -> None:
         user = _make_user()
