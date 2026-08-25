@@ -726,94 +726,38 @@ jobs:
           project_id: ftd2026
           install_components: beta
       
-      - name: Verify Web VM serves frontend
+      - name: Run post-deployment verification script
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
-          echo "Verifying Web VM serves frontend..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8080/" --quiet)
-          if echo "$RESPONSE" | grep -qi "<html"; then
-            echo "Web VM serves HTML frontend: OK"
-          else
-            echo "ERROR: Web VM does not serve HTML. Response: $RESPONSE"
-            exit 1
-          fi
+          echo "Running post-deployment verification for staging..."
+          bash scripts/verify_deployment.sh staging ${{ github.sha }}
+        continue-on-error: false
       
-      - name: Verify Web VM health endpoint
-        run: |
-          echo "Verifying Web VM health endpoint..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8080/health" --quiet)
-          if echo "$RESPONSE" | grep -q "healthy"; then
-            echo "Web VM health endpoint: OK"
-          else
-            echo "ERROR: Web VM health endpoint failed. Response: $RESPONSE"
-            exit 1
-          fi
+      - name: Upload verification results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-verification-results
+          path: verification-results.json
+          retention-days: 30
       
-      - name: Verify API proxy through Web VM
+      - name: Generate verification summary
+        if: always()
         run: |
-          echo "Verifying API proxy through Web VM (/api/health)..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8080/api/health" --quiet)
-          if echo "$RESPONSE" | grep -q '"status":"ok"'; then
-            echo "API proxy through Web VM: OK"
-          else
-            echo "ERROR: API proxy failed. Response: $RESPONSE"
-            exit 1
-          fi
-      
-      - name: Verify API version through Web VM proxy
-        run: |
-          echo "Verifying API version through Web VM proxy (/api/version)..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8080/api/version" --quiet)
-          if echo "$RESPONSE" | grep -q "${{ github.sha }}"; then
-            echo "API version via Web VM proxy: OK"
-            echo "Response: $RESPONSE"
-          else
-            echo "ERROR: API version mismatch. Response: $RESPONSE"
-            exit 1
-          fi
-      
-      - name: Verify Backend VM health endpoint
-        run: |
-          echo "Verifying Backend VM health endpoint..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health" --quiet)
-          if echo "$RESPONSE" | grep -q '"status":"ok"'; then
-            echo "Backend VM health endpoint: OK"
-          else
-            echo "ERROR: Backend VM health endpoint failed. Response: $RESPONSE"
-            exit 1
-          fi
-      
-      - name: Verify Backend VM version endpoint
-        run: |
-          echo "Verifying Backend VM version endpoint..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/version" --quiet)
-          if echo "$RESPONSE" | grep -q "${{ github.sha }}"; then
-            echo "Backend VM version endpoint: OK"
-            echo "Response: $RESPONSE"
-          else
-            echo "ERROR: Backend VM version mismatch. Response: $RESPONSE"
-            exit 1
-          fi
-      
-      - name: Verify version.json on both VMs
-        run: |
-          echo "Verifying version.json on Web VM..."
-          gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cat /home/isabellabutera/version.json" --quiet
-          
-          echo "Verifying version.json on Backend VM..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cat /home/isabellabutera/version.json" --quiet
-      
-      - name: Verify no cross-deployment to development
-        run: |
-          echo "Verifying development environment unchanged..."
-          RESPONSE=$(gcloud compute ssh isabellabutera@ftd-test --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/version" --quiet)
-          echo "Development version: $RESPONSE"
-          if echo "$RESPONSE" | grep -q "${{ github.sha }}"; then
-            echo "ERROR: Development environment was unexpectedly updated!"
-            exit 1
-          else
-            echo "Development environment correctly unchanged: OK"
-          fi
-      
-      - name: Verification complete
-        run: |
-          echo "=== All End-to-End Verification Checks Passed ==="
+          if [ -f verification-results.json ]; then
+            python3 -c "
+import json
+with open('verification-results.json') as f:
+    data = json.load(f)
+print(f'## Staging Verification Results')
+print(f'| Check | Status |')
+print(f'|-------|--------|')
+for check in data.get('checks', []):
+    status = '✅ Pass' if check['passed'] else '❌ Fail'
+    print(f'| {check[\"name\"]} | {status} |')
+    if not check['passed']:
+        print(f'  > Expected: {check[\"expected\"]}')
+        print(f'  > Actual: {check[\"actual\"]}')
+"
+            fi

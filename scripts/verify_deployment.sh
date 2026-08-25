@@ -22,6 +22,9 @@ PROD_VM="ftd-prod"  # Not used yet
 WEB_PORT=8080
 API_PORT=8000
 
+# JSON results tracking
+CHECK_RESULTS=()
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
@@ -52,7 +55,32 @@ scp_cmd() {
     gcloud compute scp --tunnel-through-iap "${src}" "${OS_USER}@${dst}" --zone="${GCE_ZONE}" --project="${GCP_PROJECT}" --quiet
 }
 
-# Run a check and track result
+# JSON output for verification results
+CHECK_RESULTS=()
+
+add_check_result() {
+    local name="$1"
+    local passed="$2"
+    local expected="$3"
+    local actual="$4"
+    CHECK_RESULTS+=("{\"name\":\"${name}\",\"passed\":${passed},\"expected\":\"${expected}\",\"actual\":\"${actual}\"}")
+}
+
+write_json_results() {
+    local json="{\"environment\":\"${ENVIRONMENT}\",\"expected_commit\":\"${EXPECTED_COMMIT}\",\"checks\":["
+    local first=true
+    for result in "${CHECK_RESULTS[@]}"; do
+        if [[ "$first" == true ]]; then
+            first=false
+        else
+            json="${json},"
+        fi
+        json="${json}${result}"
+    done
+    json="${json}]}"
+    echo "$json" > verification-results.json
+}
+
 run_check() {
     local check_name="$1"
     local cmd="$2"
@@ -66,6 +94,7 @@ run_check() {
         error "FAIL: ${check_name} - SSH command failed"
         error "Output: ${output}"
         FAILED_CHECKS+=("${check_name}: SSH failed")
+        add_check_result "${check_name}" "false" "${expected}" "${output}"
         return 1
     fi
 
@@ -73,11 +102,13 @@ run_check() {
         error "FAIL: ${check_name} - Expected pattern '${expected}' not found"
         error "Actual output: ${output}"
         FAILED_CHECKS+=("${check_name}: Expected '${expected}', got '${output}'")
+        add_check_result "${check_name}" "false" "${expected}" "${output}"
         return 1
     fi
 
     log "PASS: ${check_name}"
     PASSED_CHECKS+=("${check_name}")
+    add_check_result "${check_name}" "true" "${expected}" "${output}"
     return 0
 }
 
@@ -240,6 +271,9 @@ if [[ ${#FAILED_CHECKS[@]} -gt 0 ]]; then
         error "  ✗ ${check}"
     done
 fi
+
+# Write JSON results for artifact upload
+write_json_results
 
 if [[ ${#FAILED_CHECKS[@]} -gt 0 ]]; then
     error "=== VERIFICATION FAILED ==="

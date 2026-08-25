@@ -37,8 +37,50 @@ jobs:
           fi
 
       - name: Run unit tests (no database required)
-        run: python -m pytest tests/ -v -m unit
+        run: python -m pytest tests/ -v -m unit --junitxml=unit-test-results.xml
         continue-on-error: false
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: unit-test-results.xml
+          retention-days: 7
+
+      - name: Generate unit test summary
+        if: always()
+        run: |
+          if [ -f unit-test-results.xml ]; then
+            python3 -c "
+import xml.etree.ElementTree as ET
+tree = ET.parse('unit-test-results.xml')
+root = tree.getroot()
+tests = int(root.attrib.get('tests', 0))
+failures = int(root.attrib.get('failures', 0))
+errors = int(root.attrib.get('errors', 0))
+skipped = int(root.attrib.get('skipped', 0))
+passed = tests - failures - errors - skipped
+duration = float(root.attrib.get('time', 0))
+print(f'## Unit Test Results')
+print(f'| Metric | Count |')
+print(f'|--------|-------|')
+print(f'| Total | {tests} |')
+print(f'| Passed | {passed} |')
+print(f'| Failed | {failures + errors} |')
+print(f'| Skipped | {skipped} |')
+print(f'| Duration | {duration:.2f}s |')
+print(f'')
+if failures + errors > 0:
+    for testcase in root.findall('.//testcase'):
+        failure = testcase.find('failure')
+        error = testcase.find('error')
+        if failure is not None:
+            print(f'::error file={testcase.attrib.get(\"classname\", \"\")},line={testcase.attrib.get(\"line\", 0)}::{testcase.attrib.get(\"name\", \"\")} - {failure.text[:200] if failure.text else \"\"}')
+        elif error is not None:
+            print(f'::error file={testcase.attrib.get(\"classname\", \"\")},line={testcase.attrib.get(\"line\", 0)}::{testcase.attrib.get(\"name\", \"\")} - {error.text[:200] if error.text else \"\"}')
+"
+          fi
 
   db-integration-tests:
     name: Database Integration Tests
@@ -72,8 +114,50 @@ jobs:
             exit 0
           fi
           echo "Running integration tests against ${PGHOST}:${PGPORT}/${PGDATABASE}..."
-          python -m pytest tests/ -v -m db_integration
+          python -m pytest tests/ -v -m db_integration --junitxml=db-integration-test-results.xml
         continue-on-error: false
+
+      - name: Upload db integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-integration-test-results
+          path: db-integration-test-results.xml
+          retention-days: 7
+
+      - name: Generate db integration test summary
+        if: always()
+        run: |
+          if [ -f db-integration-test-results.xml ]; then
+            python3 -c "
+import xml.etree.ElementTree as ET
+tree = ET.parse('db-integration-test-results.xml')
+root = tree.getroot()
+tests = int(root.attrib.get('tests', 0))
+failures = int(root.attrib.get('failures', 0))
+errors = int(root.attrib.get('errors', 0))
+skipped = int(root.attrib.get('skipped', 0))
+passed = tests - failures - errors - skipped
+duration = float(root.attrib.get('time', 0))
+print(f'## Database Integration Test Results')
+print(f'| Metric | Count |')
+print(f'|--------|-------|')
+print(f'| Total | {tests} |')
+print(f'| Passed | {passed} |')
+print(f'| Failed | {failures + errors} |')
+print(f'| Skipped | {skipped} |')
+print(f'| Duration | {duration:.2f}s |')
+print(f'')
+if failures + errors > 0:
+    for testcase in root.findall('.//testcase'):
+        failure = testcase.find('failure')
+        error = testcase.find('error')
+        if failure is not None:
+            print(f'::error file={testcase.attrib.get(\"classname\", \"\")},line={testcase.attrib.get(\"line\", 0)}::{testcase.attrib.get(\"name\", \"\")} - {failure.text[:200] if failure.text else \"\"}')
+        elif error is not None:
+            print(f'::error file={testcase.attrib.get(\"classname\", \"\")},line={testcase.attrib.get(\"line\", 0)}::{testcase.attrib.get(\"name\", \"\")} - {error.text[:200] if error.text else \"\"}')
+"
+          fi
 
   api-contract-tests:
     name: API Contract Tests
@@ -95,8 +179,50 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run API contract tests
-        run: python -m pytest tests/ -v -m api_contract
+        run: python -m pytest tests/ -v -m api_contract --junitxml=api-contract-test-results.xml
         continue-on-error: false
+
+      - name: Upload api contract test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-contract-test-results
+          path: api-contract-test-results.xml
+          retention-days: 7
+
+      - name: Generate api contract test summary
+        if: always()
+        run: |
+          if [ -f api-contract-test-results.xml ]; then
+            python3 -c "
+import xml.etree.ElementTree as ET
+tree = ET.parse('api-contract-test-results.xml')
+root = tree.getroot()
+tests = int(root.attrib.get('tests', 0))
+failures = int(root.attrib.get('failures', 0))
+errors = int(root.attrib.get('errors', 0))
+skipped = int(root.attrib.get('skipped', 0))
+passed = tests - failures - errors - skipped
+duration = float(root.attrib.get('time', 0))
+print(f'## API Contract Test Results')
+print(f'| Metric | Count |')
+print(f'|--------|-------|')
+print(f'| Total | {tests} |')
+print(f'| Passed | {passed} |')
+print(f'| Failed | {failures + errors} |')
+print(f'| Skipped | {skipped} |')
+print(f'| Duration | {duration:.2f}s |')
+print(f'')
+if failures + errors > 0:
+    for testcase in root.findall('.//testcase'):
+        failure = testcase.find('failure')
+        error = testcase.find('error')
+        if failure is not None:
+            print(f'::error file={testcase.attrib.get(\"classname\", \"\")},line={testcase.attrib.get(\"line\", 0)}::{testcase.attrib.get(\"name\", \"\")} - {failure.text[:200] if failure.text else \"\"}')
+        elif error is not None:
+            print(f'::error file={testcase.attrib.get(\"classname\", \"\")},line={testcase.attrib.get(\"line\", 0)}::{testcase.attrib.get(\"name\", \"\")} - {error.text[:200] if error.text else \"\"}')
+"
+          fi
 
   ci-complete:
     name: CI Complete
@@ -105,3 +231,25 @@ jobs:
     steps:
       - name: CI Complete
         run: echo "All CI stages passed"
+
+      - name: Generate consolidated CI summary
+        if: always()
+        run: |
+          echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          for job in unit-tests db-integration-tests api-contract-tests; do
+            status="${{ needs.$job.result }}"
+            if [ "$status" = "success" ]; then
+              echo "| $job | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            elif [ "$status" = "failure" ]; then
+              echo "| $job | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            elif [ "$status" = "skipped" ]; then
+              echo "| $job | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| $job | ❓ Unknown |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All test artifacts uploaded with 7-day retention." >> $GITHUB_STEP_SUMMARY
