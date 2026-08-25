@@ -191,7 +191,7 @@ fi
 OTHER_EXPECTED_COMMIT=""
 if [[ "${OTHER_ENV}" == "development" ]]; then
     # For development, we need to get current deployed commit from dev VM
-    OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "cat /home/${OS_USER}/version.json 2>/dev/null | grep -o '\"commit_sha\":\"[^\"]*\"' | cut -d'\"' -f4" || echo "")
+    OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "python3 -c \"import json, sys; print(json.load(open('/home/isabellabutera/version.json'))['commit_sha'])\"" 2>/dev/null || echo "")
     if [[ -n "${OTHER_EXPECTED_COMMIT}" ]] && [[ "${OTHER_EXPECTED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
         log "Cross-deployment check: ${OTHER_ENV} at ${OTHER_EXPECTED_COMMIT} (expected different from ${EXPECTED_COMMIT})"
         PASSED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} unchanged")
@@ -201,7 +201,7 @@ if [[ "${OTHER_ENV}" == "development" ]]; then
     fi
 else
     # For staging, check dev VM
-    OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "cat /home/${OS_USER}/version.json 2>/dev/null | grep -o '\"commit_sha\":\"[^\"]*\"' | cut -d'\"' -f4" || echo "")
+    OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "python3 -c \"import json, sys; print(json.load(open('/home/isabellabutera/version.json'))['commit_sha'])\"" 2>/dev/null || echo "")
     if [[ -n "${OTHER_EXPECTED_COMMIT}" ]] && [[ "${OTHER_EXPECTED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
         log "Cross-deployment check: ${OTHER_ENV} at ${OTHER_EXPECTED_COMMIT} (expected different from ${EXPECTED_COMMIT})"
         PASSED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} unchanged")
@@ -227,13 +227,17 @@ log "Expected commit: ${EXPECTED_COMMIT}"
 log "Passed: ${#PASSED_CHECKS[@]}"
 log "Failed: ${#FAILED_CHECKS[@]}"
 
-for check in "${PASSED_CHECKS[@]}"; do
-    log "  ✓ ${check}"
-done
+if [[ ${#PASSED_CHECKS[@]} -gt 0 ]]; then
+    for check in "${PASSED_CHECKS[@]}"; do
+        log "  ✓ ${check}"
+    done
+fi
 
-for check in "${FAILED_CHECKS[@]}"; do
-    error "  ✗ ${check}"
-done
+if [[ ${#FAILED_CHECKS[@]} -gt 0 ]]; then
+    for check in "${FAILED_CHECKS[@]}"; do
+        error "  ✗ ${check}"
+    done
+fi
 
 if [[ ${#FAILED_CHECKS[@]} -gt 0 ]]; then
     error "=== VERIFICATION FAILED ==="
