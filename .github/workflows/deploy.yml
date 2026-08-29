@@ -734,30 +734,10 @@ jobs:
           bash scripts/verify_deployment.sh staging ${{ github.sha }}
         continue-on-error: false
       
-      - name: Upload verification results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: staging-verification-results
-          path: verification-results.json
-          retention-days: 30
-      
-      - name: Generate verification summary
-        if: always()
-        run: |
-          if [ -f verification-results.json ]; then
-            python3 -c "
-import json
-with open('verification-results.json') as f:
-    data = json.load(f)
-print(f'## Staging Verification Results')
-print(f'| Check | Status |')
-print(f'|-------|--------|')
-for check in data.get('checks', []):
-    status = '✅ Pass' if check['passed'] else '❌ Fail'
-    print(f'| {check[\"name\"]} | {status} |')
-    if not check['passed']:
-        print(f'  > Expected: {check[\"expected\"]}')
-        print(f'  > Actual: {check[\"actual\"]}')
-"
-            fi
+       - name: Upload verification results
+         if: always()
+         uses: actions/upload-artifact@v4
+         with:
+           name: staging-verification-results
+           path: verification-results.json
+           retention-days: 30
