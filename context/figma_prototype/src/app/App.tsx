@@ -339,6 +339,7 @@ function Sidebar({ page, navigate, collapsed, onCollapse }: {
     { id: "ticker-timeline", label: "Timeline", icon: Clock },
     { id: "chat", label: "AI Assistant", icon: MessageSquare },
     { id: "alerts", label: "Alerts", icon: Bell },
+    { id: "admin", label: "Admin", icon: Shield },
   ];
   return (
     <aside className={cn("flex flex-col h-screen sticky top-0 bg-sidebar border-r border-sidebar-border transition-all duration-200 shrink-0", collapsed ? "w-16" : "w-56")}>
@@ -377,10 +378,6 @@ function Sidebar({ page, navigate, collapsed, onCollapse }: {
 
       {/* Bottom */}
       <div className="px-2 pb-4 space-y-0.5 border-t border-sidebar-border pt-3">
-        <button onClick={() => navigate("admin")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
-          <Shield size={16} className="shrink-0" />
-          {!collapsed && <span>Admin</span>}
-        </button>
         <button onClick={() => navigate("account")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
           <Settings size={16} className="shrink-0" />
           {!collapsed && <span>Settings</span>}
@@ -442,11 +439,12 @@ function AppShell({ page, navigate, children }: { page: Page; navigate: (p: Page
 // PAGE 2: Login
 // ────────────────────────────────────────────────
 function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
-  const [email, setEmail] = useState("isabella@research.co");
-  const [password, setPassword] = useState("••••••••");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
 
   const handleLogin = async () => {
     setLoading(true);
@@ -500,6 +498,9 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
           <div>
             <h1 className="text-2xl font-bold mb-1">Welcome back</h1>
             <p className="text-muted-foreground text-sm">Sign in to your research account</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Don't have an account? <button onClick={() => navigate("register")} className="text-primary hover:underline cursor-pointer">Create one free</button>
+            </p>
           </div>
           {error && (
             <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
@@ -522,7 +523,7 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
             </div>
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer text-muted-foreground">
-                <input type="checkbox" className="rounded" defaultChecked /> Remember me
+                <input type="checkbox" className="rounded" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} /> Remember me
               </label>
               <button onClick={() => navigate("forgot-password")} className="text-primary hover:underline cursor-pointer text-sm">Forgot password?</button>
             </div>
@@ -742,7 +743,7 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
   const [step, setStep] = useState(0);
   const steps = ["Welcome!", "Pick your interests", "Set up first workspace"];
   const sectors = ["Semiconductors", "AI/ML", "EV & Clean Energy", "Cloud Infrastructure", "Defense Tech", "Biotech", "Consumer Electronics", "Crypto/Blockchain"];
-  const [selected, setSelected] = useState<string[]>(["Semiconductors", "AI/ML"]);
+  const [selected, setSelected] = useState<string[]>([]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-8 bg-background">
@@ -2121,6 +2122,11 @@ function AccountPage({ navigate, userEmail, userName, userPermissions, loading }
   const displayName = userName || "";
   const email = userEmail || "";
   const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "??";
+  const [firstName, setFirstName] = useState(displayName.split(" ")[0] || "");
+  const [lastName, setLastName] = useState(displayName.split(" ").slice(1).join(" ") || "");
+  const [emailVal, setEmailVal] = useState(email || "");
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Account Settings</h1>
@@ -2133,13 +2139,16 @@ function AccountPage({ navigate, userEmail, userName, userPermissions, loading }
         <div className="space-y-5">
           <Card className="p-5">
             <div className="flex items-center gap-4 mb-5">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold">{initials}</div>
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold overflow-hidden">
+                {photoUrl ? <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" /> : initials}
+              </div>
               <div>
                 <div className="font-semibold text-lg">{displayName || "User"}</div>
                 <div className="text-muted-foreground text-sm">{email || "user@example.com"}</div>
                 <Badge variant="purple" className="mt-1">Beta User</Badge>
               </div>
-              <Btn variant="secondary" size="sm" className="ml-auto" icon={<Edit2 size={12} />}>Edit Photo</Btn>
+              <Btn variant="secondary" size="sm" className="ml-auto" icon={<Edit2 size={12} />} onClick={() => fileInputRef.current?.click()}>Edit Photo</Btn>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { const url = URL.createObjectURL(f); setPhotoUrl(url); } }} />
             </div>
             {loading ? (
               <div className="flex items-center justify-center py-4">
@@ -2148,10 +2157,10 @@ function AccountPage({ navigate, userEmail, userName, userPermissions, loading }
             ) : (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value={displayName.split(" ")[0] || ""} /></div>
-                  <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value={displayName.split(" ").slice(1).join(" ") || ""} /></div>
+                  <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value={firstName} onChange={setFirstName} placeholder="First name" /></div>
+                  <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value={lastName} onChange={setLastName} placeholder="Last name" /></div>
                 </div>
-                <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value={email} icon={<Mail size={14} />} /></div>
+                <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value={emailVal} onChange={setEmailVal} placeholder="you@example.com" icon={<Mail size={14} />} /></div>
                 <Btn variant="primary" size="sm" icon={<Check size={12} />}>Save Profile</Btn>
               </div>
             )}
