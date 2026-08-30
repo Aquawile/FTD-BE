@@ -15,7 +15,7 @@ import {
   ThumbsUp, ThumbsDown, Minus, Maximize2
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendEmailVerification, User as FirebaseUser } from "firebase/auth";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendEmailVerification, User as FirebaseUser } from "firebase/auth";
 
 const firebaseConfig = {
   projectId: "ftd-2026",
@@ -43,7 +43,7 @@ type Page =
   | "login" | "register" | "verify-email" | "forgot-password" | "onboarding-done"
   | "dashboard" | "search" | "ticker" | "ticker-timeline" | "ticker-filings" | "ticker-community" | "ticker-comparison"
   | "workspaces" | "workspace-detail" | "workspace-settings"
-  | "chat" | "alerts" | "account"
+  | "chat" | "alerts" | "profile"
   | "admin" | "admin-mapping" | "admin-users" | "admin-system";
 
 // ────────────────────────────────────────────────
@@ -378,22 +378,27 @@ function Sidebar({ page, navigate, collapsed, onCollapse }: {
 
       {/* Bottom */}
       <div className="px-2 pb-4 space-y-0.5 border-t border-sidebar-border pt-3">
-        <button onClick={() => navigate("account")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
+        <button onClick={() => navigate("profile")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
           <Settings size={16} className="shrink-0" />
           {!collapsed && <span>Settings</span>}
-        </button>
-        <button onClick={() => navigate("login")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
-          <LogOut size={16} className="shrink-0" />
-          {!collapsed && <span>Sign Out</span>}
         </button>
       </div>
     </aside>
   );
 }
 
-function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 2 }: {
-  navigate: (p: Page) => void; searchQuery: string; setSearchQuery: (v: string) => void; onSearch: () => void; unreadAlerts?: number;
+function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 2, userEmail, userName, onSignOut }: {
+  navigate: (p: Page) => void; searchQuery: string; setSearchQuery: (v: string) => void; onSearch: () => void; unreadAlerts?: number; userEmail?: string; userName?: string; onSignOut?: () => void;
 }) {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => { if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false); };
+    const handleEscape = (e: KeyboardEvent) => { if (e.key === "Escape") setProfileOpen(false); };
+    if (profileOpen) { document.addEventListener("mousedown", handleClickOutside); document.addEventListener("keydown", handleEscape); }
+    return () => { document.removeEventListener("mousedown", handleClickOutside); document.removeEventListener("keydown", handleEscape); };
+  }, [profileOpen]);
   return (
     <header className="sticky top-0 z-40 flex items-center gap-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border">
       <div className="relative flex-1 max-w-md">
@@ -412,8 +417,20 @@ function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts 
           <Bell size={18} />
           {unreadAlerts > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" />}
         </button>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => navigate("account")}>
-          IB
+        <div className="relative">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
+            {userName ? userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "IB"}
+          </div>
+          {profileOpen && (
+            <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-2 z-50">
+              <div className="px-4 py-2 border-b border-border/50">
+                <div className="text-sm font-medium text-foreground truncate">{userName || "User"}</div>
+                <div className="text-xs text-muted-foreground truncate">{userEmail || "user@example.com"}</div>
+              </div>
+              <button onClick={() => { setProfileOpen(false); navigate("profile"); }} className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors cursor-pointer">Profile</button>
+              <button onClick={() => { setProfileOpen(false); onSignOut?.(); }} className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-secondary transition-colors cursor-pointer">Sign Out</button>
+            </div>
+          )}
         </div>
       </div>
     </header>
@@ -428,7 +445,7 @@ function AppShell({ page, navigate, children }: { page: Page; navigate: (p: Page
     <div className="flex min-h-screen">
       <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} />
+        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
@@ -451,7 +468,7 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
     setError("");
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
-      navigate("account");
+      navigate("profile");
     } catch (err: any) {
       setError(err.message || "Invalid credentials");
     } finally {
@@ -514,7 +531,7 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Password</label>
-              <div className="relative">
+        <div className="relative" ref={profileRef}>
                 <Input type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
                 <button onClick={() => setShowPw(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -679,7 +696,7 @@ function VerifyEmailPage({ navigate, userEmail }: { navigate: (p: Page) => void;
           <div className="flex items-center gap-2"><Info size={14} className="text-blue-400" /><span>Link expires in 24 hours</span></div>
           <div className="flex items-center gap-2"><AlertCircle size={14} className="text-orange-400" /><span>Check your spam folder if not received</span></div>
         </div>
-        <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("account")}>
+        <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("profile")}>
           <Check size={14} /> I verified my email
         </Btn>
         <button
@@ -798,10 +815,10 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
               <label className="text-sm font-medium">Add tickers (optional)</label>
               <Input placeholder="NVDA, AMD, TSLA..." icon={<Hash size={14} />} />
             </div>
-            <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("account")}>
+            <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("profile")}>
               <Check size={14} /> Finish Setup
             </Btn>
-            <button onClick={() => navigate("account")} className="w-full text-center text-sm text-muted-foreground hover:text-foreground cursor-pointer">Skip for now</button>
+            <button onClick={() => navigate("profile")} className="w-full text-center text-sm text-muted-foreground hover:text-foreground cursor-pointer">Skip for now</button>
           </div>
         )}
       </div>
@@ -2117,7 +2134,7 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 19: Account Settings (Profile)
 // ────────────────────────────────────────────────
-function AccountPage({ navigate, userEmail, userName, userPermissions, loading }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean }) {
+function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean }) {
   const [activeTab, setActiveTab] = useState("profile");
   const displayName = userName || "";
   const email = userEmail || "";
@@ -2686,6 +2703,11 @@ export default function App() {
 
   const navigate = (p: Page) => setPage(p);
 
+  const handleSignOut = async () => {
+    try { await signOut(firebaseAuth); } catch {}
+    navigate("login");
+  };
+
   const publicPages: Page[] = ["login", "register", "verify-email", "forgot-password", "onboarding-done"];
   const isPublic = publicPages.includes(page);
 
@@ -2711,7 +2733,7 @@ export default function App() {
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
       case "chat": return <ChatPage navigate={navigate} />;
       case "alerts": return <AlertsPage navigate={navigate} />;
-      case "account": return <AccountPage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
+      case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
       case "admin": return <AdminDashboard navigate={navigate} />;
       case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
       case "admin-users": return <AdminUsersPage navigate={navigate} />;
