@@ -802,8 +802,7 @@ function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) =>
       {/* Welcome */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Good morning, Isabella 👋</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">3 narrative shifts detected overnight · 2 new SEC filings indexed</p>
+          <h1 className="text-2xl font-bold">Good morning 👋</h1>
         </div>
         <Btn variant="primary" onClick={() => navigate("chat")} icon={<MessageSquare size={14} />}>Ask AI</Btn>
       </div>
