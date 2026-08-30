@@ -417,7 +417,7 @@ function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts 
           <Bell size={18} />
           {unreadAlerts > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" />}
         </button>
-        <div className="relative">
+        <div className="relative" ref={profileRef}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
             {userName ? userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "IB"}
           </div>
@@ -531,8 +531,7 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Password</label>
-        <div className="relative" ref={profileRef}>
-                <Input type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
+                <div className="relative"><Input type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
                 <button onClick={() => setShowPw(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
