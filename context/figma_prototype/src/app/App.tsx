@@ -793,9 +793,34 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 7: Dashboard Home
 // ────────────────────────────────────────────────
-function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
-  const topMovers = TICKERS.slice(0, 5);
-  const spData = [45, 52, 48, 63, 71, 68, 74, 69, 77, 82, 79, 84];
+function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser?: any }) {
+  const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null } | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchStats = async () => {
+      if (!firebaseUser) { setStatsLoading(false); return; }
+      try {
+        const token = await firebaseUser.getIdToken();
+        const res = await fetch("/api/dashboard/stats", { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) { setStats(data); setStatsLoading(false); }
+      } catch {
+        if (!cancelled) { setStatsError(true); setStatsLoading(false); }
+      }
+    };
+    fetchStats();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
+
+  const formatCount = (n: number) => {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+    return String(n);
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -809,25 +834,36 @@ function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) =>
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Tickers Tracked", value: "13", sub: "across 3 workspaces", icon: Target, color: "#3B82F6" },
-          { label: "Active Alerts", value: "5", sub: "2 unread", icon: Bell, color: "#F59E0B" },
-          { label: "Articles Analyzed", value: "2.4M", sub: "Last 24h: 14,302", icon: FileText, color: "#10B981" },
-          { label: "Avg Evidence Score", value: "68", sub: "your watchlist", icon: BarChart2, color: "#8B5CF6" },
-        ].map(s => (
-          <Card key={s.label} className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-muted-foreground text-xs mb-1">{s.label}</div>
-                <div className="font-mono font-bold text-2xl text-foreground">{s.value}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{s.sub}</div>
+        {statsLoading ? (
+          Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} className="p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-1/2" /><div className="h-6 bg-secondary rounded w-1/3" /></div></Card>
+          ))
+        ) : statsError ? (
+          <Card className="p-4 col-span-full text-sm text-red-400">Unable to load dashboard stats</Card>
+        ) : (
+          <>
+            <Card className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-muted-foreground text-xs mb-1">Articles Analyzed</div>
+                  <div className="font-mono font-bold text-2xl text-foreground">{formatCount(stats?.articles_count ?? 0)}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Total in database</div>
+                </div>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-400"><FileText size={18} /></div>
               </div>
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${s.color}15` }}>
-                <s.icon size={18} style={{ color: s.color }} />
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-muted-foreground text-xs mb-1">Tickers Tracked</div>
+                  <div className="font-mono font-bold text-2xl text-foreground">{formatCount(stats?.tickers_count ?? 0)}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Across all sources</div>
+                </div>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-400"><Target size={18} /></div>
               </div>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -854,13 +890,8 @@ function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) =>
                       <span className="text-muted-foreground text-xs truncate">{t.name}</span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-3">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: getHypeColor(t.hype) }} />
-                        H:{t.hype}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: getEvidenceColor(t.evidence) }} />
-                        E:{t.evidence}
+                      <div className="text-xs text-muted-foreground">
+                        Price data available
                       </div>
                     </div>
                   </div>
@@ -2706,7 +2737,7 @@ export default function App() {
       case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email} />;
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
-      case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
+      case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
       case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} onReport={() => setShowReport(true)} />;
       case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} />;

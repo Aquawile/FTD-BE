@@ -79,3 +79,10 @@ class SearchResult(BaseModel):
     source: Literal["finnhub", "gnews", "sec"] = "sec"
     content_preview: str = ""
     element_id: Optional[str] = None
+
+
+class DashboardStats(BaseModel):
+    articles_count: int = 0
+    tickers_count: int = 0
+    alerts_count: int = 0
+    evidence_score: Optional[float] = None

@@ -191,3 +191,21 @@ def search_content(
     """
     rows = query_dict(sql, (f"%{keyword}%", source, limit))
     return [SearchResult(**r) for r in rows]
+
+
+def get_dashboard_stats() -> dict:
+    articles_sql = "SELECT COUNT(*) AS count FROM unified_staging"
+    tickers_sql = "SELECT COUNT(DISTINCT target_ticker) AS count FROM unified_staging WHERE target_ticker IS NOT NULL AND target_ticker <> ''"
+
+    articles_rows = query_dict(articles_sql)
+    tickers_rows = query_dict(tickers_sql)
+
+    articles_count = articles_rows[0]["count"] if articles_rows else 0
+    tickers_count = tickers_rows[0]["count"] if tickers_rows else 0
+
+    return {
+        "articles_count": articles_count,
+        "tickers_count": tickers_count,
+        "alerts_count": 0,
+        "evidence_score": None,
+    }

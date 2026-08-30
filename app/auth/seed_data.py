@@ -13,6 +13,7 @@ PERMISSION_DESCRIPTIONS = {
     "tickers.fiscal_year_end": "View fiscal year-end dates for tickers",
     "filings.read": "Read filing elements and content",
     "search.read": "Search content across all sources",
+    "dashboard.read": "View dashboard stats and metrics",
 }
 
 
