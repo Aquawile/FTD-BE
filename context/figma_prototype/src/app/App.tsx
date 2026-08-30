@@ -238,13 +238,14 @@ function Btn({ children, onClick, variant = "primary", size = "md", className, d
   );
 }
 
-function Input({ placeholder, value, onChange, type = "text", icon, className }: {
-  placeholder?: string; value?: string; onChange?: (v: string) => void; type?: string; icon?: React.ReactNode; className?: string;
+function Input({ id, placeholder, value, onChange, type = "text", icon, className }: {
+  id?: string; placeholder?: string; value?: string; onChange?: (v: string) => void; type?: string; icon?: React.ReactNode; className?: string;
 }) {
   return (
     <div className={cn("relative", className)}>
       {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</div>}
       <input
+        id={id}
         type={type}
         placeholder={placeholder}
         value={value}
@@ -524,14 +525,14 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
               {error}
             </div>
           )}
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Email address</label>
-              <Input type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Password</label>
-                <div className="relative"><Input type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label htmlFor="login-email" className="text-sm font-medium">Email address</label>
+                <Input id="login-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="login-password" className="text-sm font-medium">Password</label>
+                  <div className="relative"><Input id="login-password" type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
                 <button onClick={() => setShowPw(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
@@ -570,10 +571,8 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
 // PAGE 3: Register
 // ────────────────────────────────────────────────
 function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
-  const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -603,68 +602,34 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
           <h1 className="text-2xl font-bold mb-1">Create your account</h1>
           <p className="text-muted-foreground text-sm">Free during beta · No credit card needed</p>
         </div>
-        {/* Progress */}
-        <div className="flex gap-2">
-          {[1, 2, 3].map(s => (
-            <div key={s} className={cn("flex-1 h-1 rounded-full transition-all", s <= step ? "bg-primary" : "bg-secondary")} />
-          ))}
-        </div>
         {error && (
           <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
             {error}
           </div>
         )}
         <div className="space-y-4">
-          {step === 1 && (
-            <>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Full name</label>
-                <Input value={name} onChange={setName} placeholder="Isabella Chen" icon={<User size={14} />} />
-              </div>
-              <Btn variant="primary" className="w-full justify-center" onClick={() => setStep(2)} disabled={!name.trim()}>
-                Continue <ArrowRight size={14} />
-              </Btn>
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Email address</label>
-                <Input type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Password</label>
-                <Input type="password" value={pw} onChange={setPw} placeholder="Min. 8 characters" icon={<Lock size={14} />} />
-              </div>
-              {pw.length > 0 && (
-                <div className="space-y-1">
-                  {[{ label: "8+ characters", ok: pw.length >= 8 }, { label: "Uppercase letter", ok: /[A-Z]/.test(pw) }, { label: "Number", ok: /[0-9]/.test(pw) }].map(r => (
-                    <div key={r.label} className="flex items-center gap-2 text-xs">
-                      {r.ok ? <Check size={12} className="text-emerald-400" /> : <Minus size={12} className="text-muted-foreground" />}
-                      <span className={r.ok ? "text-emerald-400" : "text-muted-foreground"}>{r.label}</span>
-                    </div>
-                  ))}
+          <div className="space-y-1.5">
+            <label htmlFor="reg-email" className="text-sm font-medium">Email address</label>
+            <Input id="reg-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="reg-password" className="text-sm font-medium">Password</label>
+            <Input id="reg-password" type="password" value={pw} onChange={setPw} placeholder="Min. 8 characters" icon={<Lock size={14} />} />
+          </div>
+          {pw.length > 0 && (
+            <div className="space-y-1">
+              {[{ label: "8+ characters", ok: pw.length >= 8 }, { label: "Uppercase letter", ok: /[A-Z]/.test(pw) }, { label: "Number", ok: /[0-9]/.test(pw) }].map(r => (
+                <div key={r.label} className="flex items-center gap-2 text-xs">
+                  {r.ok ? <Check size={12} className="text-emerald-400" /> : <Minus size={12} className="text-muted-foreground" />}
+                  <span className={r.ok ? "text-emerald-400" : "text-muted-foreground"}>{r.label}</span>
                 </div>
-              )}
-              <Btn variant="primary" className="w-full justify-center" onClick={() => setStep(3)} disabled={!email || pw.length < 8}>
-                Continue <ArrowRight size={14} />
-              </Btn>
-            </>
+              ))}
+            </div>
           )}
-          {step === 3 && (
-            <>
-              <div className="p-4 bg-secondary/50 rounded-xl border border-border space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Name</span><span>{name}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span>{email || "example@ftd.com"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Plan</span><Badge variant="purple">Beta Free</Badge></div>
-              </div>
-              <p className="text-xs text-muted-foreground">By creating an account you agree to the Terms of Service and Privacy Policy. Not investment advice.</p>
-              <Btn variant="primary" className="w-full justify-center" onClick={handleSubmit} disabled={loading}>
-                {loading ? <RefreshCw size={14} className="animate-spin" /> : <UserCheck size={14} />}
-                {loading ? "Creating account..." : "Create Account"}
-              </Btn>
-            </>
-          )}
+          <Btn variant="primary" className="w-full justify-center" onClick={handleSubmit} disabled={!email || pw.length < 8 || loading}>
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : <UserCheck size={14} />}
+            {loading ? "Creating account..." : "Create Account"}
+          </Btn>
         </div>
         <p className="text-center text-sm text-muted-foreground">Already have an account? <button onClick={() => navigate("login")} className="text-primary hover:underline cursor-pointer">Sign in</button></p>
       </div>
@@ -730,8 +695,8 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
               <p className="text-muted-foreground text-sm">Enter your email and we will send a reset link valid for 1 hour.</p>
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Email address</label>
-              <Input type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+              <label htmlFor="forgot-email" className="text-sm font-medium">Email address</label>
+              <Input id="forgot-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
             </div>
             <Btn variant="primary" className="w-full justify-center" onClick={() => setSent(true)} disabled={!email.includes("@")}>
               <Send size={14} /> Send Reset Link
@@ -778,7 +743,7 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
           <div className="text-center space-y-4 py-4">
             <div className="text-5xl">🎉</div>
             <h1 className="text-2xl font-bold">Account verified!</h1>
-            <p className="text-muted-foreground text-sm">Welcome to FTD, Isabella. Let us personalize your experience in 2 quick steps.</p>
+            <p className="text-muted-foreground text-sm">Welcome to FTD. Let us personalize your experience in 2 quick steps.</p>
             <Btn variant="primary" size="lg" className="w-full justify-center" onClick={() => setStep(1)}>Get Started <ArrowRight size={14} /></Btn>
           </div>
         )}
@@ -807,12 +772,12 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
             <h2 className="text-xl font-bold">Create your first workspace</h2>
             <p className="text-muted-foreground text-sm">Group related tickers to track them together. You can always add more later.</p>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Workspace name</label>
-              <Input placeholder="e.g., AI Semiconductor Race" icon={<Briefcase size={14} />} />
+              <label htmlFor="workspace-name" className="text-sm font-medium">Workspace name</label>
+              <Input id="workspace-name" placeholder="e.g., AI Semiconductor Race" icon={<Briefcase size={14} />} />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Add tickers (optional)</label>
-              <Input placeholder="NVDA, AMD, TSLA..." icon={<Hash size={14} />} />
+              <label htmlFor="workspace-tickers" className="text-sm font-medium">Add tickers (optional)</label>
+              <Input id="workspace-tickers" placeholder="NVDA, AMD, TSLA..." icon={<Hash size={14} />} />
             </div>
             <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("profile")}>
               <Check size={14} /> Finish Setup
@@ -2143,9 +2108,31 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
   const [emailVal, setEmailVal] = useState(email || "");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("ftd_profile");
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.firstName) setFirstName(data.firstName);
+        if (data.lastName) setLastName(data.lastName);
+        if (data.email) setEmailVal(data.email);
+        if (data.photoUrl) setPhotoUrl(data.photoUrl);
+      }
+    } catch {}
+  }, []);
+
+  const handleSaveProfile = () => {
+    try {
+      localStorage.setItem("ftd_profile", JSON.stringify({ firstName, lastName, email: emailVal, photoUrl }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+  };
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Account Settings</h1>
+      <h1 className="text-2xl font-bold mb-6">Profile</h1>
       <div className="flex gap-2 mb-6 border-b border-border pb-4">
         {["profile", "security", "preferences", "api"].map(t => (
           <button key={t} onClick={() => setActiveTab(t)} className={cn("px-3 py-1.5 rounded-lg text-sm capitalize cursor-pointer transition-all", activeTab === t ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground")}>{t}</button>
@@ -2171,14 +2158,14 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
                 <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><label className="text-sm font-medium">First name</label><Input value={firstName} onChange={setFirstName} placeholder="First name" /></div>
-                  <div className="space-y-1.5"><label className="text-sm font-medium">Last name</label><Input value={lastName} onChange={setLastName} placeholder="Last name" /></div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5"><label htmlFor="firstName" className="text-sm font-medium">First name</label><Input id="firstName" value={firstName} onChange={setFirstName} placeholder="First name" /></div>
+                    <div className="space-y-1.5"><label htmlFor="lastName" className="text-sm font-medium">Last name</label><Input id="lastName" value={lastName} onChange={setLastName} placeholder="Last name" /></div>
+                  </div>
+                  <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><Input id="email" type="email" value={emailVal} onChange={setEmailVal} placeholder="you@example.com" icon={<Mail size={14} />} /></div>
+                  <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile}>{saved ? "Saved" : "Save Profile"}</Btn>
                 </div>
-                <div className="space-y-1.5"><label className="text-sm font-medium">Email address</label><Input type="email" value={emailVal} onChange={setEmailVal} placeholder="you@example.com" icon={<Mail size={14} />} /></div>
-                <Btn variant="primary" size="sm" icon={<Check size={12} />}>Save Profile</Btn>
-              </div>
             )}
           </Card>
         </div>
