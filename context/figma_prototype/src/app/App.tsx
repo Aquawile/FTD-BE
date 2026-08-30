@@ -437,7 +437,7 @@ function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts 
   );
 }
 
-function AppShell({ page, navigate, children }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode }) {
+function AppShell({ page, navigate, children, userEmail, userName, onSignOut }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const handleSearch = () => { if (searchQuery.trim()) navigate("search"); };
@@ -445,7 +445,7 @@ function AppShell({ page, navigate, children }: { page: Page; navigate: (p: Page
     <div className="flex min-h-screen">
       <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} />
+        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} userEmail={userEmail} userName={userName} onSignOut={onSignOut} />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
@@ -2746,7 +2746,7 @@ export default function App() {
       {isPublic ? (
         <div className="min-h-screen bg-background">{renderPage()}</div>
       ) : (
-        <AppShell page={page} navigate={navigate}>
+        <AppShell page={page} navigate={navigate} userEmail={userEmail} userName={userName} onSignOut={handleSignOut}>
           {renderPage()}
         </AppShell>
       )}
