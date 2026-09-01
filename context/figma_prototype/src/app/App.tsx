@@ -793,7 +793,7 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 7: Dashboard Home
 // ────────────────────────────────────────────────
-function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser?: any }) {
+function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser?: any }) { // build-cache-bust
   const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
@@ -821,6 +821,9 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
     return String(n);
   };
+
+  const topMovers = TICKERS.slice(0, 5);
+  const spData = [45, 52, 48, 63, 71, 68, 74, 69, 77, 82, 79, 84];
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
