@@ -793,7 +793,7 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 7: Dashboard Home
 // ────────────────────────────────────────────────
-function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser?: any }) { // build-cache-bust
+function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
   const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
@@ -801,10 +801,8 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
   useEffect(() => {
     let cancelled = false;
     const fetchStats = async () => {
-      if (!firebaseUser) { setStatsLoading(false); return; }
       try {
-        const token = await firebaseUser.getIdToken();
-        const res = await fetch("/api/dashboard/stats", { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch("/api/dashboard/stats");
         if (!res.ok) throw new Error("failed");
         const data = await res.json();
         if (!cancelled) { setStats(data); setStatsLoading(false); }
@@ -814,7 +812,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     };
     fetchStats();
     return () => { cancelled = true; };
-  }, [firebaseUser]);
+  }, []);
 
   const formatCount = (n: number) => {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
