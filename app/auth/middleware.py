@@ -68,13 +68,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.warning("authentication_failed: reason=firebase_token_expired path=%s", path)
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Firebase token has expired"},
+                content={"detail": "Invalid or expired token"},
             )
         elif firebase_reason == "invalid":
             logger.warning("authentication_failed: reason=firebase_token_invalid path=%s", path)
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Invalid Firebase token"},
+                content={"detail": "Invalid or expired token"},
             )
         else:
             logger.warning("authentication_failed: reason=invalid_or_expired_token path=%s", path)
