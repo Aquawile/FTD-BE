@@ -63,6 +63,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.info("authentication_succeeded: method=firebase firebase_uid=%s path=%s", firebase_uid, path)
             return await call_next(request)
 
+        # Firebase failed, check the specific reason
+        if firebase_reason == "expired":
+            logger.warning("authentication_failed: reason=firebase_token_expired path=%s", path)
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Firebase token has expired"},
+            )
+        elif firebase_reason == "invalid":
+            logger.warning("authentication_failed: reason=firebase_token_invalid path=%s", path)
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid Firebase token"},
+            )
+        else:
+            logger.warning("authentication_failed: reason=invalid_or_expired_token path=%s", path)
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or expired token"},
+            )
+
         # Firebase failed, try internal JWT
         payload = verify_token(token)
         if payload is None:
