@@ -25,7 +25,7 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 
-const API_BASE = "http://127.0.0.1:18000";
+const API_BASE = "/api";
 
 async function apiRequest(path: string, firebaseUser: FirebaseUser | null): Promise<Response> {
   const headers: Record<string, string> = {};

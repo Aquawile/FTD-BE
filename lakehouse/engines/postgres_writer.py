@@ -77,7 +77,7 @@ def _create_table_if_missing(settings: LakehouseSettings, table_name: str, df: p
 
 def _df_to_values(df: pd.DataFrame):
     for row in df.itertuples(index=False, name=None):
-        yield tuple(None if pd.isna(v) else v for v in row)
+        yield tuple(None if pd.isna(v) or v == "" else v for v in row)
 
 
 def write_frame(settings: LakehouseSettings, table_name: str, df: pd.DataFrame) -> None:

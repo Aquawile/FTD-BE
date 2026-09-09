@@ -88,7 +88,7 @@ def _parse_fy_date(raw: str) -> Optional[str]:
         return None
 
 
-def build_fiscal_parameters(settings: LakehouseSettings, sample: int | None = None) -> pd.DataFrame:
+def build_fiscal_parameters(settings: LakehouseSettings, sample: int | None = None, since: str | None = None) -> pd.DataFrame:
     storage = GcsStorage(settings.sec_settings)
     bucket = storage._bucket
     prefix = "SEC/10-K/"
@@ -96,10 +96,13 @@ def build_fiscal_parameters(settings: LakehouseSettings, sample: int | None = No
     blobs = list(bucket.list_blobs(prefix=prefix))
     logger.info("Scanning %d 10-K blobs for fiscal year-end dates", len(blobs))
 
+    since_dt = pd.Timestamp(since) if since else None
     for blob in blobs:
         if sample is not None and len(rows) >= sample:
             break
         if not blob.name.endswith(".htm") and not blob.name.endswith(".html"):
+            continue
+        if since_dt is not None and blob.time_created < since_dt:
             continue
         parts = blob.name.split("/")
         if len(parts) < 5:
@@ -196,8 +199,8 @@ def save_fiscal_parameters(df: pd.DataFrame, settings: LakehouseSettings) -> str
 
     path = f"{settings.gcs_staging_prefix}/fiscal_parameters.parquet"
     table = pa.Table.from_pandas(df)
-    storage = GcsStorage(settings.sec_settings)
-    bucket = storage._bucket
+    client = storage.Client(project=settings.sec_settings.gcp_project)
+    bucket = client.bucket(settings.gcs_bucket)
     blob = bucket.blob(path)
     buf = pa.BufferOutputStream()
     pq.write_table(table, buf)

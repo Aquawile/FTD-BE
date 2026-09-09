@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth.exceptions import AuthenticationError
 from app.auth.models import ErrorResponse
-from app.routes import dashboard, filings, search, tickers, users
+from app.routes import dashboard, filings, search, tickers, users, workspaces, alerts
 from app.auth.router import router as auth_router
 from app.auth.middleware import AuthMiddleware
 from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError, UserValidationError
@@ -46,6 +46,8 @@ app.include_router(tickers.router)
 app.include_router(filings.router)
 app.include_router(search.router)
 app.include_router(users.router)
+app.include_router(workspaces.router)
+app.include_router(alerts.router)
 app.include_router(dashboard.router)
 
 

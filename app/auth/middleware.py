@@ -13,7 +13,7 @@ from app.auth.token import verify_token
 logger = logging.getLogger(__name__)
 
 
-PUBLIC_PATHS = {"/health", "/version", "/auth/login", "/auth/me", "/dashboard/stats"}
+PUBLIC_PATHS = {"/health", "/version", "/auth/login", "/auth/register", "/auth/me", "/dashboard/stats"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -63,14 +63,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.info("authentication_succeeded: method=firebase firebase_uid=%s path=%s", firebase_uid, path)
             return await call_next(request)
 
-        if firebase_reason == "expired":
-            logger.warning("authentication_failed: reason=firebase_token_expired path=%s", path)
-        else:
-            logger.warning("authentication_failed: reason=firebase_token_invalid path=%s", path)
-
+        # Firebase failed, try internal JWT
         payload = verify_token(token)
         if payload is None:
-            logger.warning("authentication_failed: reason=invalid_or_expired_internal_token path=%s", path)
+            logger.warning("authentication_failed: reason=invalid_or_expired_token path=%s", path)
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or expired token"},
