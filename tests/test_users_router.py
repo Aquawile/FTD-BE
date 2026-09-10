@@ -316,9 +316,9 @@ class TestUsersRouterPostgres(unittest.TestCase):
         from app.auth.repository import get_user_by_firebase_uid
         user = get_user_by_firebase_uid(unknown_firebase_uid)
         self.assertIsNotNone(user)
-        self.addCleanup(self._cleanup_test_data)
+        self.addCleanup(self._cleanup_unknown_user)
 
-    def _cleanup_test_data(self) -> None:
+    def _cleanup_unknown_user(self) -> None:
         from app.auth.repository import get_user_by_firebase_uid
         user = get_user_by_firebase_uid("unknown-firebase-uid")
         if user:
