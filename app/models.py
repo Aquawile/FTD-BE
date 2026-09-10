@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class TickerResult(BaseModel):
     ticker: str
     cik: str
+    sector: Optional[str] = None
+    news_snippet: Optional[str] = None
 
 
 class PriceRow(BaseModel):
@@ -86,3 +88,32 @@ class DashboardStats(BaseModel):
     tickers_count: int = 0
     alerts_count: int = 0
     evidence_score: Optional[float] = None
+
+
+class TrackedTicker(BaseModel):
+    symbol: str
+    name: str
+    sector: Optional[str] = None
+    current_price: Optional[float] = None
+    evidence_score: Optional[float] = None
+    hype_score: Optional[float] = None
+    change_percent: Optional[float] = None
+    price_as_of: Optional[str] = None
+
+
+class WorkspaceResponse(BaseModel):
+    id: int
+    name: str
+    tickers: list[str] = []
+    alerts: int = 0
+    created_at: Optional[str] = None
+
+
+class AlertResponse(BaseModel):
+    id: int
+    ticker: Optional[str] = None
+    type: str
+    message: str
+    read: bool = False
+    severity: str = "medium"
+    time: Optional[str] = None

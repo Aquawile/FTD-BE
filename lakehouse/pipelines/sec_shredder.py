@@ -134,12 +134,15 @@ def shred_html(
     return df
 
 
-def process_sec_documents(settings: LakehouseSettings, sample: int | None = None) -> pd.DataFrame:
+def process_sec_documents(settings: LakehouseSettings, sample: int | None = None, since: str | None = None) -> pd.DataFrame:
     storage = GcsStorage(settings.sec_settings)
     bucket = storage._bucket
     period_map = build_period_map(settings)
     frames: list[pd.DataFrame] = []
     total_processed = 0
+    batch_size = 100
+
+    since_dt = pd.Timestamp(since) if since else None
 
     for form_type, gcs_prefix in (
         ("8-K", "SEC/8-K/"),
@@ -149,10 +152,13 @@ def process_sec_documents(settings: LakehouseSettings, sample: int | None = None
             break
         blobs = list(bucket.list_blobs(prefix=gcs_prefix))
         logger.info("Found %d blobs for %s", len(blobs), form_type)
+        batch_frames: list[pd.DataFrame] = []
         for blob in blobs:
             if sample is not None and total_processed >= sample:
                 break
             if not blob.name.endswith(".htm") and not blob.name.endswith(".html"):
+                continue
+            if since_dt is not None and blob.time_created < since_dt:
                 continue
             parts = blob.name.split("/")
             if len(parts) < 5:
@@ -177,8 +183,16 @@ def process_sec_documents(settings: LakehouseSettings, sample: int | None = None
                 filing_date=meta.get("filing_date"),
             )
             if not df.empty:
-                frames.append(df)
+                batch_frames.append(df)
                 total_processed += 1
+
+            if len(batch_frames) >= batch_size:
+                frames.append(pd.concat(batch_frames, ignore_index=True))
+                batch_frames = []
+                logger.info("Processed %d %s documents", total_processed, form_type)
+
+        if batch_frames:
+            frames.append(pd.concat(batch_frames, ignore_index=True))
 
     if not frames:
         return pd.DataFrame()
@@ -192,8 +206,8 @@ def save_sec_staging(df: pd.DataFrame, settings: LakehouseSettings) -> str:
     path = f"{settings.gcs_staging_prefix}/staging_sec.parquet"
     df = _coerce_schema(df)
     table = pa.Table.from_pandas(df, preserve_index=False)
-    storage = GcsStorage(settings.sec_settings)
-    bucket = storage._bucket
+    client = storage.Client(project=settings.sec_settings.gcp_project)
+    bucket = client.bucket(settings.gcs_bucket)
     blob = bucket.blob(path)
     buf = pa.BufferOutputStream()
     pq.write_table(table, buf)

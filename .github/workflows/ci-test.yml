@@ -2,7 +2,7 @@ name: CI Test
 
 on:
   push:
-    branches: [staging]
+    branches: [rawdataingestion, staging, "feature/**"]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +15,27 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pytest tests/ -v -m unit --junitxml=unit-test-results.xml
+      - name: Verify unit tests are not skipped
+        run: |
+          python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('unit-test-results.xml')
+          root = tree.getroot()
+          total = 0
+          skipped = 0
+          failures = 0
+          for ts in root.iter('testsuite'):
+              total += int(ts.get('tests', 0))
+              skipped += int(ts.get('skipped', 0))
+              failures += int(ts.get('failures', 0))
+          if total == 0:
+              print('ERROR: No unit tests collected. Failing.')
+              exit(1)
+          if skipped == total:
+              print(f'ERROR: All {total} unit tests were skipped. Failing.')
+              exit(1)
+          print(f'Unit tests: {total} total, {skipped} skipped, {failures} failures')
+          "
       - uses: actions/upload-artifact@v4
         if: always()
         with:

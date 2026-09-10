@@ -25,7 +25,7 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 
-const API_BASE = "http://127.0.0.1:18000";
+const API_BASE = "/api";
 
 async function apiRequest(path: string, firebaseUser: FirebaseUser | null): Promise<Response> {
   const headers: Record<string, string> = {};
@@ -160,6 +160,38 @@ const ALERTS_DATA = [
   { id: "a4", ticker: "PLTR", type: "hype_spike", message: "Reddit post volume +280% in 4 hours — hype score elevated", time: "2d ago", read: true, severity: "low" },
   { id: "a5", ticker: "NVDA", type: "filing", message: "Q1 FY2025 10-Q filed with SEC EDGAR", time: "3d ago", read: true, severity: "medium" },
 ];
+
+// ────────────────────────────────────────────────
+// API Response Types
+// ────────────────────────────────────────────────
+interface TrackedTicker {
+  symbol: string;
+  name: string;
+  sector: string | null;
+  current_price: number | null;
+  evidence_score: number | null;
+  hype_score: number | null;
+  change_percent: number | null;
+  price_as_of: string | null;
+}
+
+interface WorkspaceInfo {
+  id: number;
+  name: string;
+  tickers: string[];
+  alerts: number;
+  created_at: string | null;
+}
+
+interface AlertInfo {
+  id: number;
+  ticker: string | null;
+  type: string;
+  message: string;
+  read: boolean;
+  severity: string;
+  time: string | null;
+}
 
 // ────────────────────────────────────────────────
 // Utilities & Shared Components
@@ -793,18 +825,28 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 7: Dashboard Home
 // ────────────────────────────────────────────────
-function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser?: any }) {
+function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
   const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
 
+  const [trackedTickers, setTrackedTickers] = useState<TrackedTicker[]>([]);
+  const [tickersLoading, setTickersLoading] = useState(false);
+  const [tickersError, setTickersError] = useState(false);
+
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [workspacesError, setWorkspacesError] = useState(false);
+
+  const [alerts, setAlerts] = useState<AlertInfo[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     const fetchStats = async () => {
-      if (!firebaseUser) { setStatsLoading(false); return; }
       try {
-        const token = await firebaseUser.getIdToken();
-        const res = await fetch("/api/dashboard/stats", { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch("/api/dashboard/stats");
         if (!res.ok) throw new Error("failed");
         const data = await res.json();
         if (!cancelled) { setStats(data); setStatsLoading(false); }
@@ -814,6 +856,60 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     };
     fetchStats();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchTracked = async () => {
+      setTickersLoading(true);
+      try {
+        const res = await apiRequest("/tickers/tracked?limit=5", firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) { setTrackedTickers(Array.isArray(data) ? data : []); setTickersLoading(false); }
+      } catch {
+        if (!cancelled) { setTickersError(true); setTickersLoading(false); }
+      }
+    };
+    fetchTracked();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchWorkspaces = async () => {
+      setWorkspacesLoading(true);
+      try {
+        const res = await apiRequest("/workspaces", firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) { setWorkspaces(Array.isArray(data) ? data : []); setWorkspacesLoading(false); }
+      } catch {
+        if (!cancelled) { setWorkspacesError(true); setWorkspacesLoading(false); }
+      }
+    };
+    fetchWorkspaces();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchAlerts = async () => {
+      setAlertsLoading(true);
+      try {
+        const res = await apiRequest("/alerts?limit=3", firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) { setAlerts(Array.isArray(data) ? data : []); setAlertsLoading(false); }
+      } catch {
+        if (!cancelled) { setAlertsError(true); setAlertsLoading(false); }
+      }
+    };
+    fetchAlerts();
+    return () => { cancelled = true; };
   }, [firebaseUser]);
 
   const formatCount = (n: number) => {
@@ -821,6 +917,8 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
     return String(n);
   };
+
+  const spData = [45, 52, 48, 63, 71, 68, 74, 69, 77, 82, 79, 84];
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -875,36 +973,50 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
           </div>
           <Card>
             <div className="divide-y divide-border">
-              {topMovers.map(t => (
-                <div
-                  key={t.symbol}
-                  className="flex items-center gap-4 p-4 hover:bg-secondary/30 cursor-pointer transition-all"
-                  onClick={() => { setSelectedTicker(t.symbol); navigate("ticker"); }}
-                >
-                  <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
-                    <span className="font-mono font-bold text-xs text-foreground">{t.symbol.slice(0, 2)}</span>
+              {tickersLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 p-4">
+                    <div className="w-10 h-10 rounded-xl bg-secondary animate-pulse shrink-0" />
+                    <div className="flex-1 space-y-1"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div>
+                    <div className="text-right space-y-1"><div className="h-3 bg-secondary rounded w-12" /><div className="h-3 bg-secondary rounded w-10" /></div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-semibold text-sm text-foreground">{t.symbol}</span>
-                      <span className="text-muted-foreground text-xs truncate">{t.name}</span>
+                ))
+              ) : tickersError ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">Unable to load tracked tickers</div>
+              ) : trackedTickers.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">No tickers being tracked yet</div>
+              ) : (
+                trackedTickers.map(t => (
+                  <div
+                    key={t.symbol}
+                    className="flex items-center gap-4 p-4 hover:bg-secondary/30 cursor-pointer transition-all"
+                    onClick={() => { setSelectedTicker(t.symbol); navigate("ticker"); }}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+                      <span className="font-mono font-bold text-xs text-foreground">{t.symbol.slice(0, 2)}</span>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-3">
-                      <div className="text-xs text-muted-foreground">
-                        Price data available
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-sm text-foreground">{t.symbol}</span>
+                        <span className="text-muted-foreground text-xs truncate">{t.name || t.sector}</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-3">
+                        <div className="text-xs text-muted-foreground">
+                          Price data available
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-mono text-sm font-semibold text-foreground">${t.price.toLocaleString()}</div>
-                    <div className={cn("text-xs flex items-center gap-0.5 justify-end", t.change > 0 ? "text-emerald-400" : "text-red-400")}>
-                      {t.change > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                      {t.change > 0 ? "+" : ""}{t.change}%
+                    <div className="text-right shrink-0">
+                      <div className="font-mono text-sm font-semibold text-foreground">${t.current_price?.toLocaleString() ?? "—"}</div>
+                      <div className={cn("text-xs flex items-center gap-0.5 justify-end", (t.change_percent ?? 0) > 0 ? "text-emerald-400" : "text-red-400")}>
+                        {(t.change_percent ?? 0) > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                        {(t.change_percent ?? 0) > 0 ? "+" : ""}{t.change_percent ?? 0}%
+                      </div>
                     </div>
+                    <Sparkline data={spData.map(v => v + Math.random() * 8 - 4)} color={(t.change_percent ?? 0) > 0 ? "#10B981" : "#EF4444"} />
                   </div>
-                  <Sparkline data={spData.map(v => v + Math.random() * 8 - 4)} color={t.change > 0 ? "#10B981" : "#EF4444"} />
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </Card>
         </div>
@@ -918,21 +1030,31 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
               <button onClick={() => navigate("alerts")} className="text-xs text-primary hover:underline cursor-pointer">All alerts →</button>
             </div>
             <div className="space-y-2">
-              {ALERTS_DATA.slice(0, 3).map(a => (
-                <Card key={a.id} className="p-3">
-                  <div className="flex items-start gap-2">
-                    <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", a.read ? "bg-secondary" : "bg-orange-400")} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1 mb-0.5">
-                        <span className="font-mono font-semibold text-xs text-foreground">{a.ticker}</span>
-                        <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
+              {alertsLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="p-3"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div></Card>
+                ))
+              ) : alertsError ? (
+                <Card className="p-3 text-sm text-muted-foreground">Unable to load alerts</Card>
+              ) : alerts.length === 0 ? (
+                <Card className="p-3 text-sm text-muted-foreground">No alerts yet</Card>
+              ) : (
+                alerts.map(a => (
+                  <Card key={a.id} className="p-3">
+                    <div className="flex items-start gap-2">
+                      <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", a.read ? "bg-secondary" : "bg-orange-400")} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <span className="font-mono font-semibold text-xs text-foreground">{a.ticker || "—"}</span>
+                          <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{a.message}</p>
+                        <div className="text-xs text-muted-foreground/60 mt-1">{a.time || ""}</div>
                       </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{a.message}</p>
-                      <div className="text-xs text-muted-foreground/60 mt-1">{a.time}</div>
                     </div>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                ))
+              )}
             </div>
           </div>
 
@@ -943,17 +1065,27 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
               <button onClick={() => navigate("workspaces")} className="text-xs text-primary hover:underline cursor-pointer">Manage →</button>
             </div>
             <div className="space-y-2">
-              {WORKSPACES.map(ws => (
-                <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-sm text-foreground">{ws.name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{ws.tickers.join(", ")}</div>
+              {workspacesLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="p-3"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div></Card>
+                ))
+              ) : workspacesError ? (
+                <Card className="p-3 text-sm text-muted-foreground">Unable to load workspaces</Card>
+              ) : workspaces.length === 0 ? (
+                <Card className="p-3 text-sm text-muted-foreground cursor-pointer" onClick={() => navigate("workspaces")}>No workspaces yet — create one</Card>
+              ) : (
+                workspaces.map(ws => (
+                  <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm text-foreground">{ws.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{ws.tickers.join(", ")}</div>
+                      </div>
+                      {ws.alerts > 0 && <Badge variant="hype" className="text-xs">{ws.alerts}</Badge>}
                     </div>
-                    {ws.alerts > 0 && <Badge variant="hype" className="text-xs">{ws.alerts}</Badge>}
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -979,7 +1111,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
 // ────────────────────────────────────────────────
 // PAGE 8: Search Results
 // ────────────────────────────────────────────────
-function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
+function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
   const [query, setQuery] = useState("NVDA");
   const [filterSector, setFilterSector] = useState("all");
   const [sortBy, setSortBy] = useState("divergence");
@@ -988,7 +1120,7 @@ function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => vo
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!query.trim()) {
+    if (!query.trim() || !firebaseUser) {
       setResults([]);
       return;
     }
@@ -996,7 +1128,7 @@ function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => vo
     setError(false);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    fetch(`http://localhost:8000/tickers/search?q=${encodeURIComponent(query)}&limit=20`, { signal: controller.signal })
+    apiRequest(`${API_BASE}/tickers/search?q=${encodeURIComponent(query)}&limit=20`, firebaseUser)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -1013,7 +1145,7 @@ function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => vo
         clearTimeout(timeout);
         setLoading(false);
       });
-  }, [query]);
+  }, [query, firebaseUser]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -1107,13 +1239,56 @@ function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => vo
 // ────────────────────────────────────────────────
 // PAGE 9: Ticker Research Dashboard
 // ────────────────────────────────────────────────
-function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) => void; ticker: string; onReport: () => void }) {
+function TickerDashboard({ navigate, ticker, onReport, firebaseUser }: { navigate: (p: Page) => void; ticker: string; onReport: () => void; firebaseUser: FirebaseUser | null }) {
   const [tab, setTab] = useState("overview");
-  const [articles, setArticles] = useState(NEWS_ARTICLES.map(a => ({ ...a })));
+  const [articles, setArticles] = useState<Array<{
+    id: number; headline: string; source: string; time: string;
+    hype: number; evidence: number; summary: string; claims: string[];
+    evidenceLinks: string[]; flagged: boolean;
+  }>>([]);
+  const [articlesLoading, setArticlesLoading] = useState(false);
+  const [articlesError, setArticlesError] = useState(false);
+
   const t = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
   const tabs = ["overview", "news", "evidence", "community", "filings", "timeline"];
 
   const flagArticle = (id: number) => setArticles(prev => prev.map(a => a.id === id ? { ...a, flagged: !a.flagged } : a));
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchNews = async () => {
+      setArticlesLoading(true);
+      try {
+        const end = new Date().toISOString().split("T")[0];
+        const start = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        const res = await apiRequest(`${API_BASE}/tickers/${ticker}/news?start=${start}&end=${end}&limit=10`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setArticles(Array.isArray(data) ? data.map((item: any, idx: number) => ({
+            id: idx,
+            headline: item.content_body || "",
+            source: "News",
+            time: item.normalized_calendar_date || "",
+            hype: 0,
+            evidence: 100,
+            summary: item.content_body || "",
+            claims: [],
+            evidenceLinks: [],
+            flagged: false,
+          })) : []);
+          setArticlesLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setArticlesError(true); setArticlesLoading(false); }
+      }
+    };
+    if (tab === "news" || tab === "overview") {
+      fetchNews();
+    }
+    return () => { cancelled = true; };
+  }, [firebaseUser, ticker, tab]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1176,19 +1351,16 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
             {/* Main col */}
             <div className="lg:col-span-2 space-y-5">
               {/* AI Summary */}
-              <Card className="p-5 border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-transparent">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles size={14} className="text-purple-400" />
-                  <span className="text-sm font-semibold text-foreground">AI Research Summary</span>
-                  <Badge variant="purple">Updated 2h ago</Badge>
-                </div>
-                <p className="text-sm text-foreground/90 leading-relaxed">
-                  NVIDIA's position in the AI chip market is substantially supported by verifiable financial disclosures. The Q1 FY2025 earnings beat ($26.04B revenue, 78% gross margin) and confirmed Blackwell production ramp provide strong evidence for near-term demand claims. However, community-driven price targets ($1,200–$2,000) significantly outpace disclosed guidance and carry near-zero evidentiary basis. The 13-point gap between Hype (84) and Evidence (71) reflects speculative premium above confirmed fundamentals.
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <Badge variant="evidence"><CheckCircle size={10} /> 3 confirmed claims</Badge>
-                  <Badge variant="hype"><AlertTriangle size={10} /> 2 unverified claims</Badge>
-                  <Badge variant="neutral"><Info size={10} /> 1 under review</Badge>
+              <Card className="p-5 border-purple-500/20 bg-gradient-to-r from-primary/5 to-accent/5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
+                    <Sparkles size={18} className="text-purple-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-sm text-foreground">AI Research Summary</h3>
+                    <p className="text-xs text-muted-foreground">Ask the AI assistant for a multi-ticker analysis</p>
+                  </div>
+                  <Btn variant="primary" size="sm" onClick={() => navigate("chat")} icon={<MessageSquare size={12} />}>Open Chat</Btn>
                 </div>
               </Card>
 
@@ -1196,23 +1368,28 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
               <div>
                 <h3 className="font-semibold mb-3">Key Claims in Circulation</h3>
                 <div className="space-y-2">
-                  {[
-                    { claim: "Blackwell GPU production ahead of schedule by 18%", evidence: "high", source: "Q1 2024 Earnings Call + TSMC Report" },
-                    { claim: "$40B+ data center backlog for H2 2024", evidence: "medium", source: "Analyst estimates — not disclosed in filings" },
-                    { claim: "No viable GPU competitor for 3+ years", evidence: "low", source: "Social media consensus — not corroborated" },
-                    { claim: "Data center revenue $18.4B, 427% YoY growth", evidence: "confirmed", source: "SEC 10-K Annual Filing CY2024" },
-                  ].map(c => (
-                    <div key={c.claim} className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg border border-border/50">
-                      <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", c.evidence === "confirmed" ? "bg-emerald-400" : c.evidence === "high" ? "bg-blue-400" : c.evidence === "medium" ? "bg-yellow-400" : "bg-red-400")} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-foreground">{c.claim}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{c.source}</div>
+                  {articlesLoading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg border border-border/50">
+                        <div className="h-4 bg-secondary rounded w-full animate-pulse" />
                       </div>
-                      <Badge variant={c.evidence === "confirmed" ? "evidence" : c.evidence === "high" ? "default" : c.evidence === "medium" ? "hype" : "danger"} className="shrink-0 text-xs capitalize">
-                        {c.evidence}
+                    ))
+                  ) : articles.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No claims data available yet.</div>
+                  ) : (
+                  articles.slice(0, 4).map((a, idx) => (
+                    <div key={a.id || idx} className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg border border-border/50">
+                      <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-blue-400" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-foreground">{a.headline || a.summary?.slice(0, 80) || "No headline available"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{a.source} · {a.time}</div>
+                      </div>
+                      <Badge variant="neutral" className="shrink-0 text-xs capitalize">
+                        unverified
                       </Badge>
                     </div>
-                  ))}
+                  ))
+                  )}
                 </div>
               </div>
 
@@ -1223,7 +1400,13 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
                   <button onClick={() => setTab("news")} className="text-xs text-primary hover:underline cursor-pointer">View all →</button>
                 </div>
                 <div className="space-y-3">
-                  {articles.slice(0, 3).map(a => (
+                  {articlesLoading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="flex items-start gap-3 p-4 bg-secondary/30 rounded-xl border border-border/50 group">
+                        <div className="flex-1 space-y-2"><div className="h-3 bg-secondary rounded w-3/4 animate-pulse" /><div className="h-3 bg-secondary rounded w-full animate-pulse" /></div>
+                      </div>
+                    ))
+                  ) : articles.slice(0, 3).map(a => (
                     <div key={a.id} className="flex items-start gap-3 p-4 bg-secondary/30 rounded-xl border border-border/50 group">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -1246,8 +1429,6 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
                       </button>
                     </div>
                   ))}
-                </div>
-              </div>
             </div>
 
             {/* Sidebar */}
@@ -1255,44 +1436,16 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
               {/* Financials */}
               <Card className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Key Financials</h3>
-                <div className="space-y-2 text-sm">
-                  {[
-                    { label: "Revenue (Q1 FY25)", value: "$26.04B", source: "10-Q" },
-                    { label: "Gross Margin", value: "78.4%", source: "10-Q" },
-                    { label: "EPS (diluted)", value: "$6.12", source: "10-Q" },
-                    { label: "Data Center Rev.", value: "$22.6B", source: "10-Q" },
-                    { label: "Market Cap", value: "$2.15T", source: "NASDAQ" },
-                    { label: "P/E Ratio", value: "73.4x", source: "Derived" },
-                  ].map(f => (
-                    <div key={f.label} className="flex items-center justify-between py-1 border-b border-border/30 last:border-0">
-                      <span className="text-muted-foreground text-xs">{f.label}</span>
-                      <div className="text-right">
-                        <span className="font-mono text-xs text-foreground font-semibold">{f.value}</span>
-                        <Badge variant="neutral" className="ml-1 text-xs">{f.source}</Badge>
-                      </div>
-                    </div>
-                  ))}
+                <div className="text-center py-6 text-muted-foreground text-xs">
+                  Financial data will appear once ticker-level SEC data is loaded.
                 </div>
               </Card>
 
               {/* Source breakdown */}
               <Card className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Source Breakdown</h3>
-                <div className="space-y-2">
-                  {[
-                    { label: "SEC Filings", count: 12, color: "#10B981" },
-                    { label: "News Articles", count: 847, color: "#3B82F6" },
-                    { label: "Reddit Posts", count: 2341, color: "#F59E0B" },
-                    { label: "Analyst Reports", count: 28, color: "#8B5CF6" },
-                  ].map(s => (
-                    <div key={s.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ background: s.color }} />
-                        <span className="text-muted-foreground">{s.label}</span>
-                      </div>
-                      <span className="font-mono text-foreground">{s.count.toLocaleString()}</span>
-                    </div>
-                  ))}
+                <div className="text-center py-6 text-muted-foreground text-xs">
+                  Source-level scoring will appear once data is ingested.
                 </div>
               </Card>
 
@@ -1320,7 +1473,16 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
               </div>
               <div className="ml-auto text-xs text-muted-foreground">{articles.length} articles</div>
             </div>
-            {articles.map(a => (
+            {articlesLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <Card key={i} className="p-5"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /><div className="h-3 bg-secondary rounded w-full" /></div></Card>
+              ))
+            ) : articlesError ? (
+              <Card className="p-4 text-sm text-muted-foreground">Unable to load articles</Card>
+            ) : articles.length === 0 ? (
+              <Card className="p-4 text-sm text-muted-foreground">No news articles available</Card>
+            ) : (
+            articles.map(a => (
               <Card key={a.id} className="p-5">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
@@ -1360,7 +1522,8 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
                   </div>
                 </div>
               </Card>
-            ))}
+            ))
+            )}
           </div>
         )}
 
@@ -1401,14 +1564,40 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
 // ────────────────────────────────────────────────
 // PAGE 10: Narrative Timeline
 // ────────────────────────────────────────────────
-function TimelinePage({ navigate, ticker }: { navigate: (p: Page) => void; ticker: string }) {
+function TimelinePage({ navigate, ticker, firebaseUser }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null }) {
   const [showExport, setShowExport] = useState(false);
+  const [events, setEvents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const typeColors: Record<string, string> = {
     filing: "#10B981", narrative: "#F59E0B", news: "#3B82F6", social: "#F97316", earnings: "#8B5CF6",
   };
   const typeIcons: Record<string, React.ReactNode> = {
     filing: <FileText size={12} />, narrative: <Activity size={12} />, news: <Globe size={12} />, social: <Users size={12} />, earnings: <BarChart2 size={12} />,
   };
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchTimeline = async () => {
+      setLoading(true);
+      try {
+        const end = new Date().toISOString().split("T")[0];
+        const start = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        const res = await apiRequest(`${API_BASE}/tickers/${ticker}/timeline?start=${start}&end=${end}&sources=finnhub,gnews,sec&limit=100`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setEvents(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    fetchTimeline();
+    return () => { cancelled = true; };
+  }, [firebaseUser, ticker]);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -1453,31 +1642,50 @@ function TimelinePage({ navigate, ticker }: { navigate: (p: Page) => void; ticke
       <div className="relative">
         <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
         <div className="space-y-4">
-          {TIMELINE_EVENTS.map((ev, i) => (
+          {loading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="relative flex gap-5 pl-8">
+                <div className="absolute left-0 top-3 w-8 h-8 rounded-full animate-pulse bg-secondary shrink-0" />
+                <Card className="flex-1 p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-full" /></div></Card>
+              </div>
+            ))
+          ) : error ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
+              <p>Unable to load timeline data</p>
+            </div>
+          ) : events.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Clock size={32} className="mx-auto mb-2 opacity-50" />
+              <p>No timeline events available</p>
+            </div>
+          ) : (
+          events.map((ev, i) => (
             <div key={i} className="relative flex gap-5 pl-8">
-              <div className="absolute left-0 top-3 w-8 h-8 rounded-full flex items-center justify-center border-2 border-background" style={{ background: typeColors[ev.type] }}>
-                <span style={{ color: "#fff" }}>{typeIcons[ev.type]}</span>
+              <div className="absolute left-0 top-3 w-8 h-8 rounded-full flex items-center justify-center border-2 border-background" style={{ background: typeColors[ev.source] || "#3B82F6" }}>
+                <span style={{ color: "#fff" }}>{typeIcons[ev.source] || <Globe size={12} />}</span>
               </div>
               <Card className="flex-1 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge className="text-xs capitalize" style={{ background: `${typeColors[ev.type]}15`, color: typeColors[ev.type], borderColor: `${typeColors[ev.type]}30` }}>{ev.type}</Badge>
-                      <span className="text-xs text-muted-foreground">{ev.date}</span>
+                      <Badge className="text-xs capitalize" style={{ background: `${typeColors[ev.source] || "#3B82F6"}15`, color: typeColors[ev.source] || "#3B82F6", borderColor: `${typeColors[ev.source] || "#3B82F6"}30` }}>{ev.source || "unknown"}</Badge>
+                      <span className="text-xs text-muted-foreground">{ev.normalized_calendar_date || ev.ingest_date || ""}</span>
                     </div>
-                    <h4 className="font-medium text-sm text-foreground mb-1">{ev.title}</h4>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{ev.description}</p>
+                    <h4 className="font-medium text-sm text-foreground mb-1">{ev.element_type || ev.content_body?.slice(0, 100) || "No title"}</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{ev.content_body?.slice(0, 200) || "No description available"}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className={cn("text-xs font-mono font-semibold", ev.score_delta > 0 ? "text-emerald-400" : ev.score_delta < 0 ? "text-red-400" : "text-muted-foreground")}>
-                      {ev.score_delta > 0 ? "+" : ""}{ev.score_delta !== 0 ? ev.score_delta : "—"}
+                    <div className="text-xs font-mono font-semibold text-muted-foreground">
+                      {ev.form_type || "—"}
                     </div>
-                    <div className="text-xs text-muted-foreground">delta</div>
+                    <div className="text-xs text-muted-foreground">type</div>
                   </div>
                 </div>
               </Card>
             </div>
-          ))}
+          ))
+          )}
         </div>
         <div className="mt-6 text-center">
           <Btn variant="secondary" icon={<RefreshCw size={12} />}>Load Earlier Events</Btn>
@@ -1510,15 +1718,36 @@ function TimelinePage({ navigate, ticker }: { navigate: (p: Page) => void; ticke
 // ────────────────────────────────────────────────
 // PAGE 11: SEC Filings
 // ────────────────────────────────────────────────
-function FilingsPage({ navigate, ticker }: { navigate: (p: Page) => void; ticker: string }) {
+function FilingsPage({ navigate, ticker, firebaseUser }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null }) {
   const [selected, setSelected] = useState<string | null>(null);
-  const filings = [
-    { id: "f1", type: "10-Q", date: "May 22, 2024", period: "Q1 FY2025", size: "2.1MB", sections: 14, key: true },
-    { id: "f2", type: "10-K", date: "Feb 26, 2024", period: "FY2024", size: "5.8MB", sections: 32, key: true },
-    { id: "f3", type: "8-K", date: "May 21, 2024", period: "Earnings Release", size: "0.3MB", sections: 3, key: false },
-    { id: "f4", type: "8-K", date: "Apr 30, 2024", period: "Executive Comp Update", size: "0.1MB", sections: 2, key: false },
-    { id: "f5", type: "10-Q", date: "Nov 21, 2023", period: "Q3 FY2024", size: "1.9MB", sections: 13, key: false },
-  ];
+  const [filings, setFilings] = useState<Array<{
+    target_ticker: string; target_cik: string; form_type: string;
+    accession_number: string; filing_date: string | null; element_count: number;
+  }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchFilings = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest(`${API_BASE}/tickers/${ticker}/filings`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setFilings(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    fetchFilings();
+    return () => { cancelled = true; };
+  }, [firebaseUser, ticker]);
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -1530,52 +1759,44 @@ function FilingsPage({ navigate, ticker }: { navigate: (p: Page) => void; ticker
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-2 space-y-2">
-          {filings.map(f => (
-            <Card key={f.id} className={cn("p-4 cursor-pointer transition-all", selected === f.id ? "border-primary/50 bg-primary/5" : "hover:border-primary/20")} onClick={() => setSelected(selected === f.id ? null : f.id)}>
+          {loading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <Card key={i} className="p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div></Card>
+            ))
+          ) : error ? (
+            <Card className="p-4 text-sm text-muted-foreground">Unable to load filings</Card>
+          ) : filings.length === 0 ? (
+            <Card className="p-4 text-sm text-muted-foreground">No filings found for {ticker}</Card>
+          ) : (
+          filings.map(f => (
+            <Card key={f.accession_number || f.form_type} className={cn("p-4 cursor-pointer transition-all", selected === f.accession_number ? "border-primary/50 bg-primary/5" : "hover:border-primary/20")} onClick={() => setSelected(selected === f.accession_number ? null : f.accession_number)}>
               <div className="flex items-start gap-3">
-                <div className={cn("px-2 py-0.5 rounded text-xs font-mono font-bold", f.type === "10-K" ? "bg-emerald-500/15 text-emerald-400" : f.type === "10-Q" ? "bg-blue-500/15 text-blue-400" : "bg-orange-500/15 text-orange-400")}>
-                  {f.type}
+                <div className={cn("px-2 py-0.5 rounded text-xs font-mono font-bold", f.form_type === "10-K" ? "bg-emerald-500/15 text-emerald-400" : f.form_type === "10-Q" ? "bg-blue-500/15 text-blue-400" : "bg-orange-500/15 text-orange-400")}>
+                  {f.form_type}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-foreground">{f.period}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{f.date} · {f.sections} sections · {f.size}</div>
-                  {f.key && <Badge variant="evidence" className="mt-1 text-xs">Key Filing</Badge>}
+                  <div className="font-medium text-sm text-foreground">{f.accession_number?.slice(0, 20) || "N/A"}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{f.filing_date ? new Date(f.filing_date).toLocaleDateString() : "—"} · {f.element_count} elements</div>
                 </div>
                 <ChevronRight size={14} className="text-muted-foreground shrink-0" />
               </div>
             </Card>
-          ))}
+          ))
+          )}
         </div>
         <div className="lg:col-span-3">
           {selected ? (
             <Card className="p-5 sticky top-0">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="font-semibold">Q1 FY2025 10-Q Analysis</h3>
-                  <p className="text-xs text-muted-foreground">Filed May 22, 2024 · SEC EDGAR</p>
+                  <h3 className="font-semibold">Filing Analysis</h3>
+                  <p className="text-xs text-muted-foreground">Accession: {selected}</p>
                 </div>
                 <Btn variant="secondary" size="sm" icon={<ExternalLink size={12} />}>View on EDGAR</Btn>
               </div>
-              <div className="space-y-3">
-                {[
-                  { section: "Risk Factors", summary: "New risk: export restrictions on H100/H800 chips. China revenue exposure disclosed at ~17% of data center segment.", evidence: 94 },
-                  { section: "MD&A — Financial Results", summary: "Revenue grew 262% YoY. Data center segment reached $22.6B, up from $4.3B. Gross margin expansion to 78.4% driven by product mix.", evidence: 97 },
-                  { section: "Liquidity & Capital Resources", summary: "$26B in cash and short-term investments. Buyback authorization increased to $25B.", evidence: 96 },
-                  { section: "Subsequent Events", summary: "No material subsequent events disclosed after quarter end.", evidence: 91 },
-                ].map(s => (
-                  <div key={s.section} className="p-3 bg-secondary/30 rounded-lg border border-border/50">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-foreground">{s.section}</span>
-                      <span className="text-xs font-mono" style={{ color: getEvidenceColor(s.evidence) }}>E:{s.evidence}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{s.summary}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 p-3 bg-emerald-500/5 rounded-lg border border-emerald-500/20">
-                <div className="flex items-center gap-2 text-xs text-emerald-400">
-                  <CheckCircle size={12} /> XBRL data successfully extracted · 47 tagged financial elements
-                </div>
+              <div className="text-center py-12 text-muted-foreground text-sm">
+                <FileText size={32} className="mx-auto mb-2 opacity-30" />
+                <p>Select a filing to view analysis. Click on any section name in the left list to begin.</p>
               </div>
             </Card>
           ) : (
@@ -1596,13 +1817,6 @@ function FilingsPage({ navigate, ticker }: { navigate: (p: Page) => void; ticker
 // PAGE 12: Community Sentiment
 // ────────────────────────────────────────────────
 function CommunityPage({ navigate, ticker }: { navigate: (p: Page) => void; ticker: string }) {
-  const posts = [
-    { id: 1, subreddit: "r/wallstreetbets", author: "u/AIBullThesis", title: "NVDA is the new railroads — you either own the picks or you are left behind", score: 4280, comments: 312, hype: 97, evidence: 8, time: "3h ago", flair: "DD" },
-    { id: 2, subreddit: "r/stocks", author: "u/DataDrivenFin", title: "Deep dive: Analyzing NVDA's actual Blackwell production claims vs. TSMC capacity data", score: 892, comments: 76, hype: 42, evidence: 78, time: "5h ago", flair: "Analysis" },
-    { id: 3, subreddit: "r/investing", author: "u/ValueSeeker99", title: "NVDA P/E at 73x — when does price disconnect from fundamentals?", score: 1540, comments: 203, hype: 55, evidence: 67, time: "8h ago", flair: "Discussion" },
-    { id: 4, subreddit: "r/wallstreetbets", author: "u/NVDAGang", title: "NVDA $2000 EOY confirmed by my AI prediction model 🚀🚀🚀", score: 6700, comments: 445, hype: 99, evidence: 4, time: "12h ago", flair: "Meme" },
-    { id: 5, subreddit: "r/stocks", author: "u/TechResearchPro", title: "Breaking down NVDA's China export risk — what the SEC filings actually say", score: 423, comments: 51, hype: 35, evidence: 89, time: "1d ago", flair: "News" },
-  ];
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -1610,46 +1824,27 @@ function CommunityPage({ navigate, ticker }: { navigate: (p: Page) => void; tick
         <h1 className="text-xl font-bold flex-1">Community Sentiment — {ticker}</h1>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Total Posts (7d)", value: "8,431", color: "#3B82F6" },
-          { label: "Avg Hype Score", value: "79/100", color: "#F59E0B" },
-          { label: "Avg Evidence Score", value: "18/100", color: "#10B981" },
-          { label: "Net Sentiment", value: "+62%", color: "#8B5CF6" },
-        ].map(s => (
-          <Card key={s.label} className="p-4 text-center">
-            <div className="font-mono font-bold text-xl mb-1" style={{ color: s.color }}>{s.value}</div>
-            <div className="text-xs text-muted-foreground">{s.label}</div>
-          </Card>
-        ))}
+        <Card className="p-4 text-center">
+          <div className="font-mono font-bold text-xl mb-1 text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">Total Posts (7d)</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="font-mono font-bold text-xl mb-1 text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">Avg Hype Score</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="font-mono font-bold text-xl mb-1 text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">Avg Evidence Score</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="font-mono font-bold text-xl mb-1 text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">Net Sentiment</div>
+        </Card>
       </div>
-      <div className="space-y-3">
-        {posts.map(p => (
-          <Card key={p.id} className="p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <Badge variant="neutral" className="text-xs">{p.subreddit}</Badge>
-                  <Badge variant={p.flair === "DD" || p.flair === "Analysis" ? "default" : p.flair === "Meme" ? "danger" : "neutral"} className="text-xs">{p.flair}</Badge>
-                  <span className="text-xs text-muted-foreground">{p.author}</span>
-                  <span className="text-xs text-muted-foreground">{p.time}</span>
-                </div>
-                <h4 className="font-medium text-sm text-foreground mb-2 leading-snug">{p.title}</h4>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><ThumbsUp size={10} /> {p.score.toLocaleString()}</span>
-                  <span className="flex items-center gap-1"><MessageSquare size={10} /> {p.comments}</span>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <div className="text-xs font-mono" style={{ color: getHypeColor(p.hype) }}>H:{p.hype}</div>
-                <div className="text-xs font-mono" style={{ color: getEvidenceColor(p.evidence) }}>E:{p.evidence}</div>
-                <div className={cn("text-xs font-semibold mt-1", p.evidence < 20 ? "text-red-400" : p.evidence > 60 ? "text-emerald-400" : "text-yellow-400")}>
-                  {p.evidence < 20 ? "Low Signal" : p.evidence > 60 ? "High Signal" : "Med Signal"}
-                </div>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+      <Card className="p-6 text-center py-12">
+        <Users size={32} className="mx-auto mb-2 opacity-20" />
+        <p className="text-muted-foreground text-sm">No community posts available yet.</p>
+      </Card>
     </div>
   );
 }
@@ -1657,8 +1852,31 @@ function CommunityPage({ navigate, ticker }: { navigate: (p: Page) => void; tick
 // ────────────────────────────────────────────────
 // PAGE 13: Ticker Comparison
 // ────────────────────────────────────────────────
-function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
-  const tickers = [TICKERS[0], TICKERS[1], TICKERS[4]]; // NVDA, TSLA, AMD
+function ComparisonPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
+  const [tickers, setTickers] = useState<TrackedTicker[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchTickers = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest(`${API_BASE}/tickers/tracked?limit=10`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setTickers(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setLoading(false); }
+      }
+    };
+    fetchTickers();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -1666,37 +1884,49 @@ function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
         <h1 className="text-xl font-bold flex-1">Multi-Ticker Comparison</h1>
         <Btn variant="secondary" size="sm" icon={<Plus size={12} />}>Add Ticker</Btn>
       </div>
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="p-4"><div className="animate-pulse space-y-3"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div></Card>
+          ))}
+        </div>
+      ) : tickers.length === 0 ? (
+        <Card className="p-6 text-center py-12">
+          <BarChart2 size={32} className="mx-auto mb-2 opacity-20" />
+          <p className="text-muted-foreground text-sm">No tickers available for comparison. Track tickers from the dashboard.</p>
+        </Card>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {tickers.map(t => (
+        {tickers.slice(0, 3).map(t => (
           <div key={t.symbol} className="space-y-4">
-            <Card className="p-4 border-t-2" style={{ borderTopColor: t.symbol === "NVDA" ? "#3B82F6" : t.symbol === "TSLA" ? "#F59E0B" : "#8B5CF6" }}>
+            <Card className="p-4 border-t-2" style={{ borderTopColor: "#3B82F6" }}>
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
                   <span className="font-mono font-bold text-sm">{t.symbol.slice(0, 2)}</span>
                 </div>
                 <div>
                   <div className="font-mono font-bold text-foreground">{t.symbol}</div>
-                  <div className="text-xs text-muted-foreground">{t.name}</div>
+                  <div className="text-xs text-muted-foreground">{t.name || t.sector || ""}</div>
                 </div>
               </div>
               <div className="space-y-3">
                 <div>
-                  <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">Hype Score</span><span className="font-mono" style={{ color: getHypeColor(t.hype) }}>{t.hype}</span></div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden"><div className="h-full rounded-full" style={{ width: `${t.hype}%`, background: getHypeColor(t.hype) }} /></div>
+                  <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">Hype Score</span><span className="font-mono" style={{ color: getHypeColor(t.hype_score ?? 0) }}>{t.hype_score ?? 0}</span></div>
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden"><div className="h-full rounded-full" style={{ width: `${t.hype_score ?? 0}%`, background: getHypeColor(t.hype_score ?? 0) }} /></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">Evidence Score</span><span className="font-mono" style={{ color: getEvidenceColor(t.evidence) }}>{t.evidence}</span></div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden"><div className="h-full rounded-full" style={{ width: `${t.evidence}%`, background: getEvidenceColor(t.evidence) }} /></div>
+                  <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">Evidence Score</span><span className="font-mono" style={{ color: getEvidenceColor(t.evidence_score ?? 0) }}>{t.evidence_score ?? 0}</span></div>
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden"><div className="h-full rounded-full" style={{ width: `${t.evidence_score ?? 0}%`, background: getEvidenceColor(t.evidence_score ?? 0) }} /></div>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t border-border">
                   <span>Gap (H-E)</span>
-                  <span className={cn("font-mono", (t.hype - t.evidence) > 20 ? "text-orange-400" : "text-emerald-400")}>{t.hype - t.evidence > 0 ? "+" : ""}{t.hype - t.evidence}</span>
+                  <span className={cn("font-mono", ((t.hype_score ?? 0) - (t.evidence_score ?? 0)) > 20 ? "text-orange-400" : "text-emerald-400")}>{((t.hype_score ?? 0) - (t.evidence_score ?? 0)) > 0 ? "+" : ""}{(t.hype_score ?? 0) - (t.evidence_score ?? 0)}</span>
                 </div>
               </div>
             </Card>
             <Card className="p-4">
               <div className="space-y-2 text-xs">
-                {[{ l: "Price", v: `$${t.price}` }, { l: "24h Change", v: `${t.change > 0 ? "+" : ""}${t.change}%` }, { l: "Sector", v: t.sector }].map(r => (
+                {[{ l: "Price", v: t.current_price ? `$${t.current_price}` : "—" }, { l: "24h Change", v: t.change_percent ? `${t.change_percent > 0 ? "+" : ""}${t.change_percent}%` : "—" }, { l: "Sector", v: t.sector || "—" }].map(r => (
                   <div key={r.l} className="flex justify-between"><span className="text-muted-foreground">{r.l}</span><span className="font-mono text-foreground">{r.v}</span></div>
                 ))}
               </div>
@@ -1704,24 +1934,24 @@ function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
             <Card className="p-4">
               <div className="text-xs font-semibold mb-2">AI Verdict</div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {t.symbol === "NVDA" ? "Strong evidence base with moderate hype premium. Core financial claims well-corroborated by SEC filings." : t.symbol === "TSLA" ? "High speculative premium. FSD autonomy claims significantly outpace regulatory disclosures." : "Competitive claims against NVDA partially verified in benchmark data but market position claims overstated."}
+                Comparative analysis will appear once the AI assistant has evaluated the available evidence for these tickers.
               </p>
             </Card>
           </div>
         ))}
       </div>
+      )}
       <Card className="mt-6 p-5">
         <div className="flex items-center gap-2 mb-4">
           <Sparkles size={14} className="text-purple-400" />
           <h3 className="font-semibold text-sm">AI Comparative Summary</h3>
           <Badge variant="purple">Multi-hop RAG</Badge>
         </div>
-        <p className="text-sm text-foreground/90 leading-relaxed">
-          Across the three analyzed tickers, <strong className="text-foreground">NVDA</strong> maintains the strongest evidence-to-hype ratio (gap: +13). <strong className="text-foreground">TSLA</strong> carries the highest risk premium relative to disclosed evidence (gap: +43), with FSD monetization claims unverified in SEC filings. <strong className="text-foreground">AMD</strong> occupies a middle position with competitive benchmark claims partially corroborated but market share projections speculative. Investors seeking evidence-backed exposure should prioritize NVDA and MSFT (not shown) over TSLA and PLTR.
+        <p className="text-sm text-muted-foreground text-xs leading-relaxed">
+          Use the AI Research Assistant to run multi-ticker comparisons. The assistant will decompose queries, retrieve evidence from SEC filings and news, and synthesize results with source attribution.
         </p>
-        <div className="mt-3 flex gap-2">
-          <Badge variant="evidence">3 sources retrieved</Badge>
-          <Badge variant="neutral">SEC EDGAR · Analyst Notes · Community</Badge>
+        <div className="mt-3">
+          <Btn variant="primary" size="sm" icon={<MessageSquare size={12} />} onClick={() => navigate("chat")}>Open Chat</Btn>
         </div>
       </Card>
     </div>
@@ -1731,9 +1961,33 @@ function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 14: Workspaces
 // ────────────────────────────────────────────────
-function WorkspacesPage({ navigate }: { navigate: (p: Page) => void }) {
+function WorkspacesPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
   const [showCreate, setShowCreate] = useState(false);
   const [wsName, setWsName] = useState("");
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchWorkspaces = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest(`${API_BASE}/workspaces`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setWorkspaces(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    fetchWorkspaces();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -1746,7 +2000,19 @@ function WorkspacesPage({ navigate }: { navigate: (p: Page) => void }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {WORKSPACES.map(ws => (
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="p-5"><div className="animate-pulse space-y-3"><div className="h-4 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /><div className="h-3 bg-secondary rounded w-full" /></div></Card>
+          ))
+        ) : error ? (
+          <Card className="p-5 text-sm text-muted-foreground">Unable to load workspaces</Card>
+        ) : workspaces.length === 0 ? (
+          <div className="text-center py-12 col-span-full text-muted-foreground">
+            <Briefcase size={32} className="mx-auto mb-2 opacity-30" />
+            <p>No workspaces yet. Create one to get started.</p>
+          </div>
+        ) : (
+        workspaces.map(ws => (
           <Card key={ws.id} className="p-5 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
             <div className="flex items-start justify-between mb-4">
               <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -1758,14 +2024,15 @@ function WorkspacesPage({ navigate }: { navigate: (p: Page) => void }) {
               </div>
             </div>
             <h3 className="font-semibold text-foreground mb-1">{ws.name}</h3>
-            <p className="text-xs text-muted-foreground mb-4">Created {ws.created} · {ws.tickers.length} tickers</p>
+            <p className="text-xs text-muted-foreground mb-4">Created {ws.created_at ? new Date(ws.created_at).toLocaleDateString() : "—"} · {ws.tickers.length} tickers</p>
             <div className="flex flex-wrap gap-1.5">
               {ws.tickers.map(t => (
                 <span key={t} className="px-2 py-0.5 bg-secondary rounded-md text-xs font-mono text-muted-foreground border border-border">{t}</span>
               ))}
             </div>
           </Card>
-        ))}
+        ))
+        )}
         {/* Add card */}
         <button onClick={() => setShowCreate(true)} className="flex flex-col items-center justify-center p-5 rounded-xl border-2 border-dashed border-border hover:border-primary/40 hover:bg-secondary/20 cursor-pointer transition-all min-h-[160px]">
           <Plus size={24} className="text-muted-foreground mb-2" />
@@ -1800,15 +2067,14 @@ function WorkspacesPage({ navigate }: { navigate: (p: Page) => void }) {
 // PAGE 15: Workspace Detail
 // ────────────────────────────────────────────────
 function WorkspaceDetailPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
-  const ws = WORKSPACES[0];
   const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => navigate("workspaces")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer"><ChevronLeft size={14} /> Workspaces</button>
-        <h1 className="text-xl font-bold flex-1">{ws.name}</h1>
-        <Badge variant="neutral">{ws.tickers.length} / 50 tickers</Badge>
+        <h1 className="text-xl font-bold flex-1">Workspace Detail</h1>
+        <Badge variant="neutral">0 / 50 tickers</Badge>
         <Btn variant="secondary" size="sm" icon={<Settings size={12} />} onClick={() => navigate("workspace-settings")}>Settings</Btn>
         <Btn variant="primary" size="sm" icon={<Plus size={12} />} onClick={() => setShowAdd(true)}>Add Ticker</Btn>
       </div>
@@ -1816,10 +2082,10 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker }: { navigate: (p: Pa
       {/* Workspace avg scores */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
-          { label: "Avg Hype Score", value: "82", color: "#F59E0B" },
-          { label: "Avg Evidence Score", value: "66", color: "#10B981" },
-          { label: "Active Alerts", value: "3", color: "#3B82F6" },
-          { label: "Tickers Tracked", value: ws.tickers.length.toString(), color: "#8B5CF6" },
+          { label: "Avg Hype Score", value: "—", color: "#F59E0B" },
+          { label: "Avg Evidence Score", value: "—", color: "#10B981" },
+          { label: "Active Alerts", value: "—", color: "#3B82F6" },
+          { label: "Tickers Tracked", value: "0", color: "#8B5CF6" },
         ].map(s => (
           <Card key={s.label} className="p-4">
             <div className="font-mono font-bold text-2xl mb-1" style={{ color: s.color }}>{s.value}</div>
@@ -1828,42 +2094,17 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker }: { navigate: (p: Pa
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {TICKERS.filter(t => ws.tickers.includes(t.symbol)).map(t => (
-          <Card key={t.symbol} className="p-4 cursor-pointer hover:border-primary/30 transition-all" onClick={() => { setSelectedTicker(t.symbol); navigate("ticker"); }}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center">
-                  <span className="font-mono font-bold text-xs">{t.symbol.slice(0, 2)}</span>
-                </div>
-                <div>
-                  <div className="font-mono font-semibold text-sm text-foreground">{t.symbol}</div>
-                  <div className={cn("text-xs flex items-center gap-0.5", t.change > 0 ? "text-emerald-400" : "text-red-400")}>
-                    {t.change > 0 ? <TrendingUp size={9} /> : <TrendingDown size={9} />}{t.change > 0 ? "+" : ""}{t.change}%
-                  </div>
-                </div>
-              </div>
-              <button className="p-1 text-muted-foreground hover:text-red-400 cursor-pointer" onClick={e => e.stopPropagation()}>
-                <Minus size={14} />
-              </button>
-            </div>
-            <HypeEvidenceBar hype={t.hype} evidence={t.evidence} />
-          </Card>
-        ))}
-      </div>
+      <Card className="p-6 text-center py-12">
+        <Briefcase size={32} className="mx-auto mb-2 opacity-20" />
+        <p className="text-muted-foreground text-sm">No tickers in this workspace. Add tickers to start tracking.</p>
+      </Card>
 
       {showAdd && (
         <Modal title="Add Ticker to Workspace" onClose={() => setShowAdd(false)} size="sm">
           <div className="space-y-4">
             <Input placeholder="Search ticker or company name..." icon={<Search size={14} />} />
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {TICKERS.map(t => (
-                <button key={t.symbol} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-secondary cursor-pointer text-left transition-all" onClick={() => setShowAdd(false)}>
-                  <span className="font-mono font-semibold text-sm w-12 text-foreground">{t.symbol}</span>
-                  <span className="text-xs text-muted-foreground flex-1">{t.name}</span>
-                  <Plus size={12} className="text-muted-foreground" />
-                </button>
-              ))}
+            <div className="text-center py-6 text-muted-foreground text-xs">
+              Tracked tickers will appear here once added.
             </div>
           </div>
         </Modal>
@@ -1943,7 +2184,7 @@ function WorkspaceSettingsPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 function ChatPage({ navigate }: { navigate: (p: Page) => void }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState(CHAT_HISTORY);
+  const [messages, setMessages] = useState<Array<{ role: string; text: string; time: string; sources?: string[] }>>([]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -2059,18 +2300,43 @@ function ChatPage({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 // PAGE 18: Alerts
 // ────────────────────────────────────────────────
-function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
+function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
   const [filter, setFilter] = useState("all");
-  const filtered = filter === "all" ? ALERTS_DATA : filter === "unread" ? ALERTS_DATA.filter(a => !a.read) : ALERTS_DATA.filter(a => a.severity === filter);
+  const [alerts, setAlerts] = useState<AlertInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const alertTypeIcon = (type: string) => type === "filing" ? <FileText size={14} /> : type === "narrative_shift" ? <Activity size={14} /> : <AlertTriangle size={14} />;
   const alertTypeColor = (t: string) => t === "filing" ? "#10B981" : t === "narrative_shift" ? "#F59E0B" : "#F97316";
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const fetchAlerts = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest(`${API_BASE}/alerts?limit=50`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          setAlerts(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    fetchAlerts();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
+
+  const filtered = filter === "all" ? alerts : filter === "unread" ? alerts.filter(a => !a.read) : alerts.filter(a => a.severity === filter);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Alerts</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{ALERTS_DATA.filter(a => !a.read).length} unread notifications</p>
+          <p className="text-muted-foreground text-sm mt-0.5">{alerts.filter(a => !a.read).length} unread notifications</p>
         </div>
         <Btn variant="secondary" size="sm" icon={<Check size={12} />}>Mark all read</Btn>
       </div>
@@ -2080,7 +2346,16 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
         ))}
       </div>
       <div className="space-y-3">
-        {filtered.map(a => (
+        {loading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i} className="p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div></Card>
+          ))
+        ) : error ? (
+          <Card className="p-4 text-sm text-muted-foreground">Unable to load alerts</Card>
+        ) : filtered.length === 0 ? (
+          <Card className="p-4 text-sm text-muted-foreground">No alerts match the current filter</Card>
+        ) : (
+        filtered.map(a => (
           <Card key={a.id} className={cn("p-4 transition-all cursor-pointer hover:border-primary/30", !a.read && "border-primary/20 bg-primary/3")}>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${alertTypeColor(a.type)}15` }}>
@@ -2088,38 +2363,25 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="font-mono font-bold text-sm text-foreground">{a.ticker}</span>
+                  <span className="font-mono font-bold text-sm text-foreground">{a.ticker || "—"}</span>
                   <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.severity}</Badge>
                   <Badge variant="neutral" className="text-xs capitalize">{a.type.replace("_", " ")}</Badge>
                   {!a.read && <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />}
                 </div>
                 <p className="text-sm text-foreground">{a.message}</p>
-                <p className="text-xs text-muted-foreground mt-1">{a.time}</p>
+                <p className="text-xs text-muted-foreground mt-1">{a.time || ""}</p>
               </div>
               <Btn variant="ghost" size="sm" onClick={() => navigate("ticker")} icon={<ArrowRight size={12} />}>View</Btn>
             </div>
           </Card>
-        ))}
+        ))
+        )}
       </div>
 
       {/* Subscription settings */}
       <Card className="mt-6 p-5">
         <h3 className="font-semibold mb-4">Alert Subscriptions</h3>
-        <div className="space-y-3 text-sm">
-          {TICKERS.slice(0, 5).map(t => (
-            <div key={t.symbol} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-semibold text-xs text-foreground w-12">{t.symbol}</span>
-                <span className="text-xs text-muted-foreground">{t.name}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={cn("relative inline-flex w-8 h-5 rounded-full cursor-pointer transition-colors shrink-0", "bg-primary")}>
-                  <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform translate-x-3.5" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <p className="text-xs text-muted-foreground mb-3">No tickers are currently subscribed to alerts.</p>
       </Card>
     </div>
   );
@@ -2267,8 +2529,78 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
 // ────────────────────────────────────────────────
 // PAGE 20: Admin Dashboard
 // ────────────────────────────────────────────────
-function AdminDashboard({ navigate }: { navigate: (p: Page) => void }) {
-  const accuracy = 76; // Below 80% threshold
+function AdminDashboard({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
+  const accuracy = 76;
+  const [kpiData, setKpiData] = useState<{ label: string; value: string; sub: string; color: string; icon: any } | null>(null);
+  const [pipelineData, setPipelineData] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const fetchAdminData = async () => {
+      try {
+        const res = await apiRequest(`${API_BASE}/dashboard/stats`, null);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        setKpiData({
+          label: "Articles Ingested",
+          value: data.articles_count?.toLocaleString() || "-",
+          sub: "Total in system",
+          color: "#3B82F6",
+          icon: Database,
+        });
+        setPipelineData(null);
+      } catch {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAdminData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Admin Operations Portal</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">System KPIs · Data pipeline status · Mapping accuracy</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral"><Radio size={9} className="text-emerald-400" /> Loading...</Badge>
+            <Btn variant="secondary" size="sm" icon={<RefreshCw size={12} />}>Refresh</Btn>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-3/4" /><div className="h-3 bg-secondary rounded w-1/2" /></div></Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Admin Operations Portal</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">System KPIs · Data pipeline status · Mapping accuracy</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral"><Radio size={9} className="text-emerald-400" /> All systems operational</Badge>
+            <Btn variant="secondary" size="sm" icon={<RefreshCw size={12} />}>Refresh</Btn>
+          </div>
+        </div>
+        <Card className="p-6 text-center">
+          <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
+          <p>Unable to load admin dashboard data</p>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -2296,25 +2628,33 @@ function AdminDashboard({ navigate }: { navigate: (p: Page) => void }) {
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Auto-mapping Accuracy", value: `${accuracy}%`, sub: "Target: ≥80%", color: accuracy >= 80 ? "#10B981" : "#EF4444", icon: Target },
-          { label: "Articles Ingested (24h)", value: "14,302", sub: "+8.4% vs yesterday", color: "#3B82F6", icon: Database },
-          { label: "Queue Pending Review", value: "17", sub: "5 user-reported", color: "#F59E0B", icon: AlertTriangle },
-          { label: "Active Users (7d)", value: "1,247", sub: "+12% WoW", color: "#8B5CF6", icon: Users },
-        ].map(s => (
-          <Card key={s.label} className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">{s.label}</div>
-                <div className="font-mono font-bold text-2xl" style={{ color: s.color }}>{s.value}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{s.sub}</div>
-              </div>
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${s.color}15` }}>
-                <s.icon size={18} style={{ color: s.color }} />
-              </div>
+        <Card className="p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Articles Ingested</div>
+              <div className="font-mono font-bold text-2xl text-foreground">{kpiData?.value ?? "—"}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{kpiData?.sub ?? ""}</div>
             </div>
-          </Card>
-        ))}
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${kpiData?.color ?? "#3B82F6"}15` }}>
+              {kpiData?.icon ? <kpiData.icon size={18} style={{ color: kpiData.color }} /> : <Database size={18} className="text-muted-foreground" />}
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">Mapped Tickers</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground mt-0.5">No live data</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">Queue Pending Review</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">0</div>
+          <div className="text-xs text-muted-foreground mt-0.5">Queue is clear</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">Active Users (7d)</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground mt-0.5">No live data</div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2325,24 +2665,9 @@ function AdminDashboard({ navigate }: { navigate: (p: Page) => void }) {
             <button onClick={() => navigate("admin-system")} className="text-xs text-primary hover:underline cursor-pointer">System details →</button>
           </div>
           <Card>
-            <div className="divide-y divide-border">
-              {[
-                { name: "Alpha Vantage News Ingestion", status: "running", last: "2m ago", rate: "142 articles/hr", health: "good" },
-                { name: "Reddit Community Scraper", status: "running", last: "5m ago", rate: "803 posts/hr", health: "good" },
-                { name: "SEC EDGAR Filing Parser", status: "running", last: "15m ago", rate: "3 filings/hr", health: "good" },
-                { name: "RAG Inference Engine", status: "degraded", last: "8m ago", rate: "avg 4.2s latency", health: "warn" },
-                { name: "Entity Mapping Worker", status: "running", last: "1m ago", rate: `${accuracy}% accuracy`, health: accuracy >= 80 ? "good" : "error" },
-                { name: "Redis Cache Layer", status: "running", last: "0s ago", rate: "94% hit rate", health: "good" },
-              ].map(p => (
-                <div key={p.name} className="flex items-center gap-3 p-4">
-                  <div className={cn("w-2 h-2 rounded-full shrink-0", p.health === "good" ? "bg-emerald-400" : p.health === "warn" ? "bg-yellow-400" : "bg-red-400")} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground">{p.name}</div>
-                    <div className="text-xs text-muted-foreground">{p.rate} · Last run: {p.last}</div>
-                  </div>
-                  <Badge variant={p.health === "good" ? "evidence" : p.health === "warn" ? "hype" : "danger"} className="text-xs capitalize">{p.status}</Badge>
-                </div>
-              ))}
+            <div className="p-4 text-center text-muted-foreground">
+              <Database size={24} className="mx-auto mb-2 opacity-30" />
+              <p>No pipeline data available</p>
             </div>
           </Card>
         </div>
@@ -2352,8 +2677,8 @@ function AdminDashboard({ navigate }: { navigate: (p: Page) => void }) {
           <h2 className="font-semibold">Admin Actions</h2>
           <div className="space-y-2">
             {[
-              { label: "Mapping Review Queue", desc: "17 items pending", icon: AlertTriangle, page: "admin-mapping" as Page, urgent: true },
-              { label: "User Management", desc: "1,247 registered users", icon: Users, page: "admin-users" as Page, urgent: false },
+              { label: "Mapping Review Queue", desc: "Review mapping issues", icon: AlertTriangle, page: "admin-mapping" as Page, urgent: true },
+              { label: "User Management", desc: "Manage applications users", icon: Users, page: "admin-users" as Page, urgent: false },
               { label: "System Monitor", desc: "View pipeline details", icon: Activity, page: "admin-system" as Page, urgent: false },
             ].map(a => (
               <Card key={a.label} className={cn("p-4 cursor-pointer hover:border-primary/30 transition-all", a.urgent && "border-red-500/20")} onClick={() => navigate(a.page)}>
@@ -2379,7 +2704,7 @@ function AdminDashboard({ navigate }: { navigate: (p: Page) => void }) {
 // ────────────────────────────────────────────────
 function AdminMappingPage({ navigate }: { navigate: (p: Page) => void }) {
   const [selected, setSelected] = useState<string | null>(null);
-  const [items, setItems] = useState(MAPPING_QUEUE);
+  const [items, setItems] = useState<any[]>([]);
   const [actionModal, setActionModal] = useState<{ id: string; action: string } | null>(null);
 
   const resolve = (id: string, action: string) => {
@@ -2493,13 +2818,8 @@ function AdminMappingPage({ navigate }: { navigate: (p: Page) => void }) {
 // PAGE 22: Admin Users
 // ────────────────────────────────────────────────
 function AdminUsersPage({ navigate }: { navigate: (p: Page) => void }) {
-  const users = [
-    { id: "u1", name: "Isabella Chen", email: "isabella@research.co", role: "user", joined: "Jun 1, 2024", status: "active", searches: 142, workspaces: 3 },
-    { id: "u2", name: "Marcus Webb", email: "marcus.webb@fintech.io", role: "user", joined: "May 28, 2024", status: "active", searches: 87, workspaces: 1 },
-    { id: "u3", name: "Sarah Park", email: "s.park@invest.co", role: "user", joined: "Jun 10, 2024", status: "active", searches: 203, workspaces: 5 },
-    { id: "u4", name: "Admin User", email: "admin@ftd.io", role: "admin", joined: "Jan 1, 2024", status: "active", searches: 0, workspaces: 0 },
-    { id: "u5", name: "David Kim", email: "d.kim@alpha.vc", role: "user", joined: "Jun 15, 2024", status: "suspended", searches: 12, workspaces: 0 },
-  ];
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -2516,20 +2836,14 @@ function AdminUsersPage({ navigate }: { navigate: (p: Page) => void }) {
           <div className="grid grid-cols-[1fr_1fr_80px_100px_80px_80px_80px] gap-4 px-4 py-2 text-xs text-muted-foreground font-medium uppercase tracking-wide">
             <span>User</span><span>Email</span><span>Role</span><span>Joined</span><span>Searches</span><span>WS</span><span>Status</span>
           </div>
-          {users.map(u => (
-            <div key={u.id} className="grid grid-cols-[1fr_1fr_80px_100px_80px_80px_80px] gap-4 px-4 py-3 items-center hover:bg-secondary/30 transition-all">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold shrink-0">{u.name[0]}</div>
-                <span className="text-sm font-medium text-foreground truncate">{u.name}</span>
+          {users.length === 0 && (
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+              <div className="text-center">
+                <Users size={24} className="mx-auto mb-2 opacity-30" />
+                <p>No users found</p>
               </div>
-              <span className="text-xs text-muted-foreground truncate">{u.email}</span>
-              <Badge variant={u.role === "admin" ? "purple" : "neutral"} className="text-xs w-fit">{u.role}</Badge>
-              <span className="text-xs text-muted-foreground">{u.joined}</span>
-              <span className="font-mono text-xs text-foreground">{u.searches}</span>
-              <span className="font-mono text-xs text-foreground">{u.workspaces}</span>
-              <Badge variant={u.status === "active" ? "evidence" : "danger"} className="text-xs w-fit">{u.status}</Badge>
             </div>
-          ))}
+          )}
         </div>
       </Card>
     </div>
@@ -2545,66 +2859,43 @@ function AdminSystemPage({ navigate }: { navigate: (p: Page) => void }) {
       <div className="flex items-center gap-4 mb-6">
         <button onClick={() => navigate("admin")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer"><ChevronLeft size={14} /> Admin</button>
         <h1 className="text-xl font-bold flex-1">System Monitor</h1>
-        <Badge variant="evidence"><Radio size={9} className="text-emerald-400" /> Live</Badge>
+        <Badge variant="neutral"><Radio size={9} className="text-emerald-400" /> No live data</Badge>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "CPU Usage", value: "34%", color: "#10B981", sub: "4 vCPU · GCP Cloud Run" },
-          { label: "Memory", value: "2.1GB", color: "#3B82F6", sub: "of 8GB allocated" },
-          { label: "Vector DB Queries/s", value: "124", color: "#8B5CF6", sub: "p95 latency: 42ms" },
-          { label: "Cache Hit Rate", value: "94%", color: "#10B981", sub: "Redis Memorystore" },
-        ].map(s => (
-          <Card key={s.label} className="p-4">
-            <div className="font-mono font-bold text-2xl mb-1" style={{ color: s.color }}>{s.value}</div>
-            <div className="text-xs font-medium text-foreground mb-0.5">{s.label}</div>
-            <div className="text-xs text-muted-foreground">{s.sub}</div>
-          </Card>
-        ))}
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">CPU Usage</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">No monitoring data available</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">Memory</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">No monitoring data available</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">Vector DB Queries/s</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">No monitoring data available</div>
+        </Card>
+        <Card className="p-4 text-center">
+          <div className="text-xs text-muted-foreground mb-1">Cache Hit Rate</div>
+          <div className="font-mono font-bold text-2xl text-muted-foreground">—</div>
+          <div className="text-xs text-muted-foreground">No monitoring data available</div>
+        </Card>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-5">
           <h3 className="font-semibold mb-4">Pipeline Health</h3>
-          <div className="space-y-3">
-            {[
-              { name: "News Ingestion (Alpha Vantage)", uptime: 99.8, latency: "320ms", status: "healthy" },
-              { name: "Reddit Scraper (PRAW)", uptime: 98.2, latency: "180ms", status: "healthy" },
-              { name: "SEC EDGAR Parser", uptime: 100.0, latency: "2.1s", status: "healthy" },
-              { name: "RAG Inference Engine", uptime: 97.1, latency: "4.2s", status: "degraded" },
-              { name: "Hype/Evidence Scorer", uptime: 99.9, latency: "85ms", status: "healthy" },
-            ].map(p => (
-              <div key={p.name} className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
-                <div className={cn("w-2 h-2 rounded-full shrink-0", p.status === "healthy" ? "bg-emerald-400" : "bg-yellow-400")} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-foreground">{p.name}</div>
-                  <div className="text-xs text-muted-foreground">Uptime {p.uptime}% · avg {p.latency}</div>
-                </div>
-                <Badge variant={p.status === "healthy" ? "evidence" : "hype"} className="text-xs">{p.status}</Badge>
-              </div>
-            ))}
+          <div className="text-center py-8 text-muted-foreground">
+            <Database size={24} className="mx-auto mb-2 opacity-30" />
+            <p>No pipeline health data available</p>
           </div>
         </Card>
         <Card className="p-5">
           <h3 className="font-semibold mb-4">Ingestion Volume (24h)</h3>
-          <div className="space-y-3">
-            {[
-              { source: "Alpha Vantage News", count: 8420, color: "#3B82F6" },
-              { source: "Reddit Posts", count: 5102, color: "#F59E0B" },
-              { source: "SEC EDGAR Filings", count: 47, color: "#10B981" },
-              { source: "Analyst Reports", count: 733, color: "#8B5CF6" },
-            ].map(s => (
-              <div key={s.source} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">{s.source}</span>
-                  <span className="font-mono text-foreground">{s.count.toLocaleString()}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${(s.count / 9000) * 100}%`, background: s.color }} />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 p-3 bg-secondary/30 rounded-lg text-xs text-muted-foreground">
-            Total ingested today: <strong className="text-foreground">14,302 items</strong> · Last refresh: 2 minutes ago
+          <div className="text-center py-8 text-muted-foreground">
+            <Database size={24} className="mx-auto mb-2 opacity-30" />
+            <p>No ingestion data available</p>
           </div>
         </Card>
       </div>
@@ -2642,7 +2933,7 @@ function ReportModal({ onClose }: { onClose: () => void }) {
     <Modal title="Report Mapping Error" onClose={onClose}>
       <div className="space-y-4">
         <div className="p-3 bg-secondary/50 rounded-lg border border-border text-xs text-muted-foreground">
-          <strong className="text-foreground">Flagged:</strong> "Analysts Predict NVDA Will Reach $1,200 on Insatiable AI Demand" — Seeking Alpha
+          Use this form to report mapping issues for any article.
         </div>
         <div className="space-y-1.5">
           <label className="text-sm font-medium">Reason for report</label>
@@ -2738,23 +3029,23 @@ export default function App() {
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
-      case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
-      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} onReport={() => setShowReport(true)} />;
-      case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} />;
+      case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
+      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} onReport={() => setShowReport(true)} firebaseUser={firebaseUser} />;
+      case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} />;
+      case "tickers-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} />;
       case "ticker-community": return <CommunityPage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-comparison": return <ComparisonPage navigate={navigate} />;
-      case "workspaces": return <WorkspacesPage navigate={navigate} />;
-      case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
+      case "ticker-comparison": return <ComparisonPage navigate={navigate} firebaseUser={firebaseUser} />;
+      case "workspaces": return <WorkspacesPage navigate={navigate} firebaseUser={firebaseUser} />;
+      case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
       case "chat": return <ChatPage navigate={navigate} />;
-      case "alerts": return <AlertsPage navigate={navigate} />;
+      case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} />;
       case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
-      case "admin": return <AdminDashboard navigate={navigate} />;
+      case "admin": return <AdminDashboard navigate={navigate} firebaseUser={firebaseUser} />;
       case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
       case "admin-users": return <AdminUsersPage navigate={navigate} />;
       case "admin-system": return <AdminSystemPage navigate={navigate} />;
-      default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
+      default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
     }
   };
 

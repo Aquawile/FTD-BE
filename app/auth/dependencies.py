@@ -88,8 +88,9 @@ async def get_current_application_user(request: Request) -> User:
     )
 
 
-async def get_current_permissions(user_id: int = Depends(get_current_user)) -> set[str]:
+async def get_current_permissions(current_user: dict = Depends(get_current_user)) -> set[str]:
     from app.services.user_service import get_user_permissions
+    user_id = current_user["user_id"]
     rows = get_user_permissions(user_id)
     return {row["permission_name"] for row in rows}
 

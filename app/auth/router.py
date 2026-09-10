@@ -15,7 +15,7 @@ from app.auth.models import (
     normalize_email,
 )
 from app.auth.token import create_access_token
-from app.auth.repository import get_user_by_email
+from app.auth.repository import get_user_by_email, create_user as create_user_record
 from app.auth.dependencies import get_current_application_user
 from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError
 from app.services.user_service import (
@@ -183,6 +183,11 @@ def auth_delete_user(
     if not success:
         raise UserNotFoundError("User not found")
     return None
+
+
+@router.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
+def auth_register(request: UserCreateRequest) -> User:
+    return create_user(request)
 
 
 @router.get(

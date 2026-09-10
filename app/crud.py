@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Sequence
+from typing import Optional, Sequence
 
 from app.db import query_dict
 from app.models import (
+    AlertResponse,
     FilingElement,
     FilingSummary,
     FiscalYearEnd,
@@ -15,18 +16,56 @@ from app.models import (
     SearchResult,
     TimelineEvent,
     TickerResult,
+    TrackedTicker,
+    WorkspaceResponse,
 )
 
 
-def search_tickers(query: str, limit: int = 20) -> list[TickerResult]:
-    sql = """
-        SELECT DISTINCT target_ticker AS ticker, target_cik AS cik
-        FROM unified_staging
-        WHERE target_ticker ILIKE %s
-        ORDER BY target_ticker
+def search_tickers(
+    query: str,
+    limit: int = 20,
+    sector: Optional[str] = None,
+    sort_by: str = "ticker",
+) -> list[TickerResult]:
+    """
+    Search tickers with optional sector filter and sorting.
+    Returns tickers with sector.
+    """
+    # Build WHERE clause
+    where_conditions = ["u.target_ticker ILIKE %s"]
+    params = [f"%{query}%"]
+
+    if sector and sector != "all":
+        where_conditions.append("t.sector ILIKE %s")
+        params.append(sector)
+
+    where_clause = " AND ".join(where_conditions)
+
+    # Determine sort order
+    sort_map = {
+        "ticker": "u.target_ticker",
+        "hype": "t.evidence_score DESC",
+        "evidence": "t.evidence_score DESC",
+        "ticker": "u.target_ticker",
+    }
+    sort_column = sort_map.get(sort_by, "u.target_ticker")
+
+    # Simple query without gnews subquery for performance
+    sql = f"""
+        SELECT DISTINCT
+            u.target_ticker AS ticker,
+            u.target_cik AS cik,
+            t.sector,
+            t.evidence_score,
+            NULL::text AS news_snippet
+        FROM unified_staging u
+        LEFT JOIN tickers t ON t.symbol = u.target_ticker
+        WHERE {where_clause}
+        ORDER BY {sort_column}
         LIMIT %s
     """
-    rows = query_dict(sql, (f"%{query}%", limit))
+    params.append(limit)
+    rows = query_dict(sql, tuple(params))
     return [TickerResult(**r) for r in rows]
 
 
@@ -196,16 +235,82 @@ def search_content(
 def get_dashboard_stats() -> dict:
     articles_sql = "SELECT COUNT(*) AS count FROM unified_staging"
     tickers_sql = "SELECT COUNT(DISTINCT target_ticker) AS count FROM unified_staging WHERE target_ticker IS NOT NULL AND target_ticker <> ''"
+    alerts_sql = "SELECT COUNT(*) AS count FROM alerts"
 
     articles_rows = query_dict(articles_sql)
     tickers_rows = query_dict(tickers_sql)
+    alerts_rows = query_dict(alerts_sql)
 
     articles_count = articles_rows[0]["count"] if articles_rows else 0
     tickers_count = tickers_rows[0]["count"] if tickers_rows else 0
+    alerts_count = alerts_rows[0]["count"] if alerts_rows else 0
 
     return {
         "articles_count": articles_count,
         "tickers_count": tickers_count,
-        "alerts_count": 0,
+        "alerts_count": alerts_count,
         "evidence_score": None,
     }
+
+
+def get_tracked_tickers(limit: int = 500) -> list[TrackedTicker]:
+    sql = """
+        SELECT symbol, name, sector, current_price, evidence_score, hype_score, change_percent, price_as_of
+        FROM tickers
+        ORDER BY updated_at DESC
+        LIMIT %s
+    """
+    rows = query_dict(sql, (limit,))
+    results = []
+    for r in rows:
+        row = dict(r)
+        if row.get("price_as_of") is not None:
+            row["price_as_of"] = row["price_as_of"].isoformat()
+        results.append(TrackedTicker(**row))
+    return results
+
+
+def get_user_workspaces(user_id: int) -> list[WorkspaceResponse]:
+    sql = """
+        SELECT w.id, w.name, w.created_at,
+               COALESCE(ARRAY_AGG(wt.ticker_symbol) FILTER (WHERE wt.ticker_symbol IS NOT NULL), '{}') AS tickers
+        FROM workspaces w
+        LEFT JOIN workspace_tickers wt ON wt.workspace_id = w.id
+        WHERE w.user_id = %s
+        GROUP BY w.id, w.name, w.created_at
+        ORDER BY w.created_at DESC
+    """
+    rows = query_dict(sql, (user_id,))
+    results = []
+    for r in rows:
+        results.append(WorkspaceResponse(
+            id=r["id"],
+            name=r["name"],
+            tickers=r["tickers"] or [],
+            alerts=0,
+            created_at=r["created_at"].isoformat() if r["created_at"] else None,
+        ))
+    return results
+
+
+def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:
+    sql = """
+        SELECT id, ticker, type, message, read, severity, created_at
+        FROM alerts
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+    """
+    rows = query_dict(sql, (user_id, limit))
+    results = []
+    for r in rows:
+        results.append(AlertResponse(
+            id=r["id"],
+            ticker=r["ticker"],
+            type=r["type"],
+            message=r["message"],
+            read=r["read"],
+            severity=r["severity"],
+            time=r["created_at"].isoformat() if r["created_at"] else None,
+        ))
+    return results

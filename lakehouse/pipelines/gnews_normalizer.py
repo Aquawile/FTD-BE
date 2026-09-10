@@ -42,7 +42,7 @@ def _extract_query_tickers(query: str) -> list[str]:
     return [m for m in matches]
 
 
-def load_gnews_frames(settings: LakehouseSettings, sample: int | None = None) -> pd.DataFrame:
+def load_gnews_frames(settings: LakehouseSettings, sample: int | None = None, since: str | None = None) -> pd.DataFrame:
     """Load GNews batch JSONs into a clean DataFrame with explicit schema."""
     sec_settings = settings.sec_settings
     storage = GcsStorage(sec_settings)
@@ -62,10 +62,13 @@ def load_gnews_frames(settings: LakehouseSettings, sample: int | None = None) ->
     cik_map = {t.upper(): c for t, c in zip(target_tickers, ciks)}
     allowed = set(cik_map.keys())
 
+    since_dt = pd.Timestamp(since) if since else None
     frames: list[pd.DataFrame] = []
     rows_collected = 0
     for blob in _iter_gnews_blobs(settings):
         if not blob.name.endswith(".json"):
+            continue
+        if since_dt is not None and blob.time_created < since_dt:
             continue
         try:
             raw = blob.download_as_text(encoding="utf-8")
@@ -132,8 +135,8 @@ def save_gnews_staging(df: pd.DataFrame, settings: LakehouseSettings) -> str:
     path = f"{settings.gcs_staging_prefix}/staging_gnews.parquet"
     df = _coerce_schema(df)
     table = pa.Table.from_pandas(df, preserve_index=False)
-    storage = GcsStorage(settings.sec_settings)
-    bucket = storage._bucket
+    client = storage.Client(project=settings.sec_settings.gcp_project)
+    bucket = client.bucket(settings.gcs_bucket)
     blob = bucket.blob(path)
     buf = pa.BufferOutputStream()
     pq.write_table(table, buf)
