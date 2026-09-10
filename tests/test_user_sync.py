@@ -88,6 +88,21 @@ class TestUserSync(unittest.TestCase):
         self.assertEqual(first.firebase_uid, firebase_uid)
         self.assertNotEqual(first.email, "different@example.com")
 
+    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    def test_different_firebase_uid_with_same_email_is_linked(self) -> None:
+        email = "same.email@example.com"
+        uid_a = uuid4().hex
+        uid_b = uuid4().hex
+        self.addCleanup(self._cleanup_user, uid_a)
+        self.addCleanup(self._cleanup_user, uid_b)
+
+        user_a = synchronize_user({"firebase_uid": uid_a, "email": email})
+        user_b = synchronize_user({"firebase_uid": uid_b, "email": email})
+
+        self.assertEqual(user_a.email, user_b.email)
+        self.assertEqual(user_a.id, user_b.id)
+        self.assertEqual(user_b.firebase_uid, uid_b)
+
     def test_missing_firebase_uid_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
             synchronize_user({"email": "test@example.com"})
