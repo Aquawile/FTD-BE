@@ -10,3 +10,4 @@ error_log_*.txt
 github-actions-key.json
 node_modules/
 csv_exports/
+.venv-311/

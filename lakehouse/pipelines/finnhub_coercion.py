@@ -68,7 +68,7 @@ def _parse_price_line(line: str) -> dict:
     return parsed
 
 
-def load_price_frames(settings: LakehouseSettings, sample: int | None = None) -> pd.DataFrame:
+def load_price_frames(settings: LakehouseSettings, sample: int | None = None, since: str | None = None) -> pd.DataFrame:
     """Load all price NDJSON blobs into a single DataFrame.
 
     Adds target_ticker, target_cik, element_type, and normalized_calendar_date.
@@ -91,10 +91,13 @@ def load_price_frames(settings: LakehouseSettings, sample: int | None = None) ->
     ciks, _ = resolve_target_ciks(target_tickers, ticker_map)
     cik_map = {t.upper(): c for t, c in zip(target_tickers, ciks)}
 
+    since_dt = pd.Timestamp(since) if since else None
     frames: list[pd.DataFrame] = []
     records_collected = 0
     for blob in _iter_price_blobs(settings):
         if not blob.name.endswith(".jsonl") and not blob.name.endswith(".ndjson"):
+            continue
+        if since_dt is not None and blob.time_created < since_dt:
             continue
         text = blob.download_as_text(encoding="utf-8")
         records = []
@@ -143,8 +146,8 @@ def save_price_staging(df: pd.DataFrame, settings: LakehouseSettings) -> str:
     path = f"{settings.gcs_staging_prefix}/staging_finnhub.parquet"
     df = _coerce_schema(df)
     table = pa.Table.from_pandas(df, preserve_index=False)
-    storage = GcsStorage(settings.sec_settings)
-    bucket = storage._bucket
+    client = storage.Client(project=settings.sec_settings.gcp_project)
+    bucket = client.bucket(settings.gcs_bucket)
     blob = bucket.blob(path)
     buf = pa.BufferOutputStream()
     pq.write_table(table, buf)

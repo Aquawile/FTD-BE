@@ -31,7 +31,7 @@ def load_validated_table(settings: LakehouseSettings, table_name: str) -> Option
     return table.to_pandas()
 
 
-def build_unified_staging(settings: LakehouseSettings, sample: int | None = None) -> Optional[pd.DataFrame]:
+def build_unified_staging(settings: LakehouseSettings, sample: int | None = None, since: str | None = None) -> Optional[pd.DataFrame]:
     """Concatenate all validated staging tables into a unified relation.
 
     Returns a DataFrame with columns:
@@ -71,8 +71,8 @@ def save_unified_staging(df: pd.DataFrame, settings: LakehouseSettings) -> str:
     path = f"{settings.gcs_staging_prefix}/unified_staging.parquet"
     df = _coerce_schema(df)
     table = pa.Table.from_pandas(df, preserve_index=False)
-    storage = GcsStorage(settings.sec_settings)
-    bucket = storage._bucket
+    client = storage.Client(project=settings.sec_settings.gcp_project)
+    bucket = client.bucket(settings.gcs_bucket)
     blob = bucket.blob(path)
     buf = pa.BufferOutputStream()
     pq.write_table(table, buf)

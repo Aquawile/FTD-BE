@@ -19,7 +19,7 @@ PG_CONN = {
     "port": 5432,
     "dbname": "ftd_lakehouse",
     "user": "ftd_app",
-    "password": "5Ou+BkyuQT3izP72219jMLy2AobRdI3f",
+    "password": "temp_password_123",
 }
 
 BUCKET = "processed-layer-one"

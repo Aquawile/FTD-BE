@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 from pathlib import Path
 
@@ -175,7 +176,7 @@ def _coerce_schema(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def validate_staging(settings: LakehouseSettings, sample: int | None = None) -> dict[str, pd.DataFrame]:
+def validate_staging(settings: LakehouseSettings, sample: int | None = None, since: str | None = None) -> dict[str, pd.DataFrame]:
     cik_map = _build_cik_map(settings)
     fiscal_map = _load_fiscal_map(settings)
     client = storage.Client(project=settings.sec_settings.gcp_project)
@@ -226,6 +227,10 @@ def validate_staging(settings: LakehouseSettings, sample: int | None = None) -> 
         validated[table_name] = df
         logger.info("Validated %s: %d rows, columns=%s", table_name, len(df), list(df.columns))
 
+        # Free memory immediately after validation
+        del table
+        gc.collect()
+
     return validated
 
 
@@ -233,8 +238,8 @@ def save_validated(validated: dict[str, pd.DataFrame], settings: LakehouseSettin
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    storage = GcsStorage(settings.sec_settings)
-    bucket = storage._bucket
+    client = storage.Client(project=settings.sec_settings.gcp_project)
+    bucket = client.bucket(settings.gcs_bucket)
     for table_name, df in validated.items():
         path = f"{settings.gcs_staging_prefix}/{table_name}.parquet"
         df = _coerce_schema(df)

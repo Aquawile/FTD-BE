@@ -246,7 +246,7 @@ fi
 
 # 10. Database connectivity from API VM
 run_check "Database connectivity" \
-    "PGPASSWORD='5Ou+BkyuQT3izP72219jMLy2AobRdI3f' psql -h 10.168.0.3 -U ftd_app -d ftd_lakehouse_staging -c 'SELECT 1' 2>/dev/null || PGPASSWORD='5Ou+BkyuQT3izP72219jMLy2AobRdI3f' psql -h 10.168.0.3 -U ftd_app -d ftd_lakehouse_api_test -c 'SELECT 1' 2>/dev/null" \
+    PGPASSWORD='temp_password_123' psql -h 10.168.0.3 -U ftd_app -d ftd_lakehouse_staging -c 'SELECT 1' 2>/dev/null || PGPASSWORD='temp_password_123' psql -h 10.168.0.3 -U ftd_app -d ftd_lakehouse_api_test -c 'SELECT 1' 2>/dev/null
     "1 row" \
     "${API_VM}"
 

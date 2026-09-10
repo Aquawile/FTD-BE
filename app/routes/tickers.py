@@ -3,37 +3,44 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import get_current_application_user, require_permission
+from app.auth.models import User
 from app.crud import (
     get_ticker_filings,
     get_ticker_fiscal_year_end,
     get_ticker_news,
     get_ticker_prices,
     get_ticker_timeline,
+    get_tracked_tickers,
     search_tickers,
 )
-from app.models import FiscalYearEnd, NewsRow, PriceRow, TimelineEvent, TickerResult
+from app.models import FiscalYearEnd, NewsRow, PriceRow, TimelineEvent, TickerResult, TrackedTicker
 
 router = APIRouter(prefix="/tickers", tags=["tickers"])
 
 
-class TickerSearchResponse(BaseModel):
-    ticker: str
-    cik: str
+@router.get("/tracked", response_model=list[TrackedTicker])
+def route_get_tracked_tickers(
+    limit: int = Query(500, ge=1, le=500),
+    current_user: dict = Depends(get_current_application_user),
+) -> list[TrackedTicker]:
+    return get_tracked_tickers(limit=limit)
 
 
-@router.get("/search", response_model=list[TickerSearchResponse])
+@router.get("/search", response_model=list[TickerResult])
 def route_search_tickers(
     q: str = Query(..., min_length=1, description="Ticker symbol or partial match"),
     limit: int = Query(20, ge=1, le=100),
+    sector: Optional[str] = Query(None, description="Filter by sector (e.g., semiconductors, ai, ev, cloud)"),
+    sort_by: str = Query("ticker", description="Sort by: ticker, evidence, hype"),
     permission: str = require_permission("tickers.search"),
-) -> list[TickerSearchResponse]:
-    return search_tickers(q, limit)
+) -> list[TickerResult]:
+    return search_tickers(q, limit, sector, sort_by)
 
 
 @router.get("/{ticker}/prices", response_model=list[PriceRow])

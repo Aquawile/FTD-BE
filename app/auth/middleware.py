@@ -13,7 +13,7 @@ from app.auth.token import verify_token
 logger = logging.getLogger(__name__)
 
 
-PUBLIC_PATHS = {"/health", "/version", "/auth/login", "/auth/me", "/dashboard/stats"}
+PUBLIC_PATHS = {"/health", "/version", "/auth/login", "/auth/register", "/auth/me", "/dashboard/stats"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -63,14 +63,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.info("authentication_succeeded: method=firebase firebase_uid=%s path=%s", firebase_uid, path)
             return await call_next(request)
 
+        # Firebase failed — log the reason and fall through to internal JWT
         if firebase_reason == "expired":
             logger.warning("authentication_failed: reason=firebase_token_expired path=%s", path)
-        else:
+        elif firebase_reason == "invalid":
             logger.warning("authentication_failed: reason=firebase_token_invalid path=%s", path)
+        else:
+            logger.warning("authentication_failed: reason=firebase_token_unknown path=%s", path)
 
+        # Firebase failed, try internal JWT
         payload = verify_token(token)
         if payload is None:
-            logger.warning("authentication_failed: reason=invalid_or_expired_internal_token path=%s", path)
+            logger.warning("authentication_failed: reason=invalid_or_expired_token path=%s", path)
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or expired token"},
@@ -93,9 +97,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 status_code=401,
                 content={"detail": "Invalid user identifier in token"},
             )
-        request.state.user_id = resolved_user_id
-        request.state.email = email
-        request.state.auth_method = "internal"
-        logger.info("authentication_succeeded: method=internal user_id=%s path=%s", resolved_user_id, path)
-
-        return await call_next(request)
+        
+        try:
+            request.state.user_id = int(user_id)
+            request.state.email = email
+            request.state.auth_method = "internal"
+            logger.info("authentication_succeeded: method=internal user_id=%s path=%s", user_id, path)
+            return await call_next(request)
+        except Exception as e:
+            logger.error("authentication_internal_error: reason=postgres_lookup_failed path=%s error=%s", path, str(e))
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"},
+            )

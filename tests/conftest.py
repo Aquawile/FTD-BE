@@ -6,6 +6,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Provide dummy PG env vars so app.db doesn't raise at import or call time.
+# Unit tests mock at the route or service layer, so no real connection is needed.
+os.environ.setdefault("PGHOST", "localhost")
+os.environ.setdefault("PGPORT", "5432")
+os.environ.setdefault("PGDATABASE", "ftd_lakehouse_test")
+os.environ.setdefault("PGUSER", "ftd_app")
+os.environ.setdefault("PGPASSWORD", os.environ.get("PGPASSWORD", "temp_password_123"))
+
 # Add app directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
 
