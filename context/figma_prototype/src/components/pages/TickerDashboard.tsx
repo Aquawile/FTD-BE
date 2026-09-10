@@ -4,7 +4,7 @@ import { Page } from "../../app/types";
 import { Badge, Btn, Card, ScorePill, cn, getHypeColor, getEvidenceColor } from "../ui";
 import { AlertTriangle, Bell, Briefcase, CheckCircle, Clock, Download, ExternalLink, FileText, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
-import { apiRequest, API_BASE } from "../../app/api";
+import { apiRequest, API_BASE } from "../../api";
 
 interface TickerData {
   symbol: string;

@@ -5,11 +5,11 @@ import { firebaseAuth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
-import { apiRequest, API_BASE } from "./api";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "./mockData";
+import { apiRequest, API_BASE } from "../api";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
 
-import { AppShell } from "./components/Shell";
-import { ReportModal } from "./components/pages/ReportModal";
+import { AppShell } from "../components/Shell";
+import ReportModal from "../components/pages/ReportModal";
 
 import {
   LoginPage,
@@ -35,7 +35,7 @@ import {
   AdminUsersPage,
   AdminSystemPage,
   LegacyLandingPage,
-} from "./components/pages";
+} from "../components/pages";
 
 export { firebaseAuth, API_BASE };
 
