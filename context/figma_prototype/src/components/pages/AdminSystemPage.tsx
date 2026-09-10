@@ -1,17 +1,9 @@
-// ────────────────────────────────────────────────
-// ADMIN SYSTEM PAGE
-// ────────────────────────────────────────────────
+import { ReactNode } from "react";
+import { Page } from "../../app/types";
+import { Badge, Card, cn } from "../ui";
+import { ChevronLeft, Radio } from "lucide-react";
 
-import { useState, useEffect } from "react";
-import { Card, Badge, Button as Btn, ChevronLeft, Activity, Database, Settings, AlertTriangle, Shield, Search, Filter, MoreHorizontal, Edit2, Trash2, Plus, Download, Eye, RefreshCw } from "./ui";
-import { cn } from "../utils";
-import { navigate } from "../router";
-
-interface AdminSystemPageProps {
-  navigate: (p: string) => void;
-}
-
-export function AdminSystemPage({ navigate }: AdminSystemPageProps) {
+function AdminSystemPage({ navigate }: { navigate: (p: Page) => void }) {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -83,5 +75,9 @@ export function AdminSystemPage({ navigate }: AdminSystemPageProps) {
     </div>
   );
 }
+
+// ────────────────────────────────────────────────
+// MODAL: Error Report
+// ────────────────────────────────────────────────
 
 export default AdminSystemPage;

@@ -1,17 +1,9 @@
-// ────────────────────────────────────────────────
-// ONBOARDING PAGE
-// ────────────────────────────────────────────────
+import { useState } from "react";
+import { Page } from "../../app/types";
+import { Btn, Input, cn } from "../ui";
+import { ArrowRight, BarChart, Briefcase, Check, Hash } from "lucide-react";
 
-import { useState, useEffect } from "react";
-import { BarChart, ArrowRight, Check, Briefcase, Hash } from "lucide-react";
-import { cn } from "../utils";
-import { Input, Button as Btn } from "./ui";
-
-interface OnboardingPageProps {
-  navigate: (p: Page) => void;
-}
-
-export function OnboardingPage({ navigate }: OnboardingPageProps) {
+function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
   const [step, setStep] = useState(0);
   const steps = ["Welcome!", "Pick your interests", "Set up first workspace"];
   const sectors = ["Semiconductors", "AI/ML", "EV & Clean Energy", "Cloud Infrastructure", "Defense Tech", "Biotech", "Consumer Electronics", "Crypto/Blockchain"];
@@ -61,7 +53,8 @@ export function OnboardingPage({ navigate }: OnboardingPageProps) {
         {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold">Create your first workspace</h2>
-            <p className="text-muted-foreground text-sm">Group related tickers to track them together. You can always add more later.</            <div className="space-y-1.5">
+            <p className="text-muted-foreground text-sm">Group related tickers to track them together. You can always add more later.</p>
+            <div className="space-y-1.5">
               <label htmlFor="workspace-name" className="text-sm font-medium">Workspace name</label>
               <Input id="workspace-name" placeholder="e.g., AI Semiconductor Race" icon={<Briefcase size={14} />} />
             </div>
@@ -79,5 +72,9 @@ export function OnboardingPage({ navigate }: OnboardingPageProps) {
     </div>
   );
 }
+
+// ────────────────────────────────────────────────
+// PAGE 7: Dashboard Home
+// ────────────────────────────────────────────────
 
 export default OnboardingPage;

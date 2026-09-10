@@ -1,112 +1,195 @@
-// ────────────────────────────────────────────────
-// Dashboard Page Component
-// ────────────────────────────────────────────────
+import { useState, useEffect } from "react";
+import { Page } from "../../app/types";
+import { Badge, Btn, Card, Sparkline, cn } from "../ui";
+import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
-import { useDashboardStats } from "../hooks";
-import { Card, Badge, Button as Btn, TrendingUp, TrendingDown, Sparkline } from "./ui";
-import { cn } from "./utils";
+function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
+  const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null } | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
 
-export function DashboardPage() {
-  const { stats, loading, error } = useDashboardStats();
+  useEffect(() => {
+    let cancelled = false;
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("/api/dashboard/stats");
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) { setStats(data); setStatsLoading(false); }
+      } catch {
+        if (!cancelled) { setStatsError(true); setStatsLoading(false); }
+      }
+    };
+    fetchStats();
+    return () => { cancelled = true; };
+  }, []);
+
+  const formatCount = (n: number) => {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+    return String(n);
+  };
+
+  const topMovers = TICKERS.slice(0, 5);
+  const spData = [45, 52, 48, 63, 71, 68, 74, 69, 77, 82, 79, 84];
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      {/* Welcome */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Good morning 👋</h1>
+        </div>
+        <Btn variant="primary" onClick={() => navigate("chat")} icon={<MessageSquare size={14} />}>Ask AI</Btn>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          label="Articles Analyzed"
-          value={stats?.articles_count?.toLocaleString() || 0}
-          icon={<FileText size={16} />}
-          color="blue"
-        />
-        <StatCard
-          label="Tracked Tickers"
-          value={stats?.tickers_count?.toLocaleString() || 0}
-          icon={<TrendingUp size={16} />}
-          color="green"
-        />
-        <StatCard
-          label="Active Alerts"
-          value={stats?.alerts_count?.toLocaleString() || 0}
-          icon={<Bell size={16} />}
-          color="orange"
-        />
-        <StatCard
-          label="Avg Evidence Score"
-          value={stats?.evidence_score !== null ? stats.evidence_score : "—"}
-          icon={<Target size={16} />}
-          color="purple"
-        />
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {statsLoading ? (
+          Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} className="p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-1/2" /><div className="h-6 bg-secondary rounded w-1/3" /></div></Card>
+          ))
+        ) : statsError ? (
+          <Card className="p-4 col-span-full text-sm text-red-400">Unable to load dashboard stats</Card>
+        ) : (
+          <>
+            <Card className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-muted-foreground text-xs mb-1">Articles Analyzed</div>
+                  <div className="font-mono font-bold text-2xl text-foreground">{formatCount(stats?.articles_count ?? 0)}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Total in database</div>
+                </div>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-400"><FileText size={18} /></div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-muted-foreground text-xs mb-1">Tickers Tracked</div>
+                  <div className="font-mono font-bold text-2xl text-foreground">{formatCount(stats?.tickers_count ?? 0)}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Across all sources</div>
+                </div>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-400"><Target size={18} /></div>
+              </div>
+            </Card>
+          </>
+        )}
       </div>
 
-      {/* Top Movers */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Top Hype/Evidence Divergence</h2>
-          <button className="text-sm text-primary hover:underline">View All →</button>
-        </div>
-        <div className="space-y-3">
-          {/* Top movers will be rendered here with live data */}
-          <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 text-center text-muted-foreground">
-            Live data loading... (hooks to be connected)
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Top Movers */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-foreground">Top Hype/Evidence Divergence</h2>
+            <button onClick={() => navigate("search")} className="text-xs text-primary hover:underline cursor-pointer">View all →</button>
           </div>
+          <Card>
+            <div className="divide-y divide-border">
+              {topMovers.map(t => (
+                <div
+                  key={t.symbol}
+                  className="flex items-center gap-4 p-4 hover:bg-secondary/30 cursor-pointer transition-all"
+                  onClick={() => { setSelectedTicker(t.symbol); navigate("ticker"); }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+                    <span className="font-mono font-bold text-xs text-foreground">{t.symbol.slice(0, 2)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-sm text-foreground">{t.symbol}</span>
+                      <span className="text-muted-foreground text-xs truncate">{t.name}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-3">
+                      <div className="text-xs text-muted-foreground">
+                        Price data available
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-mono text-sm font-semibold text-foreground">${t.price.toLocaleString()}</div>
+                    <div className={cn("text-xs flex items-center gap-0.5 justify-end", t.change > 0 ? "text-emerald-400" : "text-red-400")}>
+                      {t.change > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                      {t.change > 0 ? "+" : ""}{t.change}%
+                    </div>
+                  </div>
+                  <Sparkline data={spData.map(v => v + Math.random() * 8 - 4)} color={t.change > 0 ? "#10B981" : "#EF4444"} />
+                </div>
+              ))}
+            </div>
+          </Card>
         </div>
 
-      {/* My Workspaces */}
-      <div className="space-y-4 mt-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">My Workspaces</h2>
-          <button className="text-sm text-primary hover:underline">Manage →</button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Workspace cards will render here */}
-          <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 text-center text-muted-foreground">
-            No workspaces yet. <button className="text-primary hover:underline ml-2">Create one</button>
+        {/* Right panel */}
+        <div className="space-y-4">
+          {/* Recent alerts */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-foreground">Recent Alerts</h2>
+              <button onClick={() => navigate("alerts")} className="text-xs text-primary hover:underline cursor-pointer">All alerts →</button>
+            </div>
+            <div className="space-y-2">
+              {ALERTS_DATA.slice(0, 3).map(a => (
+                <Card key={a.id} className="p-3">
+                  <div className="flex items-start gap-2">
+                    <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", a.read ? "bg-secondary" : "bg-orange-400")} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className="font-mono font-semibold text-xs text-foreground">{a.ticker}</span>
+                        <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{a.message}</p>
+                      <div className="text-xs text-muted-foreground/60 mt-1">{a.time}</div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Recent Alerts */}
-        <div className="space-y-4 mt-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">Recent Alerts</h2>
-            <button className="text-sm text-primary hover:underline">All Alerts →</button>
-          </div>
-          <div className="space-y-2">
-            <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 text-center text-muted-foreground">
-              No alerts yet. <button className="text-primary hover:underline ml-2">View All</button>
+          {/* Workspace quick view */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-foreground">My Workspaces</h2>
+              <button onClick={() => navigate("workspaces")} className="text-xs text-primary hover:underline cursor-pointer">Manage →</button>
+            </div>
+            <div className="space-y-2">
+              {WORKSPACES.map(ws => (
+                <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-sm text-foreground">{ws.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{ws.tickers.join(", ")}</div>
+                    </div>
+                    {ws.alerts > 0 && <Badge variant="hype" className="text-xs">{ws.alerts}</Badge>}
+                  </div>
+                </Card>
+              ))}
             </div>
           </div>
         </div>
       </div>
+
+      {/* AI chat preview */}
+      <Card className="p-5 border-primary/20 bg-gradient-to-r from-primary/5 to-accent/5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
+            <Sparkles size={18} className="text-purple-400" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-sm text-foreground">AI Research Assistant</h3>
+            <p className="text-xs text-muted-foreground">Ask complex multi-ticker questions. Sources always cited.</p>
+          </div>
+          <Btn variant="primary" size="sm" onClick={() => navigate("chat")} icon={<MessageSquare size={12} />}>Open Chat</Btn>
+        </div>
+      </Card>
     </div>
   );
 }
 
-function StatCard({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: React.ReactNode; color: string }) {
-  const colors = {
-    blue: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-    green: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-    orange: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-    purple: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  };
-  return (
-    <div className={`p-4 rounded-xl border ${colors[color as keyof typeof colors] || "bg-secondary/30 border-border"}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground uppercase">{color}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-2xl font-bold text-foreground">{value}</span>
-        <div className={`p-2 rounded-lg ${colors[color as keyof typeof colors] || "bg-secondary/30"}`}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
+// ────────────────────────────────────────────────
+// PAGE 8: Search Results
+// ────────────────────────────────────────────────
 
 export default DashboardPage;

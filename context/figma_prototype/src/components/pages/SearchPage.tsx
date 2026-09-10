@@ -1,38 +1,43 @@
-// ────────────────────────────────────────────────
-// SEARCH PAGE
-// ────────────────────────────────────────────────
+import { useState, useEffect } from "react";
+import { Page } from "../../app/types";
+import { Btn, Card, cn } from "../ui";
+import { AlertCircle, ChevronRight, Filter, Search } from "lucide-react";
 
-import { useState, useEffect, useCallback } from "react";
-import { useTickerSearch, useTickerSearch as useSearch } from "../hooks";
-import { Card, Badge, Button as Btn, ChevronRight, Filter, Search, TrendingUp, TrendingDown } from "./ui";
-import { cn } from "../utils";
-import { navigate } from "../router";
-
-interface TrackedTicker {
-  ticker: string;
-  name: string;
-  sector?: string;
-  current_price?: number;
-  change_percent?: number;
-  evidence_score?: number;
-  hype_score?: number;
-  price_as_of?: string;
-}
-
-export function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: string) => void; setSelectedTicker: (t: string) => void }) {
+function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
   const [query, setQuery] = useState("NVDA");
   const [filterSector, setFilterSector] = useState("all");
-  const [sortBy, setSortBy] = useState("ticker");
-  const { results, loading, error, search } = useTickerSearch(query, { limit: 20, sector: filterSector, sortBy });
-
-  const handleSearch = useCallback(() => {
-    search();
-  }, [search]);
+  const [sortBy, setSortBy] = useState("divergence");
+  const [results, setResults] = useState<Array<{ ticker: string; cik: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    const timeout = setTimeout(() => search(), 300);
-    return () => clearTimeout(timeout);
-  }, [query, filterSector, sortBy, search]);
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    setError(false);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    fetch(`http://localhost:8000/tickers/search?q=${encodeURIComponent(query)}&limit=20`, { signal: controller.signal })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => setResults(Array.isArray(data) ? data : []))
+      .catch(err => {
+        if (err.name === "AbortError") {
+          setError(true);
+        } else {
+          setError(true);
+        }
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        setLoading(false);
+      });
+  }, [query]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -46,7 +51,7 @@ export function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: stri
             className="w-full pl-9 pr-3 py-2.5 bg-input-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
-        <Button variant="secondary" icon={<Filter size={14} />}>Filter</Button>
+        <Btn variant="secondary" icon={<Filter size={14} />}>Filter</Btn>
       </div>
 
       {/* Filter chips */}
@@ -63,16 +68,14 @@ export function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: stri
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Sort by:</span>
           <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-secondary border border-border rounded-lg text-xs px-2 py-1 text-foreground focus:outline-none">
-            <option value="ticker">Ticker</option>
-            <option value="evidence">Highest Evidence</option>
+            <option value="divergence">Hype/Evidence Gap</option>
             <option value="hype">Highest Hype</option>
+            <option value="evidence">Highest Evidence</option>
           </select>
         </div>
       </div>
 
-      <div className="text-sm text-muted-foreground">
-        {loading ? "Searching..." : error ? "Error loading results" : `${results.length} results for <strong className="text-foreground">"{query}"</strong>`}
-      </div>
+      <div className="text-sm text-muted-foreground">{loading ? "Searching..." : error ? "Error loading results" : `${results.length} results for <strong className=\"text-foreground\">\"${query}\"</strong>`}</div>
 
       {loading && (
         <div className="flex items-center justify-center py-12">
@@ -98,25 +101,12 @@ export function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: stri
           <Card key={t.ticker} className="p-5 cursor-pointer hover:border-primary/30 transition-all" onClick={() => { setSelectedTicker(t.ticker); navigate("ticker"); }}>
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center shrink-0">
-                <span className="font-mono font-bold text-xs text-foreground">{t.ticker.slice(0, 2)}</span>
+                <span className="font-mono font-bold text-sm text-foreground">{t.ticker.slice(0, 2)}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-1">
-                  <span className="font-mono font-bold text-sm text-foreground">{t.ticker}</span>
-                  {t.sector && <span className="text-muted-foreground text-xs truncate">{t.sector}</span>}
-                </div>
-                <div className="mt-1.5 flex items-center gap-3">
-                  {t.current_price !== undefined && (
-                    <span className="font-mono text-sm font-semibold text-foreground">${t.current_price.toLocaleString()}</span>
-                  )}
-                  {t.change_percent !== undefined && (
-                    <span className={cn("flex items-center gap-0.5", t.change_percent > 0 ? "text-emerald-400" : "text-red-400")}>
-                      {t.change_percent > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                      {t.change_percent > 0 ? "+" : ""}{t.change_percent}%
-                    </span>
-                  )}
-                  {t.price_as_of && <span className="text-xs text-muted-foreground">as of {new Date(t.price_as_of).toLocaleDateString()}</span>}
-                  {t.sector && <span className="text-xs text-muted-foreground px-2 py-0.5 bg-secondary rounded">{t.sector}</span>}
+                  <span className="font-mono font-bold text-base text-foreground">{t.ticker}</span>
+                  <span className="text-muted-foreground text-sm">{t.cik}</span>
                 </div>
               </div>
               <ChevronRight size={16} className="text-muted-foreground shrink-0" />
@@ -137,5 +127,9 @@ export function SearchPage({ navigate, setSelectedTicker }: { navigate: (p: stri
     </div>
   );
 }
+
+// ────────────────────────────────────────────────
+// PAGE 9: Ticker Research Dashboard
+// ────────────────────────────────────────────────
 
 export default SearchPage;

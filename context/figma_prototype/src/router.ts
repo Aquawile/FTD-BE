@@ -1,7 +1,3 @@
-// ────────────────────────────────────────────────
-// ROUTER - Page Navigation
-// ────────────────────────────────────────────────
-
 import { useState } from "react";
 
 export type Page =
@@ -9,7 +5,6 @@ export type Page =
   | "dashboard" | "search" | "ticker" | "ticker-timeline" | "ticker-filings" | "ticker-community" | "ticker-comparison"
   | "workspaces" | "workspace-detail" | "workspace-settings"
   | "chat" | "alerts" | "profile"
-  | "admin" | "admin-mapping" | "admin-users" | "admin-system" | "admin-mapping" | "admin-system"
   | "admin" | "admin-mapping" | "admin-users" | "admin-system";
 
 let currentPage: Page = "dashboard";
@@ -34,5 +29,3 @@ export function useNavigation() {
   const [page, setPage] = useState<Page>("dashboard");
   return { page, navigate: (p: Page) => { setPage(p); navigate(p); } };
 }
-
-import { useState } from "react";

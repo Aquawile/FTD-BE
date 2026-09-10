@@ -1,8 +1,27 @@
-// ────────────────────────────────────────────────
-// API Layer - Frontend API Client
-// ────────────────────────────────────────────────
+import type {
+  TrackedTicker,
+  NewsArticleResponse,
+  TimelineEventResponse,
+  FilingSummary,
+  PriceRow,
+  WorkspaceResponse,
+  AlertResponse,
+  DashboardStats,
+} from "../types";
+import { FirebaseUser } from "firebase/auth";
 
-const API_BASE = "/api";
+export const API_BASE = "/api";
+
+export async function apiRequest(path: string, firebaseUser: FirebaseUser | null): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (firebaseUser) {
+    const token = await firebaseUser.getIdToken();
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return fetch(`${API_BASE}${path}`, { headers });
+}
+
+const API_BASE_FALLBACK = "/api";
 
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("auth_token");
@@ -13,16 +32,16 @@ async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promis
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await fetch(`${API_BASE_FALLBACK}${endpoint}`, {
     ...options,
     headers,
     signal: options?.signal,
   });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || `HTTP ${res.status}`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || `HTTP ${response.status}`);
   }
-  return res.json();
+  return response.json();
 }
 
 // ────────────────────────────────────────────────

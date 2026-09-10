@@ -1,114 +1,123 @@
-// ────────────────────────────────────────────────
-// ADMIN MAPPING PAGE
-// ────────────────────────────────────────────────
+import { useState } from "react";
+import { Page } from "../../app/types";
+import { Badge, Btn, Card, cn } from "../ui";
+import { AlertTriangle, Archive, Check, CheckCircle, ChevronLeft, Filter, RefreshCw } from "lucide-react";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
-import { useState, useEffect } from "react";
-import { Card, Badge, Button as Btn, ChevronLeft, Search, Filter, MoreHorizontal, Edit2, Trash2, Plus, Download, Eye, RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock } from "./ui";
-import { cn } from "../utils";
-import { navigate } from "../router";
+function AdminMappingPage({ navigate }: { navigate: (p: Page) => void }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [items, setItems] = useState(MAPPING_QUEUE);
+  const [actionModal, setActionModal] = useState<{ id: string; action: string } | null>(null);
 
-interface AdminMappingPageProps {
-  navigate: (p: string) => void;
-}
-
-export function AdminMappingPage({ navigate }: AdminMappingPageProps) {
-  const [queue, setQueue] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [filter, setFilter] = useState("all");
-  const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch("/api/admin/mapping-queue")
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { if (!cancelled) { setQueue(data); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setError(true); setLoading(false); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { /* cancelled = true */ };
-  }, []);
-
-  const filtered = queue.filter(q => {
-    if (filter !== "all" && q.type !== filter) return false;
-    if (search && !q.article.toLowerCase().includes(search.toLowerCase()) && !q.mapped.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const resolve = (id: string, action: string) => {
+    setItems(prev => prev.filter(i => i.id !== id));
+    setActionModal(null);
+    setSelected(null);
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Mapping Queue</h1>
-          <p className="text-muted-foreground text-sm mt-1">Review and verify article-ticker mappings</p>
-        </div>
-        <Btn variant="secondary" size="sm" icon={<RefreshCw size={12} />>Refresh</Btn>
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={() => navigate("admin")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer"><ChevronLeft size={14} /> Admin</button>
+        <h1 className="text-xl font-bold flex-1">Mapping Review Queue</h1>
+        <Badge variant="danger">{items.length} pending</Badge>
+        <Btn variant="secondary" size="sm" icon={<Filter size={12} />}>Filter</Btn>
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {["all", "Wrong Ticker", "Ambiguous", "Verify"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs border capitalize cursor-pointer transition-all", filter === f ? "bg-primary/15 text-primary border-primary/30" : "bg-secondary text-muted-foreground border-border hover:border-primary/20")}>{f}</button>
-        ))}
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search articles..." className="w-64 pl-9 pr-3 py-2 bg-input-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
-          </div>
-        </div>
-      </div>
-
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-
-      {error && (
-        <Card className="p-4 text-center text-sm text-red-400">Unable to load mapping queue</Card>
-      )}
-
-      {!loading && !error && (
-        <div className="space-y-4">
-          {queue.filter(q => {
-            if (filter !== "all" && q.type !== filter) return false;
-            if (search && !q.article.toLowerCase().includes(search.toLowerCase()) && !q.mapped.toLowerCase().includes(search.toLowerCase())) return false;
-            return true;
-          }).map(q => (
-            <Card key={q.id} className="p-4 hover:border-primary/30 transition-all">
-              <div className="flex items-start gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge variant={q.type === "Wrong Ticker" ? "danger" : q.type === "Ambiguous" ? "hype" : "neutral"} className="text-xs">{q.type}</Badge>
-                    <Badge variant="neutral" className="text-xs">{q.source}</Badge>
-                    <Badge variant="neutral" className="text-xs">{Math.round(q.confidence * 100)}% confidence</Badge>
-                    <span className="text-xs text-muted-foreground">{q.time}</span>
-                    <Badge variant={q.reporter === "user" ? "default" : "hype"} className="text-xs">{q.reporter}</Badge>
-                  </div>
-                  <div className="mt-2">
-                    <p className="font-medium text-sm text-foreground truncate">{q.article}</p>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3 text-sm">
-                    <span className="font-mono text-xs text-foreground">{q.mapped}</span>
-                    <Badge variant={q.suggested === q.mapped ? "evidence" : "hype"} className="text-xs">Suggested: {q.suggested}</Badge>
-                    <Badge variant="hype" className="text-xs">{Math.round(q.confidence * 100)}% confidence</Badge>
-                    <Badge variant="neutral" className="text-xs">{q.reporter}</Badge>
-                    <span className="text-xs text-muted-foreground">{q.time}</span>
-                  </div>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Queue list */}
+        <div className="lg:col-span-3 space-y-2">
+          {items.map(item => (
+            <Card key={item.id} className={cn("p-4 cursor-pointer transition-all hover:border-primary/20", selected === item.id && "border-primary/50 bg-primary/5")} onClick={() => setSelected(item.id)}>
+              <div className="flex items-start gap-3">
+                <div className={cn("px-1.5 py-0.5 rounded text-xs font-mono font-bold shrink-0", item.reporter === "user" ? "bg-orange-500/15 text-orange-400" : "bg-blue-500/15 text-blue-400")}>
+                  {item.reporter === "user" ? "USR" : "AUTO"}
                 </div>
-                <div className="flex items-center gap-2 ml-auto shrink-0">
-                  <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors cursor-pointer" title="View"><Eye size={12} /></button>
-                  <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors cursor-pointer" title="Edit"><Edit2 size={12} /></button>
-                  <button className="p-1.5 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer" title="Delete"><Trash2 size={12} /></button>
-                  <button className="p-1.5 text-muted-foreground hover:text-green-400 hover:bg-green-500/10 rounded-lg transition-colors cursor-pointer" title="Approve"><CheckCircle size={12} className="text-emerald-400" /></button>
-                  <button className="p-1.5 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer" title="Reject"><XCircle size={12} className="text-red-400" /></button>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground leading-snug mb-1 truncate">{item.article}</div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{item.source}</span>
+                    <span>·</span>
+                    <span>Mapped: <strong className="text-foreground">{item.mapped}</strong></span>
+                    <span>→ Suggested: <strong className="text-primary">{item.suggested}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant={item.confidence < 0.5 ? "danger" : item.confidence < 0.7 ? "hype" : "evidence"} className="text-xs">
+                      {Math.round(item.confidence * 100)}% confidence
+                    </Badge>
+                    <Badge variant="neutral" className="text-xs">{item.type}</Badge>
+                    <span className="text-xs text-muted-foreground">{item.time}</span>
+                  </div>
                 </div>
               </div>
             </Card>
           ))}
+          {items.length === 0 && (
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+              <div className="text-center">
+                <CheckCircle size={24} className="mx-auto mb-2 text-emerald-400" />
+                Queue is clear
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Review panel */}
+        <div className="lg:col-span-2">
+          {selected ? (() => {
+            const item = items.find(i => i.id === selected)!;
+            if (!item) return null;
+            return (
+              <Card className="p-5 sticky top-0">
+                <h3 className="font-semibold mb-4">Review Record</h3>
+                <div className="space-y-3 text-sm">
+                  <div className="p-3 bg-secondary/50 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Article</div>
+                    <div className="font-medium text-foreground text-sm leading-snug">{item.article}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{item.source}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-secondary/30 rounded-lg text-center">
+                      <div className="text-xs text-muted-foreground">Current Mapping</div>
+                      <div className="font-mono font-bold text-lg text-foreground">{item.mapped}</div>
+                    </div>
+                    <div className="p-3 bg-primary/10 rounded-lg text-center">
+                      <div className="text-xs text-muted-foreground">Suggested Fix</div>
+                      <div className="font-mono font-bold text-lg text-primary">{item.suggested}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Confidence</span>
+                    <span className="font-mono font-semibold" style={{ color: item.confidence >= 0.7 ? "#10B981" : item.confidence >= 0.5 ? "#F59E0B" : "#EF4444" }}>{Math.round(item.confidence * 100)}%</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Reported by</span>
+                    <Badge variant={item.reporter === "user" ? "hype" : "default"} className="text-xs">{item.reporter === "user" ? "User report" : "Auto-flagged"}</Badge>
+                  </div>
+                </div>
+                <div className="mt-5 space-y-2">
+                  <Btn variant="primary" className="w-full justify-center" icon={<Check size={13} />} onClick={() => { resolve(item.id, "approve"); }}>Approve & Remap to {item.suggested}</Btn>
+                  <Btn variant="secondary" className="w-full justify-center" icon={<Archive size={13} />} onClick={() => resolve(item.id, "dismiss")}>Dismiss Report</Btn>
+                  <Btn variant="secondary" className="w-full justify-center" icon={<RefreshCw size={13} />} onClick={() => resolve(item.id, "reroute")}>Re-route to Fuzzy Search</Btn>
+                </div>
+              </Card>
+            );
+          })() : (
+            <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+              <div className="text-center">
+                <AlertTriangle size={24} className="mx-auto mb-2 opacity-30" />
+                <p>Select a record to review</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+// ────────────────────────────────────────────────
+// PAGE 22: Admin Users
+// ────────────────────────────────────────────────
 
 export default AdminMappingPage;

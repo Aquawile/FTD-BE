@@ -1,41 +1,13 @@
-// ────────────────────────────────────────────────
-// ALERTS PAGE
-// ────────────────────────────────────────────────
+import { useState } from "react";
+import { Page } from "../../app/types";
+import { Badge, Btn, Card, cn } from "../ui";
+import { Activity, AlertTriangle, ArrowRight, Check, FileText } from "lucide-react";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
-import { useState, useEffect } from "react";
-import { Card, Badge, Button as Btn, ChevronLeft, ChevronRight, Bell, Download, FileText, CheckCircle } from "./ui";
-import { cn } from "../utils";
-import { navigate } from "../router";
-
-interface AlertsPageProps {
-  navigate: (p: string) => void;
-}
-
-export function AlertsPage({ navigate }: AlertsPageProps) {
+function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
   const [filter, setFilter] = useState("all");
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch("/api/alerts")
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { if (!cancelled) { setAlerts(data); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setError(true); setLoading(false); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { /* cancelled = true */ };
-  }, []);
-
-  const filterOptions = ["all", "unread", "high", "medium", "low"] as const;
-  const filtered = alerts.filter(a => {
-    if (filter === "all") return true;
-    if (filter === "unread") return !a.read;
-    return a.severity === filter;
-  });
-
-  const alertTypeIcon = (type: string) => type === "filing" ? <FileText size={12} /> : type === "narrative_shift" ? <Activity size={12} /> : <AlertTriangle size={12} />;
+  const filtered = filter === "all" ? ALERTS_DATA : filter === "unread" ? ALERTS_DATA.filter(a => !a.read) : ALERTS_DATA.filter(a => a.severity === filter);
+  const alertTypeIcon = (type: string) => type === "filing" ? <FileText size={14} /> : type === "narrative_shift" ? <Activity size={14} /> : <AlertTriangle size={14} />;
   const alertTypeColor = (t: string) => t === "filing" ? "#10B981" : t === "narrative_shift" ? "#F59E0B" : "#F97316";
 
   return (
@@ -43,61 +15,63 @@ export function AlertsPage({ navigate }: AlertsPageProps) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Alerts</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{alerts.filter(a => !a.read).length} unread notifications</p>
+          <p className="text-muted-foreground text-sm mt-0.5">{ALERTS_DATA.filter(a => !a.read).length} unread notifications</p>
         </div>
-        <Btn variant="secondary" size="sm" icon={<CheckCircle size={12} />>Mark all read</Btn>
+        <Btn variant="secondary" size="sm" icon={<Check size={12} />}>Mark all read</Btn>
       </div>
       <div className="flex gap-2 mb-4 flex-wrap">
-        {(["all", "unread", "high", "medium", "low"] as const).map(f => (
+        {["all", "unread", "high", "medium", "low"].map(f => (
           <button key={f} onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs border capitalize cursor-pointer transition-all", filter === f ? "bg-primary/15 text-primary border-primary/30" : "bg-secondary text-muted-foreground border-border hover:border-primary/20")}>{f}</button>
         ))}
       </div>
-
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-
-      {error && (
-        <Card className="p-3 text-sm text-red-400">Unable to load alerts</Card>
-      )}
-
-      {!loading && !error && (
-        <div className="space-y-3">
-          {filtered.map(a => (
-            <Card key={a.id} className={cn("p-4 transition-all cursor-pointer hover:border-primary/30", !a.read && "border-primary/20 bg-primary/3")}>
-              <div className="flex items-start gap-2">
-                <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", a.read ? "bg-secondary" : "bg-orange-400")} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <span className="font-mono font-semibold text-xs text-foreground">{a.ticker ?? ""}</span>
-                    <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{a.message}</p>
-                  <div className="text-xs text-muted-foreground/60 mt-1">{a.time}</div>
+      <div className="space-y-3">
+        {filtered.map(a => (
+          <Card key={a.id} className={cn("p-4 transition-all cursor-pointer hover:border-primary/30", !a.read && "border-primary/20 bg-primary/3")}>
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${alertTypeColor(a.type)}15` }}>
+                <span style={{ color: alertTypeColor(a.type) }}>{alertTypeIcon(a.type)}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="font-mono font-bold text-sm text-foreground">{a.ticker}</span>
+                  <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.severity}</Badge>
+                  <Badge variant="neutral" className="text-xs capitalize">{a.type.replace("_", " ")}</Badge>
+                  {!a.read && <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />}
                 </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-      {loading && (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i} className="p-4"><div className="animate-pulse space-y-2"><div className="h-3 bg-secondary rounded w-1/2" /><div className="h-3 bg-secondary rounded w-full" /></div></Card>
+                <p className="text-sm text-foreground">{a.message}</p>
+                <p className="text-xs text-muted-foreground mt-1">{a.time}</p>
+              </div>
+              <Btn variant="ghost" size="sm" onClick={() => navigate("ticker")} icon={<ArrowRight size={12} />}>View</Btn>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Subscription settings */}
+      <Card className="mt-6 p-5">
+        <h3 className="font-semibold mb-4">Alert Subscriptions</h3>
+        <div className="space-y-3 text-sm">
+          {TICKERS.slice(0, 5).map(t => (
+            <div key={t.symbol} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold text-xs text-foreground w-12">{t.symbol}</span>
+                <span className="text-xs text-muted-foreground">{t.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={cn("relative inline-flex w-8 h-5 rounded-full cursor-pointer transition-colors shrink-0", "bg-primary")}>
+                  <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform translate-x-3.5" />
+                </div>
+              </div>
+            </div>
           ))}
-        )}
-
-      {!loading && !error && alerts.length === 0 && (
-        <Card className="p-4 text-center text-sm text-muted-foreground">No alerts</Card>
-      )}
-
-      {error && (
-        <Card className="p-4 text-center text-sm text-red-400">Unable to load alerts</Card>
-      )}
+        </div>
+      </Card>
     </div>
   );
 }
+
+// ────────────────────────────────────────────────
+// PAGE 19: Account Settings (Profile)
+// ────────────────────────────────────────────────
 
 export default AlertsPage;

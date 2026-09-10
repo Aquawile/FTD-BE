@@ -2,7 +2,7 @@
 // Ticker Dashboard Hooks
 // ────────────────────────────────────────────────
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { TrackedTicker } from "../types";
 
 export function useTickerSearch(query: string, options?: { limit?: number; sector?: string; sortBy?: string }) {

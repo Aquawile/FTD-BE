@@ -1,28 +1,17 @@
-// ────────────────────────────────────────────────
-// TICKER TIMELINE PAGE (Fixed)
-// ────────────────────────────────────────────────
+import { useState } from "react";
+import { Page } from "../../app/types";
+import { Badge, Btn, Card, Modal, cn, getHypeColor } from "../ui";
+import { Activity, ArrowRight, Bell, BookOpen, ChevronLeft, Download, FileText, Globe, RefreshCw, Users } from "lucide-react";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
-import { useState, useEffect } from "react";
-import { Card, Badge, Button as Btn, ChevronLeft, ChevronRight, Bell, Download, FileText, Activity, Globe, Users, BarChart2, RefreshCw, BookOpen, ArrowRight } from "./ui";
-import { cn } from "../utils";
-import { navigate } from "../router";
-
-interface TimelinePageProps {
-  ticker: string;
-  navigate: (p: string) => void;
-}
-
-export function TimelinePage({ ticker, navigate }: TimelinePageProps) {
+function TimelinePage({ navigate, ticker }: { navigate: (p: Page) => void; ticker: string }) {
   const [showExport, setShowExport] = useState(false);
-  const typeColors = {
+  const typeColors: Record<string, string> = {
     filing: "#10B981", narrative: "#F59E0B", news: "#3B82F6", social: "#F97316", earnings: "#8B5CF6",
   };
-  const typeIcons = {
+  const typeIcons: Record<string, React.ReactNode> = {
     filing: <FileText size={12} />, narrative: <Activity size={12} />, news: <Globe size={12} />, social: <Users size={12} />, earnings: <BarChart2 size={12} />,
   };
-
-  const getHypeColor = (h: number) => h > 70 ? "#F59E0B" : h > 40 ? "#F59E0B" : "#EF4444";
-  const getEvidenceColor = (e: number) => e > 70 ? "#10B981" : e > 40 ? "#F59E0B" : "#EF4444";
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -46,7 +35,7 @@ export function TimelinePage({ ticker, navigate }: TimelinePageProps) {
         <div className="h-16 flex items-end gap-1">
           {[54, 58, 61, 67, 71, 75, 68, 73, 79, 84, 81, 84].map((v, i) => (
             <div key={i} className="flex-1 rounded-t transition-all" style={{ height: `${(v / 100) * 64}px`, background: `linear-gradient(180deg, ${getHypeColor(v)}, ${getHypeColor(v)}80)` }} />
-          )}
+          ))}
         </div>
         <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
           <span>May 1</span><span>May 15</span><span>Jun 1</span><span>Jun 18</span>
@@ -55,7 +44,7 @@ export function TimelinePage({ ticker, navigate }: TimelinePageProps) {
 
       {/* Legend */}
       <div className="flex items-center gap-4 mb-4 flex-wrap">
-        {Object.entries({ filing: "#10B981", narrative: "#F59E0B", news: "#3B82F6", social: "#F97316", earnings: "#8B5CF6" }).map(([t, c]) => (
+        {Object.entries(typeColors).map(([t, c]) => (
           <div key={t} className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <div className="w-2 h-2 rounded-full" style={{ background: c }} />
             <span className="capitalize">{t}</span>
@@ -73,7 +62,7 @@ export function TimelinePage({ ticker, navigate }: TimelinePageProps) {
                 <span style={{ color: "#fff" }}>{typeIcons[ev.type]}</span>
               </div>
               <Card className="flex-1 p-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge className="text-xs capitalize" style={{ background: `${typeColors[ev.type]}15`, color: typeColors[ev.type], borderColor: `${typeColors[ev.type]}30` }}>{ev.type}</Badge>
@@ -99,15 +88,11 @@ export function TimelinePage({ ticker, navigate }: TimelinePageProps) {
       </div>
 
       {showExport && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background rounded-xl p-6 w-full max-w-md">
-            <h3 className="font-semibold mb-4">Export Timeline View</h3>
-            <p className="text-sm text-muted-foreground mb-4">Select your preferred export format. Source citation URLs will be included.</p>
+        <Modal title="Export Timeline View" onClose={() => setShowExport(false)} size="sm">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Select your preferred export format. Source citation URLs will be included.</p>
             <div className="space-y-2">
-              {[
-                { format: "CSV", desc: "Spreadsheet with all event data and scores", icon: <FileText size={16} /> },
-                { format: "PDF", desc: "Formatted report with timeline layout and citations", icon: <BookOpen size={16} /> }
-              ].map(f => (
+              {[{ format: "CSV", desc: "Spreadsheet with all event data and scores", icon: <FileText size={16} /> }, { format: "PDF", desc: "Formatted report with timeline layout and citations", icon: <BookOpen size={16} /> }].map(f => (
                 <button key={f.format} className="w-full flex items-center gap-3 p-3 bg-secondary/50 rounded-xl border border-border hover:border-primary/30 cursor-pointer transition-all text-left" onClick={() => setShowExport(false)}>
                   <div className="text-primary">{f.icon}</div>
                   <div>
@@ -116,24 +101,17 @@ export function TimelinePage({ ticker, navigate }: TimelinePageProps) {
                   </div>
                   <ArrowRight size={14} className="ml-auto text-muted-foreground" />
                 </button>
-              )}
+              ))}
             </div>
           </div>
-        </div>
-      </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
-const getHypeColor = (h: number) => h > 70 ? "#F59E0B" : h > 40 ? "#F59E0B" : "#EF4444";
-const getEvidenceColor = (e: number) => e > 70 ? "#10B981" : e > 40 ? "#F59E0B" : "#EF4444";
-
-const typeColors = {
-  filing: "#10B981", narrative: "#F59E0B", news: "#3B82F6", social: "#F97316", earnings: "#8B5CF6",
-};
-
-const typeIcons = {
-  filing: <FileText size={12} />, narrative: <Activity size={12} />, news: <Globe size={12} />, social: <Users size={12} />, earnings: <BarChart2 size={12} />,
-};
+// ────────────────────────────────────────────────
+// PAGE 11: SEC Filings
+// ────────────────────────────────────────────────
 
 export default TimelinePage;
