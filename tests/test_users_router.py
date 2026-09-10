@@ -24,7 +24,7 @@ def _postgres_api_test_available() -> bool:
         os.environ.setdefault("PGPORT", "5432")
         os.environ.setdefault("PGDATABASE", "ftd_lakehouse_api_test")
         os.environ.setdefault("PGUSER", "ftd_app")
-        os.environ.setdefault("PGPASSWORD", "5Ou+BkyuQT3izP72219jMLy2AobRdI3f")
+        os.environ.setdefault("PGPASSWORD", "temp_password_123")
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT current_database(), current_user")
@@ -174,7 +174,7 @@ class TestUsersRouterPostgres(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls._api_test_db = "ftd_lakehouse_api_test"
-        cls._pg_password = "5Ou+BkyuQT3izP72219jMLy2AobRdI3f"
+        cls._pg_password = "temp_password_123"
         cls._test_firebase_uid = "test-firebase-uid-api"
         cls._test_email = "test-api@example.com"
 

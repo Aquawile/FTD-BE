@@ -5,7 +5,7 @@ LOG_FILE="/var/log/lakehouse-pipeline.log"
 PGHOST="10.168.0.3"
 PGDATABASE="ftd_lakehouse_staging"
 PGUSER="ftd_app"
-PGPASSWORD="5Ou+BkyuQT3izP72219jMLy2AobRdI3f"
+PGPASSWORD="temp_password_123"
 PGPORT="5432"
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) Starting lakehouse pipeline" | tee -a "$LOG_FILE"
