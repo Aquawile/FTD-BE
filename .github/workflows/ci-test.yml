@@ -21,9 +21,13 @@ jobs:
           import xml.etree.ElementTree as ET
           tree = ET.parse('unit-test-results.xml')
           root = tree.getroot()
-          total = int(root.get('tests', 0))
-          skipped = int(root.get('skipped', 0))
-          failures = int(root.get('failures', 0))
+          total = 0
+          skipped = 0
+          failures = 0
+          for ts in root.iter('testsuite'):
+              total += int(ts.get('tests', 0))
+              skipped += int(ts.get('skipped', 0))
+              failures += int(ts.get('failures', 0))
           if total == 0:
               print('ERROR: No unit tests collected. Failing.')
               exit(1)
