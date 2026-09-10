@@ -101,7 +101,7 @@ function App() {
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
-      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} onReport={() => setShowReport(true)} />;
+      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} onReport={() => setShowReport(true)} />;
       case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} />;
       case "ticker-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} />;
       case "ticker-community": return <CommunityPage navigate={navigate} ticker={selectedTicker} />;

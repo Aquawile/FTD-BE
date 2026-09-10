@@ -1,14 +1,70 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, ScorePill, cn, getHypeColor, getEvidenceColor } from "../ui";
-import { AlertTriangle, Bell, Briefcase, CheckCircle, Clock, Download, ExternalLink, FileText, Flag, Info, Sparkles, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, Bell, Briefcase, CheckCircle, Clock, Download, ExternalLink, FileText, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { apiRequest, API_BASE } from "../../app/api";
 
-function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) => void; ticker: string; onReport: () => void }) {
+interface TickerData {
+  symbol: string;
+  name: string;
+  sector: string;
+  hype: number;
+  evidence: number;
+  price: number;
+  change: number;
+}
+
+function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null; onReport: () => void }) {
   const [tab, setTab] = useState("overview");
   const [articles, setArticles] = useState(NEWS_ARTICLES.map(a => ({ ...a })));
-  const t = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
+  const [tickerData, setTickerData] = useState<TickerData | null>(null);
+  const [loading, setLoading] = useState(true);
   const tabs = ["overview", "news", "evidence", "community", "filings", "timeline"];
+
+  const mockTicker = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      if (!firebaseUser) {
+        setTickerData(mockTicker);
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await apiRequest(`${API_BASE}/tickers/${ticker}/prices`, firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) {
+          const latest = data[data.length - 1];
+          const currentPrice = latest?.current ?? mockTicker.price;
+          const prevClose = latest?.previous_close ?? mockTicker.price;
+          const change = latest?.percent_change ?? mockTicker.change;
+          setTickerData({
+            symbol: ticker,
+            name: mockTicker.name,
+            sector: mockTicker.sector,
+            hype: mockTicker.hype,
+            evidence: mockTicker.evidence,
+            price: Number(currentPrice),
+            change: Number(change),
+          });
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setTickerData(mockTicker);
+          setLoading(false);
+        }
+      }
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, [ticker, firebaseUser, mockTicker]);
+
+  const t = tickerData || mockTicker;
 
   const flagArticle = (id: number) => setArticles(prev => prev.map(a => a.id === id ? { ...a, flagged: !a.flagged } : a));
 
