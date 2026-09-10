@@ -11,12 +11,19 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.auth.exceptions import AuthenticationError
+from app.auth.exceptions import AuthenticationError, AuthenticationInternalError
 from app.auth.models import ErrorResponse
 from app.routes import dashboard, filings, search, tickers, users, workspaces, alerts
 from app.auth.router import router as auth_router
 from app.auth.middleware import AuthMiddleware
-from app.services.exceptions import UserAlreadyExistsError, UserNotFoundError, UserValidationError
+from app.services.exceptions import (
+    DataValidationError,
+    FilingNotFoundError,
+    TickerNotFoundError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+    UserValidationError,
+)
 
 logger = logging.getLogger("app")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -111,6 +118,33 @@ async def user_validation_error_handler(request: Request, exc: UserValidationErr
     logger.warning("http:user_validation_error detail=%s", exc)
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": str(exc) or "Validation error"},
+    )
+
+
+@app.exception_handler(TickerNotFoundError)
+async def ticker_not_found_handler(request: Request, exc: TickerNotFoundError) -> JSONResponse:
+    logger.warning("http:ticker_not_found detail=%s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": str(exc) or "Ticker not found"},
+    )
+
+
+@app.exception_handler(FilingNotFoundError)
+async def filing_not_found_handler(request: Request, exc: FilingNotFoundError) -> JSONResponse:
+    logger.warning("http:filing_not_found detail=%s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": str(exc) or "Filing not found"},
+    )
+
+
+@app.exception_handler(DataValidationError)
+async def data_validation_error_handler(request: Request, exc: DataValidationError) -> JSONResponse:
+    logger.warning("http:data_validation_error detail=%s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
         content={"detail": str(exc) or "Validation error"},
     )
 
