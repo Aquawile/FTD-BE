@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Input, cn } from "../ui";
 import { Check, Copy, ExternalLink, Lock, Mail, RefreshCw } from "lucide-react";
