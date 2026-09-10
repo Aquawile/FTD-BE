@@ -47,7 +47,7 @@ type Page =
   | "admin" | "admin-mapping" | "admin-users" | "admin-system";
 
 // ────────────────────────────────────────────────
-// Mock Data
+// Mock Data (PRESERVED — not rendered in active UI)
 // ────────────────────────────────────────────────
 const TICKERS = [
   { symbol: "NVDA", name: "NVIDIA Corporation", hype: 84, evidence: 71, sector: "Semiconductors", change: +4.2, price: 873.50 },
@@ -164,6 +164,16 @@ const ALERTS_DATA = [
 // ────────────────────────────────────────────────
 // API Response Types
 // ────────────────────────────────────────────────
+interface TickerHeaderInfo {
+  symbol: string;
+  name: string;
+  sector: string | null;
+  price: number | null;
+  evidence: number;
+  hype: number;
+  change: number;
+}
+
 interface TrackedTicker {
   symbol: string;
   name: string;
@@ -174,7 +184,6 @@ interface TrackedTicker {
   change_percent: number | null;
   price_as_of: string | null;
 }
-
 interface WorkspaceInfo {
   id: number;
   name: string;
@@ -1248,8 +1257,8 @@ function TickerDashboard({ navigate, ticker, onReport, firebaseUser }: { navigat
   }>>([]);
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [articlesError, setArticlesError] = useState(false);
-
-  const t = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
+  const [tickerData, setTickerData] = useState<TickerHeaderInfo | null>(null);
+  const t = tickerData || TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
   const tabs = ["overview", "news", "evidence", "community", "filings", "timeline"];
 
   const flagArticle = (id: number) => setArticles(prev => prev.map(a => a.id === id ? { ...a, flagged: !a.flagged } : a));
@@ -1258,6 +1267,24 @@ function TickerDashboard({ navigate, ticker, onReport, firebaseUser }: { navigat
     if (!firebaseUser) return;
     let cancelled = false;
     const fetchNews = async () => {
+      if (!tickerData) {
+        try {
+          const trackedRes = await apiRequest(`${API_BASE}/tickers/tracked?limit=500`, firebaseUser);
+          if (trackedRes.ok) {
+            const trackedData = await trackedRes.json();
+            const match = Array.isArray(trackedData) ? trackedData.find((t: any) => t.symbol === ticker) : null;
+            if (match && !cancelled) setTickerData({
+              symbol: match.symbol,
+              name: match.name,
+              sector: match.sector,
+              price: match.current_price,
+              evidence: match.evidence_score || 0,
+              hype: match.hype_score || 0,
+              change: match.change_percent || 0,
+            });
+          }
+        } catch {}
+      }
       setArticlesLoading(true);
       try {
         const end = new Date().toISOString().split("T")[0];
