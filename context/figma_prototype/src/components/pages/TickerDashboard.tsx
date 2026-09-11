@@ -88,9 +88,13 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
         return;
       }
       try {
+        const today = new Date();
+        const start = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        const end = today.toISOString().split("T")[0];
+
         const [pricesRes, newsRes] = await Promise.all([
           apiRequest(`/tickers/${ticker}/prices`, firebaseUser),
-          apiRequest(`/tickers/${ticker}/news`, firebaseUser),
+          apiRequest(`/tickers/${ticker}/news?start=${start}&end=${end}&limit=50`, firebaseUser),
         ]);
 
         if (!cancelled) {
@@ -244,21 +248,28 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                   <span className="text-xs text-muted-foreground">{news.length} articles found</span>
                 </div>
                 <div className="space-y-3">
-                  {news.slice(0, 5).map((a, i) => (
-                    <Card key={i} className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs text-muted-foreground">
-                              {a.normalized_calendar_date || a.ingest_date || "Unknown date"}
-                            </span>
+                  {news.slice(0, 5).map((a, i) => {
+                    const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
+                    const headline = a.content_body.split(". ")[0] + "." || "Untitled";
+                    const summary = a.content_body.substring(headline.length).trim() || a.content_body;
+                    return (
+                      <Card key={i} className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="neutral" className="text-xs">{sourceLabel}</Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {a.normalized_calendar_date || a.ingest_date || "Unknown date"}
+                              </span>
+                            </div>
+                            <div className="font-semibold text-sm text-foreground mb-2 leading-tight">{headline}</div>
+                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{summary}</p>
                           </div>
-                          <p className="text-sm text-foreground leading-relaxed line-clamp-3">{a.content_body}</p>
                         </div>
-                      </div>
-                    </Card>
-                  ))}
-                  {news.length === 0 && (
+                      </Card>
+                    );
+                  })}
+                  {news.length === 0 && !loading && (
                     <p className="text-xs text-muted-foreground">No news articles found for {t.symbol}.</p>
                   )}
                 </div>
@@ -318,49 +329,74 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
           <div className="space-y-3">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">All News for {t.symbol}</h3>
-              <span className="text-xs text-muted-foreground">{news.length} articles</span>
+              <span className="text-xs text-muted-foreground">{news.length} API articles{articles.length > 0 ? `, ${articles.length} mock` : ""}</span>
             </div>
-            {articles.map(a => (
-              <Card key={a.id} className="p-5">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="neutral" className="text-xs">{a.source}</Badge>
-                      <span className="text-xs text-muted-foreground">{a.time}</span>
-                      {a.flagged && <Badge variant="hype" className="text-xs"><Flag size={8} /> Reported</Badge>}
-                    </div>
-                    <h4 className="font-semibold text-sm text-foreground mb-2 leading-snug">{a.headline}</h4>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{a.summary}</p>
-                    {a.claims.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        {a.claims.map(c => <Badge key={c} variant="outline" className="text-xs">{c}</Badge>)}
+            {news.length > 0 ? (
+              news.map((a, i) => {
+                const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
+                const headline = (a.content_body.split(". ")[0] + ".") || "Untitled";
+                const summary = a.content_body.substring(headline.length).trim() || a.content_body;
+                return (
+                  <Card key={`api-${i}`} className="p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="neutral" className="text-xs">{sourceLabel}</Badge>
+                          <span className="text-xs text-muted-foreground">{a.normalized_calendar_date || a.ingest_date || "Unknown date"}</span>
+                        </div>
+                        <h4 className="font-semibold text-sm text-foreground mb-2 leading-snug">{headline}</h4>
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{summary}</p>
                       </div>
-                    )}
-                    {a.evidenceLinks.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {a.evidenceLinks.map(l => <Badge key={l} variant="evidence" className="text-xs"><ExternalLink size={8} /> {l}</Badge>)}
+                    </div>
+                  </Card>
+                );
+              })
+            ) : (
+              articles.map(a => (
+                <Card key={a.id} className="p-5">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="neutral" className="text-xs">{a.source}</Badge>
+                        <span className="text-xs text-muted-foreground">{a.time}</span>
+                        {a.flagged && <Badge variant="hype" className="text-xs"><Flag size={8} /> Reported</Badge>}
                       </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <div className="text-right space-y-1">
-                      <div className="text-xs text-muted-foreground">Hype</div>
-                      <div className="font-mono text-sm font-bold" style={{ color: getHypeColor(a.hype) }}>{a.hype}</div>
+                      <h4 className="font-semibold text-sm text-foreground mb-2 leading-snug">{a.headline}</h4>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{a.summary}</p>
+                      {a.claims.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          {a.claims.map(c => <Badge key={c} variant="outline" className="text-xs">{c}</Badge>)}
+                        </div>
+                      )}
+                      {a.evidenceLinks.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {a.evidenceLinks.map(l => <Badge key={l} variant="evidence" className="text-xs"><ExternalLink size={8} /> {l}</Badge>)}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right space-y-1">
-                      <div className="text-xs text-muted-foreground">Evidence</div>
-                      <div className="font-mono text-sm font-bold" style={{ color: getEvidenceColor(a.evidence) }}>{a.evidence}</div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="text-right space-y-1">
+                        <div className="text-xs text-muted-foreground">Hype</div>
+                        <div className="font-mono text-sm font-bold" style={{ color: getHypeColor(a.hype) }}>{a.hype}</div>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <div className="text-xs text-muted-foreground">Evidence</div>
+                        <div className="font-mono text-sm font-bold" style={{ color: getEvidenceColor(a.evidence) }}>{a.evidence}</div>
+                      </div>
+                      <button
+                        onClick={() => { flagArticle(a.id); onReport(); }}
+                        className={cn("mt-2 p-2 rounded-lg border transition-all cursor-pointer", a.flagged ? "bg-orange-500/15 border-orange-500/30 text-orange-400" : "border-border text-muted-foreground hover:text-orange-400 hover:border-orange-500/30")}
+                      >
+                        <Flag size={13} />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => { flagArticle(a.id); onReport(); }}
-                      className={cn("mt-2 p-2 rounded-lg border transition-all cursor-pointer", a.flagged ? "bg-orange-500/15 border-orange-500/30 text-orange-400" : "border-border text-muted-foreground hover:text-orange-400 hover:border-orange-500/30")}
-                    >
-                      <Flag size={13} />
-                    </button>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))
+            )}
+            {news.length === 0 && articles.length === 0 && (
+              <p className="text-xs text-muted-foreground">No articles found for {t.symbol}.</p>
+            )}
           </div>
         )}
 

@@ -103,7 +103,8 @@ def get_ticker_news(
             target_ticker,
             normalized_calendar_date,
             ingest_date,
-            content_body
+            content_body,
+            'gnews' AS source
         FROM staging_gnews
         WHERE target_ticker = %s
           AND normalized_calendar_date >= %s
