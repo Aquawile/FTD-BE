@@ -35,7 +35,7 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
       setLoading(true);
       setError(false);
       try {
-        const res = await apiRequest(`${API_BASE}/tickers/tracked`, firebaseUser);
+        const res = await apiRequest("/tickers/tracked", firebaseUser);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!cancelled) {

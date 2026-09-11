@@ -34,7 +34,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
         return;
       }
       try {
-        const res = await apiRequest(`${API_BASE}/tickers/${ticker}/prices`, firebaseUser);
+        const res = await apiRequest(`/tickers/${ticker}/prices`, firebaseUser);
         if (!res.ok) throw new Error("failed");
         const data = await res.json();
         if (!cancelled) {
