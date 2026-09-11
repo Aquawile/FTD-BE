@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
-import { AlertCircle, ChevronRight, Radio, RefreshCw } from "lucide-react";
+import { Activity, AlertCircle, ChevronRight, Database, Radio, RefreshCw, Target } from "lucide-react";
 
 function AdminDashboard({ navigate }: { navigate: (p: Page) => void }) {
   const accuracy = 76; // Below 80% threshold

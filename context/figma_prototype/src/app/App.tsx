@@ -5,11 +5,11 @@ import { firebaseAuth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
-import { apiRequest, API_BASE } from "./api";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "./mockData";
+import { apiRequest, API_BASE } from "../api";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
 
-import { AppShell } from "./components/Shell";
-import { ReportModal } from "./components/pages/ReportModal";
+import { AppShell } from "../components/Shell";
+import ReportModal from "../components/pages/ReportModal";
 
 import {
   LoginPage,
@@ -35,7 +35,7 @@ import {
   AdminUsersPage,
   AdminSystemPage,
   LegacyLandingPage,
-} from "./components/pages";
+} from "../components/pages";
 
 export { firebaseAuth, API_BASE };
 
@@ -100,8 +100,8 @@ function App() {
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
-      case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
-      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} onReport={() => setShowReport(true)} />;
+      case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
+      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} onReport={() => setShowReport(true)} />;
       case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} />;
       case "ticker-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} />;
       case "ticker-community": return <CommunityPage navigate={navigate} ticker={selectedTicker} />;

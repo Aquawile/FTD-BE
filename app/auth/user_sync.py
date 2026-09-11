@@ -68,6 +68,19 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
                     logger.error("user_sync_failed: reason=database_error firebase_uid=%s", firebase_uid, exc_info=True)
                     raise
 
+                constraint_name = getattr(getattr(exc, "diag", None), "constraint_name", "") or ""
+                if constraint_name == "users_email_key":
+                    cur.execute(
+                        "UPDATE users SET firebase_uid = %s WHERE email = %s "
+                        "RETURNING id, firebase_uid, email, is_active, created_at, updated_at",
+                        (firebase_uid, normalized_email),
+                    )
+                    linked_row = cur.fetchone()
+                    conn.commit()
+                    if linked_row is not None:
+                        logger.info("user_sync_linked: firebase_uid=%s user_id=%s", firebase_uid, linked_row["id"])
+                        return _row_to_user(linked_row)
+
                 cur.execute(
                     "SELECT id, firebase_uid, email, is_active, created_at, updated_at "
                     "FROM users WHERE firebase_uid = %s",

@@ -1,16 +1,163 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, ScorePill, cn, getHypeColor, getEvidenceColor } from "../ui";
-import { AlertTriangle, Bell, Briefcase, CheckCircle, Clock, Download, ExternalLink, FileText, Flag, Info, Sparkles, TrendingDown, TrendingUp, Users } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { AlertTriangle, Bell, Briefcase, CheckCircle, Clock, Download, ExternalLink, FileText, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { TICKERS } from "../../mockData";
 
-function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) => void; ticker: string; onReport: () => void }) {
+interface NewsArticle {
+  id: number;
+  ticker: string;
+  headline: string;
+  source: string;
+  time: string;
+  summary: string;
+  hype: number;
+  evidence: number;
+  claims: string[];
+  evidenceLinks: string[];
+  flagged: boolean;
+}
+import { apiRequest } from "../../api";
+
+interface TrackedTicker {
+  symbol: string;
+  name: string;
+  sector: string | null;
+  current_price: number | null;
+  evidence_score: number | null;
+  hype_score: number | null;
+  change_percent: number | null;
+  price_as_of: string | null;
+}
+
+interface PriceRow {
+  normalized_calendar_date: string | null;
+  current: number | null;
+  change: number | null;
+  percent_change: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  previous_close: number | null;
+}
+
+interface NewsRow {
+  target_ticker: string;
+  normalized_calendar_date: string | null;
+  ingest_date: string | null;
+  content_body: string;
+}
+
+interface TickerData {
+  symbol: string;
+  name: string;
+  sector: string;
+  hype: number;
+  evidence: number;
+  price: number;
+  change: number;
+}
+
+function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null; onReport: () => void }) {
   const [tab, setTab] = useState("overview");
-  const [articles, setArticles] = useState(NEWS_ARTICLES.map(a => ({ ...a })));
-  const t = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
+  const [tickerData, setTickerData] = useState<TickerData | null>(null);
+  const [prices, setPrices] = useState<PriceRow[]>([]);
+  const [news, setNews] = useState<NewsRow[]>([]);
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(true);
   const tabs = ["overview", "news", "evidence", "community", "filings", "timeline"];
 
+  const mockTicker = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      if (!firebaseUser) {
+        setTickerData({
+          symbol: ticker,
+          name: mockTicker.name,
+          sector: mockTicker.sector,
+          hype: mockTicker.hype,
+          evidence: mockTicker.evidence,
+          price: mockTicker.price,
+          change: mockTicker.change,
+        });
+        setArticles(NEWS_ARTICLES.filter(a => a.ticker === ticker || a.ticker === ticker.slice(0, 3)));
+        setLoading(false);
+        return;
+      }
+      try {
+        const [pricesRes, newsRes] = await Promise.all([
+          apiRequest(`/tickers/${ticker}/prices`, firebaseUser),
+          apiRequest(`/tickers/${ticker}/news`, firebaseUser),
+        ]);
+
+        if (!cancelled) {
+          if (pricesRes.ok) {
+            const priceData: PriceRow[] = await pricesRes.json();
+            setPrices(priceData);
+            const latest = priceData[priceData.length - 1];
+            if (latest) {
+              setTickerData({
+                symbol: ticker,
+                name: mockTicker.name,
+                sector: mockTicker.sector,
+                hype: mockTicker.hype,
+                evidence: mockTicker.evidence,
+                price: Number(latest.current ?? mockTicker.price),
+                change: Number(latest.percent_change ?? mockTicker.change),
+              });
+            }
+          }
+          if (newsRes.ok) {
+            const newsData: NewsRow[] = await newsRes.json();
+            setNews(newsData);
+          }
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, [ticker, firebaseUser, mockTicker]);
+
+  const t = tickerData || {
+    symbol: ticker,
+    name: mockTicker.name,
+    sector: mockTicker.sector,
+    hype: mockTicker.hype,
+    evidence: mockTicker.evidence,
+    price: mockTicker.price,
+    change: mockTicker.change,
+  };
+
   const flagArticle = (id: number) => setArticles(prev => prev.map(a => a.id === id ? { ...a, flagged: !a.flagged } : a));
+
+  const formatPrice = (price: number | null) => {
+    if (price === null) return "—";
+    return price.toLocaleString();
+  };
+
+  const getFinancialFromPrices = () => {
+    if (prices.length === 0) return null;
+    const latest = prices[prices.length - 1];
+    const prev = prices[prices.length - 2];
+    return {
+      currentPrice: latest.current ?? null,
+      previousClose: latest.previous_close ?? null,
+      open: latest.open ?? null,
+      high: latest.high ?? null,
+      low: latest.low ?? null,
+      dailyChange: latest.percent_change ?? null,
+    };
+  };
+
+  const financials = getFinancialFromPrices();
 
   return (
     <div className="flex flex-col h-full">
@@ -72,125 +219,85 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main col */}
             <div className="lg:col-span-2 space-y-5">
-              {/* AI Summary */}
+              {/* AI Summary - PLACEHOLDER */}
               <Card className="p-5 border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-transparent">
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles size={14} className="text-purple-400" />
                   <span className="text-sm font-semibold text-foreground">AI Research Summary</span>
-                  <Badge variant="purple">Updated 2h ago</Badge>
+                  <Badge variant="neutral">PLACEHOLDER</Badge>
                 </div>
-                <p className="text-sm text-foreground/90 leading-relaxed">
-                  NVIDIA's position in the AI chip market is substantially supported by verifiable financial disclosures. The Q1 FY2025 earnings beat ($26.04B revenue, 78% gross margin) and confirmed Blackwell production ramp provide strong evidence for near-term demand claims. However, community-driven price targets ($1,200–$2,000) significantly outpace disclosed guidance and carry near-zero evidentiary basis. The 13-point gap between Hype (84) and Evidence (71) reflects speculative premium above confirmed fundamentals.
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <Badge variant="evidence"><CheckCircle size={10} /> 3 confirmed claims</Badge>
-                  <Badge variant="hype"><AlertTriangle size={10} /> 2 unverified claims</Badge>
-                  <Badge variant="neutral"><Info size={10} /> 1 under review</Badge>
-                </div>
+                <p className="text-sm text-muted-foreground italic">AI research summary generation is not yet available. This will be populated with AI-generated insights once the inference engine is deployed.</p>
               </Card>
 
-              {/* Key claims */}
+              {/* Key claims - PLACEHOLDER */}
               <div>
                 <h3 className="font-semibold mb-3">Key Claims in Circulation</h3>
-                <div className="space-y-2">
-                  {[
-                    { claim: "Blackwell GPU production ahead of schedule by 18%", evidence: "high", source: "Q1 2024 Earnings Call + TSMC Report" },
-                    { claim: "$40B+ data center backlog for H2 2024", evidence: "medium", source: "Analyst estimates — not disclosed in filings" },
-                    { claim: "No viable GPU competitor for 3+ years", evidence: "low", source: "Social media consensus — not corroborated" },
-                    { claim: "Data center revenue $18.4B, 427% YoY growth", evidence: "confirmed", source: "SEC 10-K Annual Filing CY2024" },
-                  ].map(c => (
-                    <div key={c.claim} className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg border border-border/50">
-                      <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", c.evidence === "confirmed" ? "bg-emerald-400" : c.evidence === "high" ? "bg-blue-400" : c.evidence === "medium" ? "bg-yellow-400" : "bg-red-400")} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-foreground">{c.claim}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{c.source}</div>
-                      </div>
-                      <Badge variant={c.evidence === "confirmed" ? "evidence" : c.evidence === "high" ? "default" : c.evidence === "medium" ? "hype" : "danger"} className="shrink-0 text-xs capitalize">
-                        {c.evidence}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                <Card className="p-4">
+                  <p className="text-sm text-muted-foreground italic">Claims extraction from news and social data is not yet available. This section will display claims extracted from real articles with evidence scoring once the pipeline is processing data for this ticker.</p>
+                </Card>
               </div>
 
-              {/* Recent news */}
+              {/* Recent news - REAL DATA */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Recent News & Analysis</h3>
-                  <button onClick={() => setTab("news")} className="text-xs text-primary hover:underline cursor-pointer">View all →</button>
+                  <h3 className="font-semibold">Recent News</h3>
+                  <span className="text-xs text-muted-foreground">{news.length} articles found</span>
                 </div>
                 <div className="space-y-3">
-                  {articles.slice(0, 3).map(a => (
-                    <div key={a.id} className="flex items-start gap-3 p-4 bg-secondary/30 rounded-xl border border-border/50 group">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs text-muted-foreground">{a.source}</span>
-                          <span className="text-xs text-muted-foreground">·</span>
-                          <span className="text-xs text-muted-foreground">{a.time}</span>
-                        </div>
-                        <div className="text-sm font-medium text-foreground leading-tight mb-2">{a.headline}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono" style={{ color: getHypeColor(a.hype) }}>H:{a.hype}</span>
-                          <span className="text-xs font-mono" style={{ color: getEvidenceColor(a.evidence) }}>E:{a.evidence}</span>
+                  {news.slice(0, 5).map((a, i) => (
+                    <Card key={i} className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs text-muted-foreground">
+                              {a.normalized_calendar_date || a.ingest_date || "Unknown date"}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground leading-relaxed line-clamp-3">{a.content_body}</p>
                         </div>
                       </div>
-                      <button
-                        onClick={() => { flagArticle(a.id); onReport(); }}
-                        className={cn("p-1.5 rounded-lg border transition-all cursor-pointer opacity-0 group-hover:opacity-100", a.flagged ? "bg-orange-500/15 border-orange-500/30 text-orange-400 opacity-100" : "border-border text-muted-foreground hover:border-orange-500/30 hover:text-orange-400")}
-                        title="Report incorrect mapping"
-                      >
-                        <Flag size={12} />
-                      </button>
-                    </div>
+                    </Card>
                   ))}
+                  {news.length === 0 && (
+                    <p className="text-xs text-muted-foreground">No news articles found for {t.symbol}.</p>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Sidebar */}
             <div className="space-y-4">
-              {/* Financials */}
+              {/* Key Financials - REAL DATA (from prices endpoint) */}
               <Card className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Key Financials</h3>
                 <div className="space-y-2 text-sm">
-                  {[
-                    { label: "Revenue (Q1 FY25)", value: "$26.04B", source: "10-Q" },
-                    { label: "Gross Margin", value: "78.4%", source: "10-Q" },
-                    { label: "EPS (diluted)", value: "$6.12", source: "10-Q" },
-                    { label: "Data Center Rev.", value: "$22.6B", source: "10-Q" },
-                    { label: "Market Cap", value: "$2.15T", source: "NASDAQ" },
-                    { label: "P/E Ratio", value: "73.4x", source: "Derived" },
-                  ].map(f => (
-                    <div key={f.label} className="flex items-center justify-between py-1 border-b border-border/30 last:border-0">
-                      <span className="text-muted-foreground text-xs">{f.label}</span>
-                      <div className="text-right">
-                        <span className="font-mono text-xs text-foreground font-semibold">{f.value}</span>
-                        <Badge variant="neutral" className="ml-1 text-xs">{f.source}</Badge>
+                  {financials ? (
+                    [
+                      { label: "Current Price", value: `$${formatPrice(financials.currentPrice)}`, source: "Latest" },
+                      { label: "Previous Close", value: `$${formatPrice(financials.previousClose)}`, source: "Prior Day" },
+                      { label: "Open", value: `$${formatPrice(financials.open)}`, source: "Today" },
+                      { label: "High", value: `$${formatPrice(financials.high)}`, source: "Today" },
+                      { label: "Low", value: `$${formatPrice(financials.low)}`, source: "Today" },
+                      { label: "Daily Change", value: financials.dailyChange !== null ? `${financials.dailyChange > 0 ? "+" : ""}${financials.dailyChange.toFixed(2)}%` : "—", source: "Today" },
+                    ].map(f => (
+                      <div key={f.label} className="flex items-center justify-between py-1 border-b border-border/30 last:border-0">
+                        <span className="text-muted-foreground text-xs">{f.label}</span>
+                        <div className="text-right">
+                          <span className="font-mono text-xs text-foreground font-semibold">{f.value}</span>
+                          <Badge variant="neutral" className="ml-1 text-xs">{f.source}</Badge>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No price data available for {t.symbol}.</p>
+                  )}
                 </div>
               </Card>
 
-              {/* Source breakdown */}
+              {/* Source breakdown - PLACEHOLDER */}
               <Card className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Source Breakdown</h3>
-                <div className="space-y-2">
-                  {[
-                    { label: "SEC Filings", count: 12, color: "#10B981" },
-                    { label: "News Articles", count: 847, color: "#3B82F6" },
-                    { label: "Reddit Posts", count: 2341, color: "#F59E0B" },
-                    { label: "Analyst Reports", count: 28, color: "#8B5CF6" },
-                  ].map(s => (
-                    <div key={s.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ background: s.color }} />
-                        <span className="text-muted-foreground">{s.label}</span>
-                      </div>
-                      <span className="font-mono text-foreground">{s.count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-xs text-muted-foreground italic">Source breakdown is not yet available. This will show the count of data points from each source (SEC filings, news, etc.) when the analytics pipeline is active.</p>
               </Card>
 
               {/* Quick actions */}
@@ -209,13 +316,9 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
 
         {tab === "news" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex gap-2">
-                {["all", "news", "analysis", "reddit"].map(f => (
-                  <button key={f} className="px-3 py-1 rounded-lg text-xs border border-border bg-secondary text-muted-foreground hover:text-foreground cursor-pointer capitalize">{f}</button>
-                ))}
-              </div>
-              <div className="ml-auto text-xs text-muted-foreground">{articles.length} articles</div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">All News for {t.symbol}</h3>
+              <span className="text-xs text-muted-foreground">{news.length} articles</span>
             </div>
             {articles.map(a => (
               <Card key={a.id} className="p-5">
@@ -294,9 +397,5 @@ function TickerDashboard({ navigate, ticker, onReport }: { navigate: (p: Page) =
     </div>
   );
 }
-
-// ────────────────────────────────────────────────
-// PAGE 10: Narrative Timeline
-// ────────────────────────────────────────────────
 
 export default TickerDashboard;

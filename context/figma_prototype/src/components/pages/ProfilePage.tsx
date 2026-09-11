@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Input, cn } from "../ui";
-import { Check, Copy, ExternalLink, Lock, Mail, RefreshCw } from "lucide-react";
+import { Check, Copy, Edit2, ExternalLink, Lock, Mail, RefreshCw } from "lucide-react";
 
 function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean }) {
   const [activeTab, setActiveTab] = useState("profile");
