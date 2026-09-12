@@ -28,7 +28,8 @@ CREATE OR REPLACE EXTERNAL TABLE `ftd2026.lakehouse.staging_gnews`
   element_type STRING,
   content_body STRING,
   normalized_calendar_date TIMESTAMP,
-  ingest_date TIMESTAMP
+  ingest_date TIMESTAMP,
+  url STRING
 )
 OPTIONS (
   format = 'PARQUET',
@@ -50,7 +51,7 @@ CREATE OR REPLACE EXTERNAL TABLE `ftd2026.lakehouse.staging_sec`
   content_type STRING,
   raw_text_string STRING,
   period_of_report STRING,
-  filing_date TIMESTAMP,
+   filing_date TIMESTAMP,
   date_precision STRING
 )
 OPTIONS (
@@ -84,7 +85,8 @@ CREATE OR REPLACE EXTERNAL TABLE `ftd2026.lakehouse.unified_staging`
   raw_text_string STRING,
   period_of_report STRING,
   filing_date TIMESTAMP,
-  date_precision STRING
+  date_precision STRING,
+  url STRING
 )
 OPTIONS (
   format = 'PARQUET',

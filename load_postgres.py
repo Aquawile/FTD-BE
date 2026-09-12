@@ -66,7 +66,8 @@ def create_tables():
       element_type TEXT,
       content_body TEXT,
       normalized_calendar_date TIMESTAMP,
-      ingest_date TIMESTAMP
+      ingest_date TIMESTAMP,
+      url TEXT
     );
     """)
 
@@ -116,7 +117,8 @@ def create_tables():
       raw_text_string TEXT,
       period_of_report TEXT,
       filing_date TIMESTAMP,
-      date_precision TEXT
+      date_precision TEXT,
+      url TEXT
     );
     """)
 

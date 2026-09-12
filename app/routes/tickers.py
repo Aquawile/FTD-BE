@@ -71,6 +71,7 @@ class FilingSummaryResponse(BaseModel):
     accession_number: str
     filing_date: date | None = None
     element_count: int = 0
+    url: str | None = None
 
 
 @router.get("/{ticker}/filings", response_model=list[FilingSummaryResponse])
