@@ -113,6 +113,7 @@ def load_gnews_frames(settings: LakehouseSettings, sample: int | None = None, si
                         "element_type": "narrative",
                         "content_body": content_body,
                         "normalized_calendar_date": ingest_date,
+                        "url": article.get("url") or None,
                     }
                 )
                 rows_collected += 1

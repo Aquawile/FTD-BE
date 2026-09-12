@@ -104,7 +104,8 @@ def get_ticker_news(
             normalized_calendar_date,
             ingest_date,
             content_body,
-            'gnews' AS source
+            'gnews' AS source,
+            url
         FROM staging_gnews
         WHERE target_ticker = %s
           AND normalized_calendar_date >= %s
@@ -124,7 +125,16 @@ def get_ticker_filings(ticker: str) -> list[FilingSummary]:
             form_type,
             accession_number,
             MIN(filing_date) AS filing_date,
-            COUNT(*) AS element_count
+            COUNT(*) AS element_count,
+            CONCAT(
+                'https://www.sec.gov/Archives/edgar/data/',
+                REPLACE(target_cik, '-', ''),
+                '/',
+                REPLACE(accession_number, '-', ''),
+                '/',
+                accession_number,
+                '.htm'
+            ) AS url
         FROM staging_sec
         WHERE target_ticker = %s
         GROUP BY target_ticker, target_cik, form_type, accession_number

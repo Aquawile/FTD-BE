@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, ScorePill, cn, getHypeColor, getEvidenceColor } from "../ui";
-import { AlertTriangle, Bell, Briefcase, CheckCircle, Clock, Download, ExternalLink, FileText, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, Bell, Briefcase, CheckCircle, Download, ExternalLink, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { TICKERS } from "../../mockData";
 
 interface NewsArticle {
@@ -47,6 +47,18 @@ interface NewsRow {
   normalized_calendar_date: string | null;
   ingest_date: string | null;
   content_body: string;
+  source: string | null;
+  url: string | null;
+}
+
+interface FilingSummary {
+  target_ticker: string;
+  target_cik: string;
+  form_type: string;
+  accession_number: string;
+  filing_date: string | null;
+  element_count: number;
+  url: string | null;
 }
 
 interface TickerData {
@@ -65,8 +77,9 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [news, setNews] = useState<NewsRow[]>([]);
   const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [filings, setFilings] = useState<FilingSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const tabs = ["overview", "news", "evidence", "community", "filings", "timeline"];
+  const tabs = ["overview", "news", "evidence"];
 
   const mockTicker = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
 
@@ -92,9 +105,10 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
         const start = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
         const end = today.toISOString().split("T")[0];
 
-        const [pricesRes, newsRes] = await Promise.all([
+        const [pricesRes, newsRes, filingsRes] = await Promise.all([
           apiRequest(`/tickers/${ticker}/prices`, firebaseUser),
           apiRequest(`/tickers/${ticker}/news?start=${start}&end=${end}&limit=50`, firebaseUser),
+          apiRequest(`/tickers/${ticker}/filings`, firebaseUser),
         ]);
 
         if (!cancelled) {
@@ -117,6 +131,10 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
           if (newsRes.ok) {
             const newsData: NewsRow[] = await newsRes.json();
             setNews(newsData);
+          }
+          if (filingsRes?.ok) {
+            const filingsData: FilingSummary[] = await filingsRes.json();
+            setFilings(filingsData.slice(0, 10));
           }
           setLoading(false);
         }
@@ -205,7 +223,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
           {tabs.map(tab_ => (
             <button
               key={tab_}
-              onClick={() => { if (tab_ === "timeline") navigate("ticker-timeline"); else if (tab_ === "filings") navigate("ticker-filings"); else if (tab_ === "community") navigate("ticker-community"); else setTab(tab_); }}
+              onClick={() => { setTab(tab_); }}
               className={cn(
                 "px-4 py-2 text-sm border-b-2 transition-all cursor-pointer capitalize",
                 tab === tab_ ? "border-primary text-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground"
@@ -219,7 +237,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 max-w-7xl mx-auto w-full">
-        {tab === "overview" && (
+         {tab === "overview" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main col */}
             <div className="lg:col-span-2 space-y-5">
@@ -250,7 +268,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                 <div className="space-y-3">
                   {news.slice(0, 5).map((a, i) => {
                     const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
-                    const headline = a.content_body.split(". ")[0] + "." || "Untitled";
+                    const headline = (a.content_body.split(". ")[0] + ".") || "Untitled";
                     const summary = a.content_body.substring(headline.length).trim() || a.content_body;
                     return (
                       <Card key={i} className="p-4">
@@ -264,6 +282,12 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                             </div>
                             <div className="font-semibold text-sm text-foreground mb-2 leading-tight">{headline}</div>
                             <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{summary}</p>
+                            {a.url && (
+                              <a href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-1">
+                                <ExternalLink size={12} />
+                                View article
+                              </a>
+                            )}
                           </div>
                         </div>
                       </Card>
@@ -271,6 +295,38 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                   })}
                   {news.length === 0 && !loading && (
                     <p className="text-xs text-muted-foreground">No news articles found for {t.symbol}.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent SEC Filings - REAL DATA */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold">Recent SEC Filings</h3>
+                  <span className="text-xs text-muted-foreground">{filings.length} filings found</span>
+                </div>
+                <div className="space-y-2">
+                  {filings.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="neutral" className="text-xs font-mono">{f.form_type}</Badge>
+                          <span className="text-xs text-muted-foreground">{f.filing_date || "Unknown date"}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Accession: {f.accession_number}
+                        </div>
+                      </div>
+                      {f.url && (
+                        <a href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 shrink-0">
+                          <ExternalLink size={12} />
+                          SEC.gov
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  {filings.length === 0 && !loading && (
+                    <p className="text-xs text-muted-foreground">No SEC filings found for {t.symbol}.</p>
                   )}
                 </div>
               </div>
@@ -315,10 +371,9 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
               <Card className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Quick Actions</h3>
                 <div className="space-y-1.5">
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<Clock size={12} />} onClick={() => navigate("ticker-timeline")}>View Timeline</Btn>
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<FileText size={12} />} onClick={() => navigate("ticker-filings")}>SEC Filings</Btn>
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<Users size={12} />} onClick={() => navigate("ticker-community")}>Community Sentiment</Btn>
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<Download size={12} />} onClick={() => navigate("ticker-timeline")}>Export Report</Btn>
+                  <Btn variant="secondary" size="sm" className="w-full" icon={<Bell size={12} />} onClick={() => navigate("alerts")}>Set Alert</Btn>
+                  <Btn variant="secondary" size="sm" className="w-full" icon={<Briefcase size={12} />} onClick={() => navigate("workspaces")}>Add to Workspace</Btn>
+                  <Btn variant="secondary" size="sm" className="w-full" icon={<Download size={12} />} onClick={() => navigate("ticker-comparison")}>Export Report</Btn>
                 </div>
               </Card>
             </div>
@@ -331,7 +386,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
               <h3 className="font-semibold">All News for {t.symbol}</h3>
               <span className="text-xs text-muted-foreground">{news.length} API articles{articles.length > 0 ? `, ${articles.length} mock` : ""}</span>
             </div>
-            {news.length > 0 ? (
+                   {news.length > 0 ? (
               news.map((a, i) => {
                 const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
                 const headline = (a.content_body.split(". ")[0] + ".") || "Untitled";
@@ -346,6 +401,12 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                         </div>
                         <h4 className="font-semibold text-sm text-foreground mb-2 leading-snug">{headline}</h4>
                         <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{summary}</p>
+                        {a.url && (
+                          <a href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-2">
+                            <ExternalLink size={12} />
+                            View article
+                          </a>
+                        )}
                       </div>
                     </div>
                   </Card>

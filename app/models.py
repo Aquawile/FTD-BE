@@ -33,6 +33,7 @@ class NewsRow(BaseModel):
     ingest_date: Optional[date] = None
     content_body: str
     source: Optional[str] = None
+    url: Optional[str] = None
 
 
 class FilingSummary(BaseModel):
@@ -42,6 +43,7 @@ class FilingSummary(BaseModel):
     accession_number: str
     filing_date: Optional[date] = None
     element_count: int = 0
+    url: Optional[str] = None
 
 
 class FilingElement(BaseModel):

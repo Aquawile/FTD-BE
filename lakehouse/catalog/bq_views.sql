@@ -21,7 +21,8 @@ SELECT
   element_type,
   content_body,
   DATE(normalized_calendar_date) AS normalized_calendar_date,
-  ingest_date
+  ingest_date,
+  url
 FROM `ftd2026.lakehouse.staging_gnews`;
 
 CREATE OR REPLACE VIEW `ftd2026.analytics.sec_elements_mart` AS
@@ -48,5 +49,6 @@ SELECT
   DATE(normalized_calendar_date) AS normalized_calendar_date,
   ingest_date,
   source,
-  form_type
+  form_type,
+  url
 FROM `ftd2026.lakehouse.unified_staging`;
