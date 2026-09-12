@@ -15,7 +15,7 @@ export const API_BASE = "/api";
 export async function apiRequest(path: string, firebaseUser: FirebaseUser | null): Promise<Response> {
   const headers: Record<string, string> = {};
   if (firebaseUser) {
-    const token = await firebaseUser.getIdToken();
+    const token = await firebaseUser.getIdToken(true);
     headers["Authorization"] = `Bearer ${token}`;
   }
   return fetch(`${API_BASE}${path}`, { headers });
