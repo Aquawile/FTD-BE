@@ -17,8 +17,8 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
     setLoading(true);
     setError("");
     try {
-      await signInWithEmailAndPassword(firebaseAuth, email, password);
-      navigate("profile");
+       await signInWithEmailAndPassword(firebaseAuth, email, password);
+       navigate("search");
     } catch (err: any) {
       setError(err.message || "Invalid credentials");
     } finally {
