@@ -20,7 +20,7 @@ PROD_VM="ftd-prod"  # Not used yet
 
 # Ports
 WEB_PORT=8080
-API_PORT=8000
+API_PORT=8080
 
 # JSON results tracking
 CHECK_RESULTS=()

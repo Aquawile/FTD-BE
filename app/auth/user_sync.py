@@ -11,6 +11,18 @@ from app.db import get_connection
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PERMISSIONS = [
+    "tickers.search",
+    "tickers.prices",
+    "tickers.news",
+    "tickers.filings",
+    "tickers.timeline",
+    "tickers.fiscal_year_end",
+    "filings.read",
+    "search.read",
+    "dashboard.read",
+]
+
 
 def _row_to_user(row: Mapping[str, Any]) -> User:
     return User(
@@ -61,7 +73,6 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
                     (firebase_uid, normalized_email),
                 )
                 created_row = cur.fetchone()
-                conn.commit()
             except psycopg2.IntegrityError as exc:
                 conn.rollback()
                 if getattr(exc, "pgcode", None) != "23505":
@@ -76,9 +87,17 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
                         (firebase_uid, normalized_email),
                     )
                     linked_row = cur.fetchone()
-                    conn.commit()
                     if linked_row is not None:
-                        logger.info("user_sync_linked: firebase_uid=%s user_id=%s", firebase_uid, linked_row["id"])
+                        linked_user_id = linked_row["id"]
+                        for perm_name in DEFAULT_PERMISSIONS:
+                            cur.execute(
+                                "INSERT INTO user_permissions (user_id, permission_id) "
+                                "SELECT %s, permissions.id FROM permissions WHERE permissions.name = %s "
+                                "ON CONFLICT (user_id, permission_id) DO NOTHING",
+                                (linked_user_id, perm_name),
+                            )
+                        conn.commit()
+                        logger.info("user_sync_linked: firebase_uid=%s user_id=%s granted=%d", firebase_uid, linked_user_id, len(DEFAULT_PERMISSIONS))
                         return _row_to_user(linked_row)
 
                 cur.execute(
@@ -96,5 +115,15 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
             if created_row is None:
                 logger.error("user_sync_failed: reason=empty_insert_result firebase_uid=%s", firebase_uid)
                 raise RuntimeError("Failed to create application user")
-            logger.info("user_sync_created: firebase_uid=%s user_id=%s", firebase_uid, created_row["id"])
+
+            new_user_id = created_row["id"]
+            for perm_name in DEFAULT_PERMISSIONS:
+                cur.execute(
+                    "INSERT INTO user_permissions (user_id, permission_id) "
+                    "SELECT %s, permissions.id FROM permissions WHERE permissions.name = %s "
+                    "ON CONFLICT (user_id, permission_id) DO NOTHING",
+                    (new_user_id, perm_name),
+                )
+            conn.commit()
+            logger.info("user_sync_created: firebase_uid=%s user_id=%s permissions=%d", firebase_uid, new_user_id, len(DEFAULT_PERMISSIONS))
             return _row_to_user(created_row)

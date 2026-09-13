@@ -9,7 +9,7 @@ import psycopg2
 from app.auth import firebase_auth as firebase_auth_module
 from app.auth.firebase_auth import validate_firebase_token
 from app.auth.models import User
-from app.auth.user_sync import synchronize_user
+from app.auth.user_sync import synchronize_user, DEFAULT_PERMISSIONS
 from app.db import get_connection
 
 
@@ -102,6 +102,26 @@ class TestUserSync(unittest.TestCase):
         self.assertEqual(user_a.email, user_b.email)
         self.assertEqual(user_a.id, user_b.id)
         self.assertEqual(user_b.firebase_uid, uid_b)
+
+    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    def test_new_user_gets_default_permissions(self) -> None:
+        firebase_uid = uuid4().hex
+        email = "perms.test@example.com"
+
+        self.addCleanup(self._cleanup_user, firebase_uid)
+
+        user = synchronize_user({"firebase_uid": firebase_uid, "email": email})
+        self.assertIsNotNone(user.id)
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT permission_name FROM user_permissions_index WHERE user_id = %s",
+                    (user.id,),
+                )
+                granted = {row[0] for row in cur.fetchall()}
+                for perm in DEFAULT_PERMISSIONS:
+                    self.assertIn(perm, granted, f"Missing default permission: {perm}")
 
     def test_missing_firebase_uid_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
