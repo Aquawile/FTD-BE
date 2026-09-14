@@ -198,7 +198,7 @@ def _get_sec_primary_doc(cik: str, accession_number: str) -> str | None:
                     return docs[i] if i < len(docs) else None
     except Exception:
         pass
-    return accession_number + ".htm"
+    return None
 
 
 @router.get("/{ticker}/filings/{accession_number:path}/content")
@@ -206,7 +206,6 @@ def route_get_filing_content(
     ticker: str,
     accession_number: str,
     cik: str = Query(..., description="SEC CIK number for the filing"),
-    _permission: str = require_permission("tickers.filings"),
 ) -> Response:
     """Proxy SEC filing content so the browser doesn't hit SEC's bot protection.
 
@@ -220,15 +219,24 @@ def route_get_filing_content(
         accession_number = accession_number[:-4]
 
     accession_no_dashes = accession_number.replace("-", "")
+    accession_with_dashes = accession_no_dashes
+    if len(accession_with_dashes) == 18:
+        accession_with_dashes = f"{accession_with_dashes[:10]}-{accession_with_dashes[10:12]}-{accession_with_dashes[12:]}"
     cik_no_dashes = cik.replace("-", "")
     cik_padded = cik_no_dashes.zfill(10)
 
     primary_doc = _get_sec_primary_doc(cik, accession_no_dashes)
 
-    sec_url = (
-        f"https://www.sec.gov/Archives/edgar/data/"
-        f"{cik_no_dashes}/{accession_no_dashes}/{primary_doc}"
-    )
+    if primary_doc is not None:
+        sec_url = (
+            f"https://www.sec.gov/Archives/edgar/data/"
+            f"{cik_no_dashes}/{accession_no_dashes}/{primary_doc}"
+        )
+    else:
+        sec_url = (
+            f"https://www.sec.gov/cgi-bin/browse-edgar"
+            f"?action=getfile&CIK={cik_padded}&acckey={accession_with_dashes}"
+        )
 
     logger.info("sec_proxy: ticker=%s accession=%s cik=%s doc=%s url=%s", ticker, accession_no_dashes, cik_no_dashes, primary_doc, sec_url)
 
