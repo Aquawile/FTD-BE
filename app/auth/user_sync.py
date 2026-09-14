@@ -97,6 +97,8 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
                                 (linked_user_id, perm_name),
                             )
                         conn.commit()
+                        from app.auth.index_maintainer import sync_user_permissions_index
+                        sync_user_permissions_index(linked_user_id)
                         logger.info("user_sync_linked: firebase_uid=%s user_id=%s granted=%d", firebase_uid, linked_user_id, len(DEFAULT_PERMISSIONS))
                         return _row_to_user(linked_row)
 
@@ -125,5 +127,7 @@ def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
                     (new_user_id, perm_name),
                 )
             conn.commit()
+            from app.auth.index_maintainer import sync_user_permissions_index
+            sync_user_permissions_index(new_user_id)
             logger.info("user_sync_created: firebase_uid=%s user_id=%s permissions=%d", firebase_uid, new_user_id, len(DEFAULT_PERMISSIONS))
             return _row_to_user(created_row)
