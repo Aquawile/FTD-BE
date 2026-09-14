@@ -318,7 +318,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                         </div>
                       </div>
                       {f.url && (
-                        <a href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 shrink-0">
+                        <a href={`/api/tickers/${t.symbol}/filings/${f.accession_number.replace(/-/g, "")}/content?cik=${f.target_cik}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 shrink-0">
                           <ExternalLink size={12} />
                           SEC.gov
                         </a>

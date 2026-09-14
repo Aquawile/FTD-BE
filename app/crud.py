@@ -127,13 +127,10 @@ def get_ticker_filings(ticker: str) -> list[FilingSummary]:
             MIN(filing_date) AS filing_date,
             COUNT(*) AS element_count,
             CONCAT(
-                'https://www.sec.gov/Archives/edgar/data/',
-                REPLACE(target_cik, '-', ''),
-                '/',
-                REPLACE(accession_number, '-', ''),
-                '/',
-                accession_number,
-                '.htm'
+                'https://www.sec.gov/cgi-bin/browse-edgar?action=getfile&CIK=',
+                target_cik,
+                '&acckey=',
+                REPLACE(accession_number, '-', '')
             ) AS url
         FROM staging_sec
         WHERE target_ticker = %s
