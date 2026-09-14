@@ -261,12 +261,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
 
               {/* Recent news - REAL DATA */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Recent News</h3>
-                  <span className="text-xs text-muted-foreground">{news.length} articles found</span>
-                </div>
-                <div className="space-y-3">
-                  {news.slice(0, 5).map((a, i) => {
+                 <div className="space-y-3">
+                   {news.slice(0, 5).map((a, i) => {
                     const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
                     const headline = (a.content_body.split(". ")[0] + ".") || "Untitled";
                     const summary = a.content_body.substring(headline.length).trim() || a.content_body;
@@ -381,12 +377,9 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
         )}
 
         {tab === "news" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">All News for {t.symbol}</h3>
-              <span className="text-xs text-muted-foreground">{news.length} API articles{articles.length > 0 ? `, ${articles.length} mock` : ""}</span>
-            </div>
-                   {news.length > 0 ? (
+           <div className="space-y-3">
+             <h3 className="font-semibold">All News for {t.symbol}</h3>
+             {news.length > 0 ? (
               news.map((a, i) => {
                 const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
                 const headline = (a.content_body.split(". ")[0] + ".") || "Untitled";

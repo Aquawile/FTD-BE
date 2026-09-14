@@ -6,7 +6,7 @@ import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
 import { apiRequest, API_BASE } from "../api";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
 
 import { AppShell } from "../components/Shell";
 import ReportModal from "../components/pages/ReportModal";
@@ -106,7 +106,7 @@ function App() {
       case "ticker-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} />;
       case "ticker-community": return <CommunityPage navigate={navigate} ticker={selectedTicker} />;
       case "ticker-comparison": return <ComparisonPage navigate={navigate} />;
-      case "workspaces": return <WorkspacesPage navigate={navigate} />;
+      case "workspaces": return <WorkspacesPage navigate={navigate} firebaseUser={firebaseUser} />;
       case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
       case "chat": return <ChatPage navigate={navigate} />;
@@ -134,6 +134,6 @@ function App() {
   );
 }
 
-export { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA };
+export { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA };
 export { LegacyLandingPage };
 export default App;

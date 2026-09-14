@@ -369,11 +369,11 @@ export interface FilingElement {
 }
 
 export interface WorkspaceResponse {
-  id: string;
+  id: number;
   name: string;
   tickers: string[];
   alerts: number;
-  created_at: string;
+  created_at: string | null;
 }
 
 export interface AlertResponse {
@@ -387,11 +387,11 @@ export interface AlertResponse {
 }
 
 export interface WorkspaceResponse {
-  id: string;
+  id: number;
   name: string;
   tickers: string[];
   alerts: number;
-  created_at: string;
+  created_at: string | null;
 }
 
 export interface AlertResponse {
