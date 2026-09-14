@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import time
 from datetime import date
 from typing import Annotated, Optional
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_application_user, require_permission
@@ -125,3 +130,111 @@ def route_get_fiscal_year_end(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Fiscal year end not found for ticker")
     return result
+
+
+_SECONDS_PER_HOUR = 3600
+_SEC_CACHE_SECONDS = int(os.environ.get("SEC_CACHE_SECONDS", str(_SECONDS_PER_HOUR * 24)))
+logger = logging.getLogger(__name__)
+
+
+def _fetch_sec_content(sec_url: str) -> tuple[bytes, str]:
+    """Fetch SEC.gov content with a compliant User-Agent.
+
+    SEC requires a User-Agent that includes company/contact information.
+    Returns (content, content_type).
+    """
+    import urllib.request
+    import urllib.error
+
+    headers = {
+        "User-Agent": "FTD Research (research@ftd.com) Python/urllib",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+    }
+    req = urllib.request.Request(sec_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            content_type = resp.headers.get("Content-Type", "text/html")
+            content = resp.read()
+            return content, content_type
+    except urllib.error.HTTPError as e:
+        content = e.read()
+        return content, "text/html"
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error fetching SEC content: {e}")
+
+
+def _get_sec_primary_doc(cik: str, accession_number: str) -> str | None:
+    """Use the SEC data API to find the primary document name for a filing."""
+    import json
+    import urllib.request
+    import urllib.error
+
+    accession_dashes = accession_number.replace("-", "")
+    cik_padded = cik.replace("-", "").zfill(10)
+    api_url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
+
+    headers = {
+        "User-Agent": "FTD Research (research@ftd.com) Python/urllib",
+        "Accept": "application/json",
+    }
+    req = urllib.request.Request(api_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            recent = data.get("filings", {}).get("recent", {})
+            accessions = recent.get("accessionNumber", [])
+            forms = recent.get("form", [])
+            docs = recent.get("primaryDocument", [])
+            for i, acc in enumerate(accessions):
+                if acc.replace("-", "") == accession_dashes:
+                    return docs[i] if i < len(docs) else None
+    except Exception:
+        pass
+    return accession_number + ".htm"
+
+
+@router.get("/{ticker}/filings/{accession_number:path}/content")
+def route_get_filing_content(
+    ticker: str,
+    accession_number: str,
+    cik: str = Query(..., description="SEC CIK number for the filing"),
+    _permission: str = require_permission("tickers.filings"),
+) -> Response:
+    """Proxy SEC filing content so the browser doesn't hit SEC's bot protection.
+
+    SEC requires requests to include a contact-bearing User-Agent.  Browsers
+    send their own UA which SEC blocks ("Undeclared Automated Tool").  This
+    endpoint fetches the filing server-side with a compliant UA and returns
+    the HTML to the caller.  For large filings (10-K, etc.) the content is
+    fetched server-side so the browser doesn't deal with SEC's block pages.
+    """
+    if accession_number.endswith(".htm"):
+        accession_number = accession_number[:-4]
+
+    accession_no_dashes = accession_number.replace("-", "")
+    cik_no_dashes = cik.replace("-", "")
+    cik_padded = cik_no_dashes.zfill(10)
+
+    primary_doc = _get_sec_primary_doc(cik, accession_no_dashes)
+
+    sec_url = (
+        f"https://www.sec.gov/Archives/edgar/data/"
+        f"{cik_no_dashes}/{accession_no_dashes}/{primary_doc}"
+    )
+
+    logger.info("sec_proxy: ticker=%s accession=%s cik=%s doc=%s url=%s", ticker, accession_no_dashes, cik_no_dashes, primary_doc, sec_url)
+
+    content, content_type = _fetch_sec_content(sec_url)
+
+    return HTMLResponse(content=content, headers={
+        "Content-Type": content_type,
+        "Cache-Control": f"max-age={_SEC_CACHE_SECONDS}",
+    })
