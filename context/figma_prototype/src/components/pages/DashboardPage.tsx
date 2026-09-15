@@ -1,13 +1,18 @@
 import { useState, useEffect } from "react";
+import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Sparkline, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { fetchWorkspaces } from "../../api";
+import { WorkspaceResponse } from "../../types";
 
-function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void }) {
+function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
   const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
+  const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
+  const [wsLoading, setWsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,6 +29,28 @@ function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) =>
     fetchStats();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setWorkspaces([]);
+      setWsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadWorkspaces = async () => {
+      setWsLoading(true);
+      try {
+        const data = await fetchWorkspaces(firebaseUser);
+        if (!cancelled) setWorkspaces(data);
+      } catch {
+        if (!cancelled) setWorkspaces([]);
+      } finally {
+        if (!cancelled) setWsLoading(false);
+      }
+    };
+    loadWorkspaces();
+    return () => { cancelled = true; };
+  }, [firebaseUser]);
 
   const formatCount = (n: number) => {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -155,17 +182,23 @@ function DashboardPage({ navigate, setSelectedTicker }: { navigate: (p: Page) =>
               <button onClick={() => navigate("workspaces")} className="text-xs text-primary hover:underline cursor-pointer">Manage →</button>
             </div>
             <div className="space-y-2">
-              {WORKSPACES.map(ws => (
-                <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-sm text-foreground">{ws.name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{ws.tickers.join(", ")}</div>
+              {wsLoading ? (
+                <div className="text-center py-4 text-muted-foreground text-xs">Loading workspaces...</div>
+              ) : workspaces.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-xs">No workspaces yet. Create one to get started.</div>
+              ) : (
+                workspaces.slice(0, 3).map(ws => (
+                  <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm text-foreground">{ws.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{ws.tickers.join(", ")}</div>
+                      </div>
+                      {ws.alerts > 0 && <Badge variant="hype" className="text-xs">{ws.alerts}</Badge>}
                     </div>
-                    {ws.alerts > 0 && <Badge variant="hype" className="text-xs">{ws.alerts}</Badge>}
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         </div>

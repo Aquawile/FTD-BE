@@ -73,12 +73,6 @@ export const TIMELINE_EVENTS = [
   { date: "Apr 30, 2024", type: "filing", title: "8-K Filed: Executive Compensation Update", description: "CEO Jensen Huang RSU grant disclosed. No material business updates.", score_delta: 0, hype: 40, evidence: 85 },
 ];
 
-export const WORKSPACES = [
-  { id: "ws1", name: "AI Semiconductor Race", tickers: ["NVDA", "AMD", "INTC", "TSM"], created: "Jun 1, 2024", alerts: 3 },
-  { id: "ws2", name: "EV & Clean Energy", tickers: ["TSLA", "RIVN", "NIO", "ENPH", "FSLR"], created: "May 14, 2024", alerts: 1 },
-  { id: "ws3", name: "Cloud Hyperscalers", tickers: ["MSFT", "AMZN", "GOOG", "META"], created: "Apr 22, 2024", alerts: 0 },
-];
-
 export const MAPPING_QUEUE = [
   { id: "m1", article: "Tesla Releases FSD v13 Beta to 400K Users", mapped: "RIVN", suggested: "TSLA", source: "TechCrunch", confidence: 0.42, reporter: "user", time: "1h ago", type: "Wrong Ticker" },
   { id: "m2", article: "NVIDIA Supplier TSMC Sees Record Orders", mapped: "TSM", suggested: "NVDA", source: "Bloomberg", confidence: 0.61, reporter: "auto", time: "3h ago", type: "Ambiguous" },
@@ -124,7 +118,6 @@ export const MOCK_DATA = {
   TICKERS,
   NEWS_ARTICLES,
   TIMELINE_EVENTS,
-  WORKSPACES,
   MAPPING_QUEUE,
   CHAT_HISTORY,
   ALERTS_DATA,

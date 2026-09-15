@@ -111,7 +111,7 @@ export async function fetchCreateWorkspace(
   const res = await apiRequest("/workspaces", firebaseUser, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, tickerSymbols }),
+    body: JSON.stringify({ name, ticker_symbols: tickerSymbols }),
   });
   if (!res.ok) throw new Error("Failed to create workspace");
   return res.json();
@@ -142,7 +142,7 @@ export async function fetchAddTickerToWorkspace(
   const res = await apiRequest(`/workspaces/${id}/tickers`, firebaseUser, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tickerSymbol }),
+    body: JSON.stringify({ ticker_symbol: tickerSymbol }),
   });
   if (!res.ok) throw new Error("Failed to add ticker");
 }
@@ -173,14 +173,14 @@ export async function getWorkspace(id: string): Promise<WorkspaceResponse> {
 export async function createWorkspace(name: string, tickerSymbols: string[]): Promise<WorkspaceResponse> {
   return fetchWithAuth<WorkspaceResponse>("/workspaces", {
     method: "POST",
-    body: JSON.stringify({ name, tickerSymbols }),
+    body: JSON.stringify({ name, ticker_symbols: tickerSymbols }),
   });
 }
 
 export async function updateWorkspace(id: string, data: { name?: string; tickerSymbols?: string[] }): Promise<WorkspaceResponse> {
   return fetchWithAuth<WorkspaceResponse>(`/workspaces/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(data),
+    body: JSON.stringify(data.tickerSymbols ? { ...data, ticker_symbols: data.tickerSymbols } : data),
   });
 }
 

@@ -106,7 +106,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
         const end = today.toISOString().split("T")[0];
 
         const [pricesRes, newsRes, filingsRes] = await Promise.all([
-          apiRequest(`/tickers/${ticker}/prices`, firebaseUser),
+          apiRequest(`/tickers/${ticker}/prices?start=${start}&end=${end}`, firebaseUser),
           apiRequest(`/tickers/${ticker}/news?start=${start}&end=${end}&limit=50`, firebaseUser),
           apiRequest(`/tickers/${ticker}/filings`, firebaseUser),
         ]);
@@ -175,7 +175,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
       open: latest.open ?? null,
       high: latest.high ?? null,
       low: latest.low ?? null,
-      dailyChange: latest.percent_change ?? null,
+      dailyChange: latest.percent_change != null ? parseFloat(latest.percent_change) : null,
     };
   };
 

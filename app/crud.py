@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional, Sequence
 
-from app.db import query_dict
+from app.db import query_dict, get_connection
+import psycopg2.extras
 from app.models import (
     AlertResponse,
     FilingElement,
@@ -299,6 +300,104 @@ def get_user_workspaces(user_id: int) -> list[WorkspaceResponse]:
             created_at=r["created_at"].isoformat() if r["created_at"] else None,
         ))
     return results
+
+
+def create_workspace(user_id: int, name: str, ticker_symbols: list[str] | None = None) -> WorkspaceResponse:
+    from app.db import execute
+    tickers = ticker_symbols or []
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "INSERT INTO workspaces (user_id, name, created_at) VALUES (%s, %s, NOW()) RETURNING id, name, created_at",
+                (user_id, name),
+            )
+            ws = cur.fetchone()
+            for symbol in tickers:
+                cur.execute(
+                    "INSERT INTO workspace_tickers (workspace_id, ticker_symbol) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (ws["id"], symbol),
+                )
+        conn.commit()
+
+    if not ws:
+        raise RuntimeError("Failed to create workspace")
+
+    workspace_id = ws["id"]
+    return WorkspaceResponse(
+        id=workspace_id,
+        name=ws["name"],
+        tickers=tickers,
+        alerts=0,
+        created_at=ws["created_at"].isoformat() if ws["created_at"] else None,
+    )
+
+
+def delete_workspace(user_id: int, workspace_id: int) -> None:
+    from app.db import execute
+    sql = """
+        DELETE FROM workspaces
+        WHERE id = %s AND user_id = %s
+    """
+    execute(sql, (workspace_id, user_id))
+
+
+def add_ticker_to_workspace(workspace_id: int, ticker_symbol: str) -> None:
+    from app.db import execute
+    sql = """
+        INSERT INTO workspace_tickers (workspace_id, ticker_symbol)
+        VALUES (%s, %s)
+        ON CONFLICT DO NOTHING
+    """
+    execute(sql, (workspace_id, ticker_symbol))
+
+
+def remove_ticker_from_workspace(workspace_id: int, ticker_symbol: str) -> None:
+    from app.db import execute
+    sql = """
+        DELETE FROM workspace_tickers
+        WHERE workspace_id = %s AND ticker_symbol = %s
+    """
+    execute(sql, (workspace_id, ticker_symbol))
+
+
+def get_workspace_tickers(workspace_id: int) -> list[str]:
+    sql = """
+        SELECT ticker_symbol
+        FROM workspace_tickers
+        WHERE workspace_id = %s
+        ORDER BY ticker_symbol
+    """
+    rows = query_dict(sql, (workspace_id,))
+    return [r["ticker_symbol"] for r in rows]
+
+
+def workspace_exists(workspace_id: int, user_id: int) -> bool:
+    sql = "SELECT 1 FROM workspaces WHERE id = %s AND user_id = %s"
+    rows = query_dict(sql, (workspace_id, user_id))
+    return len(rows) > 0
+
+
+def get_workspace_by_id(workspace_id: int, user_id: int):
+    sql = """
+        SELECT w.id, w.name, w.created_at,
+               COALESCE(ARRAY_AGG(wt.ticker_symbol) FILTER (WHERE wt.ticker_symbol IS NOT NULL), '{}') AS tickers
+        FROM workspaces w
+        LEFT JOIN workspace_tickers wt ON wt.workspace_id = w.id
+        WHERE w.id = %s AND w.user_id = %s
+        GROUP BY w.id, w.name, w.created_at
+    """
+    rows = query_dict(sql, (workspace_id, user_id))
+    if not rows:
+        return None
+    r = rows[0]
+    return WorkspaceResponse(
+        id=r["id"],
+        name=r["name"],
+        tickers=r["tickers"] or [],
+        alerts=0,
+        created_at=r["created_at"].isoformat() if r["created_at"] else None,
+    )
 
 
 def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:

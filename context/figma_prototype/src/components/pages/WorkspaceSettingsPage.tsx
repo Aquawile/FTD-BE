@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Btn, Card, Input, Modal, cn } from "../ui";
 import { Archive, Briefcase, Check, ChevronLeft } from "lucide-react";
+import { WorkspaceResponse } from "../../types";
 
-function WorkspaceSettingsPage({ navigate }: { navigate: (p: Page) => void }) {
-  const [name, setName] = useState("AI Semiconductor Race");
+function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser }: { navigate: (p: Page) => void; selectedWorkspace: WorkspaceResponse | null; firebaseUser: FirebaseUser | null }) {
+  const [name, setName] = useState(selectedWorkspace?.name || "");
   const [showDelete, setShowDelete] = useState(false);
   return (
     <div className="p-6 max-w-2xl mx-auto">

@@ -281,6 +281,8 @@ export interface NewsRow {
   content_body: string;
   normalized_calendar_date: string;
   ingest_date: string;
+  source?: string | null;
+  url?: string | null;
 }
 
 export interface PriceRow {

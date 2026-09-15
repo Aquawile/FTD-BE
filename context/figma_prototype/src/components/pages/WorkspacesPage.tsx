@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Input, Modal } from "../ui";
-import { Briefcase, Hash, MoreVertical, Plus, Trash2 } from "lucide-react";
+import { Briefcase, MoreVertical, Plus, Trash2 } from "lucide-react";
 import { fetchWorkspaces, fetchCreateWorkspace, fetchDeleteWorkspace } from "../../api";
 import { WorkspaceResponse } from "../../types";
 
-function WorkspacesPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
+function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null; setSelectedWorkspace: (ws: any) => void }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -71,7 +71,7 @@ function WorkspacesPage({ navigate, firebaseUser }: { navigate: (p: Page) => voi
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {workspaces.map(ws => (
-            <Card key={ws.id} className="p-5 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
+            <Card key={ws.id} className="p-5 cursor-pointer hover:border-primary/30 transition-all" onClick={() => { setSelectedWorkspace(ws); navigate("workspace-detail"); }}>
               <div className="flex items-start justify-between mb-4">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
                   <Briefcase size={18} className="text-primary" />
@@ -115,12 +115,7 @@ function WorkspacesPage({ navigate, firebaseUser }: { navigate: (p: Page) => voi
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Workspace name</label>
-              <Input value={wsName} onChange={setWsName} placeholder="e.g., AI Semiconductor Race" icon={<Briefcase size={14} />} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Add tickers (optional)</label>
-              <Input placeholder="NVDA, AMD, TSLA..." icon={<Hash size={14} />} />
-              <p className="text-xs text-muted-foreground">Separate with commas. Max 50 tickers. (Feature coming soon)</p>
+              <Input value={wsName} onChange={setWsName} placeholder="e.g., My Research Theme" icon={<Briefcase size={14} />} />
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <Btn variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Btn>

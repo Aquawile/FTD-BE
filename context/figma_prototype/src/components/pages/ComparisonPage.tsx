@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn, getHypeColor, getEvidenceColor } from "../ui";
 import { ChevronLeft, Plus, Sparkles } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
 function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
   const tickers = [TICKERS[0], TICKERS[1], TICKERS[4]]; // NVDA, TSLA, AMD

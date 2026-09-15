@@ -56,7 +56,7 @@ function OnboardingPage({ navigate }: { navigate: (p: Page) => void }) {
             <p className="text-muted-foreground text-sm">Group related tickers to track them together. You can always add more later.</p>
             <div className="space-y-1.5">
               <label htmlFor="workspace-name" className="text-sm font-medium">Workspace name</label>
-              <Input id="workspace-name" placeholder="e.g., AI Semiconductor Race" icon={<Briefcase size={14} />} />
+              <Input id="workspace-name" placeholder="e.g., My Research Theme" icon={<Briefcase size={14} />} />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="workspace-tickers" className="text-sm font-medium">Add tickers (optional)</label>
