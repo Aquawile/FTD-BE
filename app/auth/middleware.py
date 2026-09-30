@@ -118,11 +118,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user_id = int(user_id)
             request.state.email = email
             request.state.auth_method = "internal"
-            logger.info("authentication_succeeded: method=internal user_id=%s path=%s", user_id, path)
-            return await call_next(request)
-        except Exception as e:
-            logger.error("authentication_internal_error: reason=postgres_lookup_failed path=%s error=%s", path, str(e))
+        except (ValueError, TypeError) as e:
+            logger.warning("authentication_failed: reason=invalid_user_identifier path=%s", path)
             return JSONResponse(
-                status_code=500,
-                content={"detail": "Internal server error"},
+                status_code=401,
+                content={"detail": "Invalid user identifier in token"},
             )
+
+        logger.info("authentication_succeeded: method=internal user_id=%s path=%s", user_id, path)
+        return await call_next(request)
