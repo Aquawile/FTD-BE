@@ -147,10 +147,10 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
               </div>
               <div className="text-muted-foreground text-sm">{t.name}</div>
               <div className="flex items-center gap-4 mt-2">
-                <span className="font-mono font-bold text-xl text-foreground">${t.price.toLocaleString()}</span>
-                <span className={cn("flex items-center gap-1 text-sm", t.change > 0 ? "text-emerald-400" : "text-red-400")}>
-                  {t.change > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  {t.change > 0 ? "+" : ""}{t.change}%
+                <span className="font-mono font-bold text-xl text-foreground">${formatPrice(t.current_price)}</span>
+                <span className={cn("flex items-center gap-1 text-sm", (t.change_percent || 0) > 0 ? "text-emerald-400" : "text-red-400")}>
+                  {(t.change_percent || 0) > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                  {t.change_percent && t.change_percent > 0 ? "+" : ""}{t.change_percent ?? 0}%
                 </span>
               </div>
             </div>
@@ -162,8 +162,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
               <Btn variant="secondary" size="sm" icon={<Maximize2 size={12} />} onClick={() => navigate("ticker-comparison")}>Compare</Btn>
             </div>
             <div className="flex items-center gap-6">
-              <ScorePill label="Hype Score" score={t.hype} type="hype" />
-              <ScorePill label="Evidence Score" score={t.evidence} type="evidence" />
+              <ScorePill label="Hype Score" score={t.hype_score} type="hype" />
+              <ScorePill label="Evidence Score" score={t.evidence_score} type="evidence" />
             </div>
           </div>
         </div>
