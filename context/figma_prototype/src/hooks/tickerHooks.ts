@@ -4,6 +4,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { TrackedTicker } from "../types";
+import { addDays, formatISO } from "date-fns";
+
+function getDateRange(): { start: string; end: string } {
+  const end = formatISO(new Date(), { representation: "date" });
+  const start = formatISO(addDays(new Date(), -90), { representation: "date" });
+  return { start, end };
+}
 
 export function useTickerSearch(query: string, options?: { limit?: number; sector?: string; sortBy?: string }) {
   const [results, setResults] = useState<any[]>([]);
@@ -49,7 +56,6 @@ export function useTickerDashboard(ticker: string) {
   const [articles, setArticles] = useState<any[]>([]);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [filings, setFilings] = useState<any[]>([]);
-  const [evidence, setEvidence] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -59,11 +65,11 @@ export function useTickerDashboard(ticker: string) {
 
     const loadData = async () => {
       try {
-        const [news, timeline, filings, evidence, tracked] = await Promise.all([
-          fetch(`/api/tickers/${ticker}/news`).then(r => r.ok ? r.json() : []).catch(() => []),
-          fetch(`/api/tickers/${ticker}/timeline`).then(r => r.ok ? r.json() : []).catch(() => []),
+        const { start, end } = getDateRange();
+        const [news, timeline, filings, tracked] = await Promise.all([
+          fetch(`/api/tickers/${ticker}/news?start=${start}&end=${end}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch(`/api/tickers/${ticker}/timeline?start=${start}&end=${end}`).then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`/api/tickers/${ticker}/filings`).then(r => r.ok ? r.json() : []).catch(() => []),
-          fetch(`/api/tickers/${ticker}/evidence`).then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`/api/tickers/tracked`).then(r => r.ok ? r.json() : []).catch(() => []),
         ]);
 
@@ -71,7 +77,6 @@ export function useTickerDashboard(ticker: string) {
           setArticles(news);
           setTimeline(timeline);
           setFilings(filings);
-          setEvidence(evidence);
         }
       } catch {
         if (!cancelled) setError(true);
@@ -83,6 +88,8 @@ export function useTickerDashboard(ticker: string) {
     loadData();
     return () => { /* cancelled = true */ };
   }, [ticker]);
+
+  return { articles, timeline, filings, loading, error };
 }
 
 export function useTickerNews(ticker: string) {
@@ -93,7 +100,8 @@ export function useTickerNews(ticker: string) {
   useEffect(() => {
     if (!ticker) return;
     let cancelled = false;
-    fetch(`/api/tickers/${ticker}/news`)
+    const { start, end } = getDateRange();
+    fetch(`/api/tickers/${ticker}/news?start=${start}&end=${end}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setArticles(data); })
       .catch(() => { if (!cancelled) setError(true); })
@@ -112,7 +120,8 @@ export function useTickerTimeline(ticker: string) {
   useEffect(() => {
     if (!ticker) return;
     let cancelled = false;
-    fetch(`/api/tickers/${ticker}/timeline`)
+    const { start, end } = getDateRange();
+    fetch(`/api/tickers/${ticker}/timeline?start=${start}&end=${end}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setTimeline(data); })
       .catch(() => { setError(true); })
@@ -141,26 +150,6 @@ export function useTickerFilings(ticker: string) {
   }, [ticker]);
 
   return { filings, loading, error };
-}
-
-export function useTickerEvidence(ticker: string) {
-  const [evidence, setEvidence] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (!ticker) return;
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/tickers/${ticker}/evidence`)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { if (!cancelled) setEvidence(data); })
-      .catch(() => { if (!cancelled) setError(true); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { /* cancelled = true */ };
-  }, [ticker]);
-
-  return { evidence, loading, error };
 }
 
 export function useTrackedTickers(limit = 500) {

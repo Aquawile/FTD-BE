@@ -182,43 +182,6 @@ export function useAlerts(limit = 10) {
   return { alerts, loading, error, refetch: () => fetch(`/api/alerts?limit=${limit}`).then(r => r.ok ? r.json() : Promise.reject()).then(setAlerts).catch(() => setError(true)) };
 }
 
-export function useMarkAlertRead() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-
-  const markRead = async (id: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/alerts/${id}/read`, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to mark alert as read");
-    } catch (err) {
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return { markRead, loading, error };
-}
-
-export function useMarkAllAlertsRead() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-
-  const markAllRead = async () => {
-    setLoading(true);
-    try {
-      await fetch("/api/alerts/read-all", { method: "POST" });
-    } catch (err) {
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return { markAllRead, loading, error };
-}
-
 // ────────────────────────────────────────────────
 // Dashboard Stats Hook
 // ────────────────────────────────────────────────

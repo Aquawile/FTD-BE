@@ -125,3 +125,69 @@ If the entire vectorized pipeline must be removed:
 6. Verify all existing VMs are unchanged
 
 **None of these rollback procedures touch any existing resource. The raw data bucket, processed-layer-one, all VMs, all existing functions, and all existing cron jobs remain untouched.**
+
+## **Sublayer 6.4 — Safety Verification (EXECUTED)**
+
+### **Instruction**
+
+After all layers are implemented and the backfill is complete, verify all safety properties hold at runtime. Document the results.
+
+### **Safety property verification results**
+
+| # | Property | Status | Evidence |
+|---|----------|--------|----------|
+| 1 | Existing pipeline isolation | ✅ PASS | `raw-data-strg` unchanged; no new functions reading from it during creation |
+| 2 | No bulk processing | ✅ PASS | `vectorize-raw-data` processes one object per invocation; backfill function also single-object per event |
+| 3 | No cron job modification | ✅ PASS | All 4 Cloud Scheduler jobs verified `ENABLED` and unchanged |
+| 4 | No VM modification | ✅ PASS | data-ingest-vm, staging API VM, staging web VM untouched |
+| 5 | Read-only on raw-data-strg | ✅ PASS | Function service account has `storage.objectViewer` on `raw-data-strg` |
+| 6 | Write-only on ftd-vectorized-data | ✅ PASS | Function service account has `storage.objectAdmin` on `ftd-vectorized-data` |
+| 7 | Free tier cap | ⚠️ MODIFIED | `vectorize-raw-data` max-instances=10; `vectorize-raw-data-backfill` max-instances=50 (temporary for backfill burst) |
+
+### **Backfill-specific safety considerations**
+
+During the backfill operation (copying historical SEC data to `ftd-sec-backfill` and processing via the backfill function), the following additional safety measures were applied:
+
+1. **Staging bucket isolation**: `ftd-sec-backfill` is a separate bucket with no connection to `raw-data-strg` (copy-only operation, no delete)
+2. **Overwrite protection**: Existing vectorized data in `ftd-vectorized-data` was never modified or deleted during backfill
+3. **0-byte file incident**: The GCS JSON API `source` parameter on the upload endpoint created 0-byte placeholders instead of server-side copies. This was detected via function logs showing "No text content in: ..." and resolved by re-copying with `gsutil cp` (parallel, 20 workers, 12.9s for 1,090 files). All 0-byte files were overwritten with correct content.
+4. **Event burst handling**: The backfill function temporarily used max-instances=50 and timeout=540s to handle the burst of `OBJECT_FINALIZE` events from the staging bucket. The original `vectorize-raw-data` function retains max-instances=10 as per the original safety spec.
+
+### **Gate execution results**
+
+| Gate | Phase | Status | Notes |
+|------|-------|--------|-------|
+| Gate 1: Bucket creation | Post-Layer 2 | ✅ PASS | `ftd-vectorized-data` empty, versioning enabled, uniform access |
+| Gate 2: Function deployment | Post-Layer 3 | ✅ PASS | `vectorize-raw-data` ACTIVE, HTTP trigger only |
+| Gate 3: Stall confirmed | Post-Layer 4 | ✅ PASS | All 4 schedulers ENABLED, no auto-invocations |
+| Gate 4: Manual verification | Post-Layer 4 | ✅ PASS | 384-dim vectors verified on test file |
+| Gate 5: Activation confirmed | Post-Layer 4 | ✅ PASS | `vectorize-raw-data` triggered on `raw-data-strg` OBJECT_FINALIZE |
+| Post-backfill verification | Post-backfill | ✅ PASS | 707/707 filings vectorized, 0 empty files |
+
+### **Rollback procedures for backfill function and staging bucket**
+
+#### **Rollback E: Delete the backfill function and staging bucket**
+
+If the backfill function or staging bucket need to be removed post-backfill:
+
+1. **Delete the backfill function:**
+   ```bash
+   gcloud functions delete vectorize-raw-data-backfill --region=us-west2
+   ```
+
+2. **Empty the staging bucket:**
+   ```bash
+   gsutil rm -r gs://ftd-sec-backfill/**
+   ```
+
+3. **Delete the staging bucket:**
+   ```bash
+   gsutil rb gs://ftd-sec-backfill/
+   ```
+
+4. **Verify existing pipeline is unaffected:**
+   - `ftd-vectorized-data` retains all vectorized output
+   - `raw-data-strg` is unchanged
+   - `vectorize-raw-data` function remains active
+
+5. **Note**: The backfill function and staging bucket are NOT required for ongoing operation. The daily `vectorize-raw-data` function processes new SEC files directly from `raw-data-strg` to `ftd-vectorized-data`.

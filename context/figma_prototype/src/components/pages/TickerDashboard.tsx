@@ -193,7 +193,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <h1 className="text-2xl font-bold font-mono text-foreground">{t.symbol}</h1>
-                <Badge variant="neutral">{t.sector}</Badge>
                 <Badge variant="neutral">NASDAQ</Badge>
               </div>
               <div className="text-muted-foreground text-sm">{t.name}</div>

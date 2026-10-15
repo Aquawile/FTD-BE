@@ -119,6 +119,10 @@ def get_ticker_news(
 
 
 def get_ticker_filings(ticker: str) -> list[FilingSummary]:
+    # DEPRECATED: Use vectorized_gcs.list_filings_for_ticker instead
+    from app.services.db_access_counter import increment_counter
+    increment_counter("endpoint:ticker_filings")
+
     sql = """
         SELECT
             target_ticker,
@@ -147,6 +151,10 @@ def get_filing_elements(
     item_number: str | None = None,
     element_type: str | None = None,
 ) -> list[FilingElement]:
+    # DEPRECATED: Use vectorized_gcs.get_filing_elements_by_accession instead
+    from app.services.db_access_counter import increment_counter
+    increment_counter("endpoint:filing_elements")
+
     sql = """
         SELECT
             element_id,
@@ -177,6 +185,13 @@ def get_ticker_timeline(
     limit: int = 100,
     offset: int = 0,
 ) -> list[TimelineEvent]:
+    source_list = sources or ["finnhub", "gnews"]
+    # SEC timeline data now served from vectorized GCS (ftd-vectorized-data bucket)
+    # The "sec" source is no longer queried from PostgreSQL
+    if "sec" in source_list:
+        from app.services.db_access_counter import increment_counter
+        increment_counter("endpoint:ticker_timeline")
+
     sql = """
         SELECT
             normalized_calendar_date,
@@ -196,12 +211,15 @@ def get_ticker_timeline(
         ORDER BY normalized_calendar_date DESC
         LIMIT %s OFFSET %s
     """
-    source_list = sources or ["finnhub", "gnews", "sec"]
     rows = query_dict(sql, (ticker, start, end, source_list, limit, offset))
     return [TimelineEvent(**r) for r in rows]
 
 
 def get_ticker_fiscal_year_end(ticker: str) -> FiscalYearEnd | None:
+    # DEPRECATED: Consider reading from vectorized GCS data instead
+    from app.services.db_access_counter import increment_counter
+    increment_counter("endpoint:fiscal_year_end")
+
     sql = """
         SELECT
             s.target_ticker,
@@ -224,6 +242,11 @@ def search_content(
     source: str | None = None,
     limit: int = 50,
 ) -> list[SearchResult]:
+    # DEPRECATED for SEC source: Use vectorized_gcs.search_vectorized_content instead
+    if source is None or source == "sec":
+        from app.services.db_access_counter import increment_counter
+        increment_counter("endpoint:search_content")
+
     sql = """
         SELECT
             target_ticker,

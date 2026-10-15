@@ -85,10 +85,6 @@ export async function getTickerFilings(ticker: string): Promise<FilingSummary[]>
   return fetchWithAuth<FilingSummary[]>(`/tickers/${ticker}/filings`);
 }
 
-export async function getTickerEvidence(ticker: string): Promise<any[]> {
-  return fetchWithAuth<any[]>(`/tickers/${ticker}/evidence`);
-}
-
 export async function getTickerPrices(ticker: string): Promise<PriceRow[]> {
   return fetchWithAuth<PriceRow[]>(`/tickers/${ticker}/prices`);
 }
@@ -194,14 +190,6 @@ export async function deleteWorkspace(id: string): Promise<void> {
 
 export async function getAlerts(limit = 10): Promise<AlertResponse[]> {
   return fetchWithAuth<AlertResponse[]>(`/alerts?limit=${limit}`);
-}
-
-export async function markAlertRead(id: string): Promise<void> {
-  await fetchWithAuth(`/alerts/${id}/read`, { method: "POST" });
-}
-
-export async function markAllAlertsRead(): Promise<void> {
-  await fetchWithAuth("/alerts/read-all", { method: "POST" });
 }
 
 // ────────────────────────────────────────────────

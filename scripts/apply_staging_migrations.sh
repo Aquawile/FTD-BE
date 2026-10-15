@@ -72,6 +72,18 @@ check_migration_applied() {
       # password_hash nullable
       run_psql "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password_hash' AND is_nullable='YES';" 2>/dev/null | grep -q "1" && return 0
       ;;
+    "007")
+      # api_usage_log table created (audit logging)
+      run_psql "SELECT to_regclass('public.api_usage_log');" 2>/dev/null | grep -q "api_usage_log" && return 0
+      ;;
+    "008")
+      # staging_sec and unified_staging renamed to _archive
+      run_psql "SELECT to_regclass('public.staging_sec_archive')" 2>/dev/null | grep -q "staging_sec_archive" && return 0
+      ;;
+    "009")
+      # sec_vectorized_chunks table created for GCS vector data sync
+      run_psql "SELECT to_regclass('public.sec_vectorized_chunks');" 2>/dev/null | grep -q "sec_vectorized_chunks" && return 0
+      ;;
     *)
       # For future migrations, check tracking table only
       result=$(run_psql "SELECT success FROM ${TRACKING_TABLE} WHERE migration_id = '${mig_id}';" 2>/dev/null | tail -3 | head -1 | xargs || echo "")

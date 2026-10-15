@@ -4,27 +4,21 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from datetime import date
 from typing import Annotated, Optional
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Response
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_application_user, require_permission
-from app.auth.models import User
 from app.crud import (
-    get_ticker_filings,
-    get_ticker_fiscal_year_end,
     get_ticker_news,
     get_ticker_prices,
-    get_ticker_timeline,
     get_tracked_tickers,
     search_tickers,
 )
-from app.models import FiscalYearEnd, NewsRow, PriceRow, TimelineEvent, TickerResult, TrackedTicker
+from app.models import NewsRow, PriceRow, TimelineEvent, TickerResult, TrackedTicker, FiscalYearEnd
 
 router = APIRouter(prefix="/tickers", tags=["tickers"])
 
@@ -87,11 +81,13 @@ def route_get_filings(
     form_type: Annotated[str | None, Query(description="Form type (e.g. 10-K, 8-K)")] = None,
     permission: str = require_permission("tickers.filings"),
 ) -> list[FilingSummaryResponse]:
-    from app.crud import get_ticker_filings as _get_filings
-    results = _get_filings(ticker)
+    from app.services.vectorized_gcs import list_filings_for_ticker
+
+    raw_results = list_filings_for_ticker(ticker)
+
     if start or end or form_type:
         filtered = []
-        for r in results:
+        for r in raw_results:
             if form_type and r.form_type != form_type:
                 continue
             if r.filing_date:
@@ -100,8 +96,9 @@ def route_get_filings(
                 if end and r.filing_date > end:
                     continue
             filtered.append(r)
-        results = filtered
-    return [FilingSummaryResponse(**r.model_dump()) for r in results]
+        raw_results = filtered
+
+    return [FilingSummaryResponse(**r.model_dump()) for r in raw_results]
 
 
 @router.get("/{ticker}/timeline", response_model=list[TimelineEvent])
@@ -117,7 +114,25 @@ def route_get_timeline(
     source_list = None
     if sources:
         source_list = [s.strip() for s in sources.split(",") if s.strip()]
-    return get_ticker_timeline(ticker, start, end, source_list, limit, offset)
+
+    from app.services.vectorized_gcs import get_timeline_from_gcs
+    from app.crud import get_ticker_timeline as _get_ticker_timeline
+
+    timeline_events: list[TimelineEvent] = []
+
+    if source_list and "sec" in source_list:
+        sec_sources = [s for s in source_list if s != "sec"]
+        if sec_sources:
+            timeline_events.extend(_get_ticker_timeline(ticker, start, end, sec_sources, limit, offset))
+        timeline_events.extend(get_timeline_from_gcs(ticker, start, end, limit, offset))
+        timeline_events.sort(key=lambda x: x.normalized_calendar_date or date.min, reverse=True)
+        timeline_events = timeline_events[:limit]
+    else:
+        timeline_events = _get_ticker_timeline(ticker, start, end, source_list, limit, offset)
+        if source_list is None:
+            timeline_events.extend(get_timeline_from_gcs(ticker, start, end, limit, offset))
+
+    return timeline_events
 
 
 @router.get("/{ticker}/fiscal-year-end", response_model=FiscalYearEnd)
@@ -125,9 +140,9 @@ def route_get_fiscal_year_end(
     ticker: str,
     permission: str = require_permission("tickers.fiscal_year_end"),
 ) -> FiscalYearEnd:
-    result = get_ticker_fiscal_year_end(ticker)
+    from app.services.vectorized_gcs import get_fiscal_year_end_from_gcs
+    result = get_fiscal_year_end_from_gcs(ticker)
     if result is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Fiscal year end not found for ticker")
     return result
 
@@ -172,7 +187,10 @@ def _fetch_sec_content(sec_url: str) -> tuple[bytes, str]:
 
 
 def _get_sec_primary_doc(cik: str, accession_number: str) -> str | None:
-    """Use the SEC data API to find the primary document name for a filing."""
+    """Use the SEC data API to find the primary document name for a filing.
+
+    This is a fallback for filings not found in raw-data-strg GCS bucket.
+    """
     import json
     import urllib.request
     import urllib.error
@@ -206,15 +224,16 @@ def route_get_filing_content(
     ticker: str,
     accession_number: str,
     cik: str = Query(..., description="SEC CIK number for the filing"),
+    request: Request = None,
 ) -> Response:
-    """Proxy SEC filing content so the browser doesn't hit SEC's bot protection.
+    """Serve SEC filing content from raw-data-strg (GCS) with SEC.gov fallback.
 
-    SEC requires requests to include a contact-bearing User-Agent.  Browsers
-    send their own UA which SEC blocks ("Undeclared Automated Tool").  This
-    endpoint fetches the filing server-side with a compliant UA and returns
-    the HTML to the caller.  For large filings (10-K, etc.) the content is
-    fetched server-side so the browser doesn't deal with SEC's block pages.
+    Tries GCS first for speed and to avoid SEC rate limits. Falls back to
+    SEC.gov if the filing is not in GCS.
     """
+    import time as _time
+    _audit_start = _time.time()
+
     if accession_number.endswith(".htm"):
         accession_number = accession_number[:-4]
 
@@ -224,6 +243,32 @@ def route_get_filing_content(
         accession_with_dashes = f"{accession_with_dashes[:10]}-{accession_with_dashes[10:12]}-{accession_with_dashes[12:]}"
     cik_no_dashes = cik.replace("-", "")
     cik_padded = cik_no_dashes.zfill(10)
+
+    from app.services.vectorized_gcs import get_filing_content_from_gcs
+
+    content, content_type, found_in_gcs = get_filing_content_from_gcs(ticker, accession_no_dashes, cik_padded)
+
+    _audit_ms = int((_time.time() - _audit_start) * 1000)
+
+    if found_in_gcs:
+        from app.services.audit import log_sec_content_proxy
+        log_sec_content_proxy(
+            request=request,
+            endpoint=f"/api/tickers/{ticker}/filings/{accession_no_dashes}/content",
+            status=200,
+            duration_ms=_audit_ms,
+            details={
+                "ticker": ticker,
+                "accession_number": accession_no_dashes,
+                "cik": cik_no_dashes,
+                "source": "gcs",
+                "content_length": len(content),
+            },
+        )
+        return HTMLResponse(content=content, headers={
+            "Content-Type": content_type,
+            "Cache-Control": f"max-age={_SEC_CACHE_SECONDS}",
+        })
 
     primary_doc = _get_sec_primary_doc(cik, accession_no_dashes)
 
@@ -238,9 +283,23 @@ def route_get_filing_content(
             f"?action=getfile&CIK={cik_padded}&acckey={accession_with_dashes}"
         )
 
-    logger.info("sec_proxy: ticker=%s accession=%s cik=%s doc=%s url=%s", ticker, accession_no_dashes, cik_no_dashes, primary_doc, sec_url)
-
     content, content_type = _fetch_sec_content(sec_url)
+
+    _audit_ms = int((_time.time() - _audit_start) * 1000)
+    from app.services.audit import log_sec_content_proxy
+    log_sec_content_proxy(
+        request=request,
+        endpoint=f"/api/tickers/{ticker}/filings/{accession_no_dashes}/content",
+        status=200,
+        duration_ms=_audit_ms,
+        details={
+            "ticker": ticker,
+            "accession_number": accession_no_dashes,
+            "cik": cik_no_dashes,
+            "source": "secgov",
+            "content_length": len(content),
+        },
+    )
 
     return HTMLResponse(content=content, headers={
         "Content-Type": content_type,

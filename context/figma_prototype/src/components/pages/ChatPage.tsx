@@ -102,6 +102,7 @@ function ChatPage({ navigate }: { navigate: (p: Page) => void }) {
       <div className="px-6 pb-6">
         <div className="flex gap-2 bg-input-background border border-border rounded-xl p-2 focus-within:border-primary/50 transition-all">
           <textarea
+            autoComplete="off"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}

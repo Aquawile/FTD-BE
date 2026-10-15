@@ -88,6 +88,7 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
         <div className="relative flex-1 max-w-xl">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
+            autoComplete="off"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search tickers, companies..."
@@ -158,7 +159,6 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
                   <span className="font-mono font-bold text-base text-foreground">{t.symbol}</span>
                   <span className="text-muted-foreground text-sm">{t.name}</span>
                 </div>
-                {t.sector && <span className="text-xs text-muted-foreground">{t.sector}</span>}
               </div>
               <div className="text-right shrink-0">
                 <div className="font-mono font-bold text-lg text-foreground">{formatPrice(t.current_price)}</div>

@@ -91,6 +91,7 @@ class DashboardStats(BaseModel):
     tickers_count: int = 0
     alerts_count: int = 0
     evidence_score: Optional[float] = None
+    vectorized_sec_count: int = 0
 
 
 class TrackedTicker(BaseModel):

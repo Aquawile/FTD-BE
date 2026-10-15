@@ -314,6 +314,7 @@ export interface DashboardStats {
   tickers_count: number;
   alerts_count: number;
   evidence_score: number | null;
+  vectorized_sec_count: number;
 }
 
 export interface TickerResult {

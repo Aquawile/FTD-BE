@@ -45,6 +45,11 @@ This part introduces a vectorized data storage layer that runs alongside (not pa
 | Six | Safety, Verification & Rollback | Define verification steps, health checks, and rollback procedures |
 | Seven | Incremental Implementation Checklist | Ordered steps to execute sublayer by sublayer with verification gates |
 | High-Level | High-Level Vectorized Data Architecture | Summary of the full plan |
+| Eight | API Migration to Vectorized Data | Migrate API endpoints from PostgreSQL to GCS-backed vectorized data |
+| Nine | UI-to-API-to-Data Source Trace | End-to-end trace of every UI data binding through API to data source |
+| Ten | Audit Logging, User Fingerprinting & Log Files | Dual logging to PostgreSQL and file-based logs, user fingerprinting |
+| Eleven | Counter Monitoring & Table Decommission | In-memory counters for DB access, PostgreSQL table rename procedure |
+| Twelve | UI Validation & Production Cutover | Endpoint-by-endpoint validation, cutover checklist, rollback procedures |
 
 ## Global Operating Rules
 

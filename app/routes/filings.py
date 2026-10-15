@@ -7,7 +7,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.auth.dependencies import require_permission
-from app.crud import get_filing_elements
 from app.models import FilingElement
 
 router = APIRouter(prefix="/filings", tags=["filings"])
@@ -20,4 +19,13 @@ def route_get_elements(
     element_type: Annotated[str | None, Query(description="Element type filter (narrative or quantitative)")] = None,
     permission: str = require_permission("filings.read"),
 ) -> list[FilingElement]:
-    return get_filing_elements(accession_number, item_number, element_type)
+    from app.services.vectorized_gcs import get_filing_elements_by_accession
+
+    elements = get_filing_elements_by_accession(accession_number)
+
+    if item_number:
+        elements = [e for e in elements if e.item_number == item_number]
+    if element_type:
+        elements = [e for e in elements if e.element_type == element_type]
+
+    return elements

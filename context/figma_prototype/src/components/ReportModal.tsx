@@ -53,6 +53,7 @@ export function ReportModal({ onClose }: ReportModalProps) {
         <div className="space-y-1.5">
           <label className="text-sm font-medium">Additional context (optional)</label>
           <textarea
+            autoComplete="off"
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={3}

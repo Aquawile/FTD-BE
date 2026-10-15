@@ -5,6 +5,7 @@ Uses sentence-transformers/all-MiniLM-L6-v2 for embeddings (384 dimensions).
 """
 import json
 import os
+from datetime import datetime, timezone
 from google.cloud import storage
 
 print("Starting vectorize-raw-data function module (Cloud Storage trigger)", flush=True)
@@ -104,6 +105,32 @@ def _extract_json_text(json_obj) -> str:
     return ""
 
 
+def _read_sec_metadata(client, source_bucket: str, source_object: str) -> dict:
+    """Read companion metadata.txt for SEC filings and parse key=value pairs."""
+    if not source_object.startswith("SEC/"):
+        return {}
+
+    parts = source_object.rsplit("/", 1)
+    if len(parts) < 2:
+        return {}
+
+    dir_path = parts[0]
+    metadata_path = f"{dir_path}/metadata.txt"
+
+    try:
+        bucket = client.bucket(source_bucket)
+        blob = bucket.blob(metadata_path)
+        content = blob.download_as_bytes()
+        metadata = {}
+        for line in content.decode("utf-8").splitlines():
+            if "=" in line:
+                key, val = line.split("=", 1)
+                metadata[key.strip()] = val.strip()
+        return metadata
+    except Exception:
+        return {}
+
+
 def process_object(source_bucket: str, source_object: str) -> dict:
     """Process a single GCS object and vectorize it."""
     print(f"Processing: {source_bucket}/{source_object}", flush=True)
@@ -136,6 +163,10 @@ def process_object(source_bucket: str, source_object: str) -> dict:
 
     print(f"Extracted {len(text)} chars from {source_object}", flush=True)
 
+    sec_metadata = _read_sec_metadata(client, source_bucket, source_object)
+    if sec_metadata:
+        print(f"Loaded SEC metadata: {sec_metadata}", flush=True)
+
     model = _get_model()
     chunks = _chunk_text(text)
     vectors = model.encode(chunks)
@@ -145,9 +176,10 @@ def process_object(source_bucket: str, source_object: str) -> dict:
     result = {
         "source_bucket": source_bucket,
         "source_object": source_object,
-        "vectorized_at": "2026-09-30T00:00:00Z",
+        "vectorized_at": datetime.now(timezone.utc).isoformat(),
         "model": _EMBEDDING_MODEL,
         "dimension": len(vectors[0]),
+        "sec_metadata": sec_metadata,
         "chunks": [
             {
                 "chunk_index": i,

@@ -77,11 +77,11 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label htmlFor="login-email" className="text-sm font-medium">Email address</label>
-                <Input id="login-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+                <Input id="login-email" autoComplete="new-password" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="login-password" className="text-sm font-medium">Password</label>
-                  <div className="relative"><Input id="login-password" type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
+                  <div className="relative">                  <Input id="login-password" autoComplete="new-password" type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
                 <button onClick={() => setShowPw(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>

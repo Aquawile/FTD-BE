@@ -20,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
 from app.db import get_connection
 
 
+_DB_READY: bool = False
+
+
 def _has_gcloud_auth() -> bool:
     """Check if gcloud has an active authenticated account."""
     try:
@@ -35,11 +38,16 @@ def _has_gcloud_auth() -> bool:
 
 
 def _run_db_reset() -> bool:
-    """Run the database reset script. Returns True if successful or skipped."""
+    """Run the database reset script. Returns True if successful or skipped.
+
+    Returns False (not True) when gcloud auth is missing so that
+    db_integration tests can be explicitly skipped rather than running
+    against unavailable infrastructure.
+    """
     if not _has_gcloud_auth():
-        print("WARNING: No active gcloud account. Skipping database reset.")
-        return True
-    
+        print("WARNING: No active gcloud account. Database reset skipped.")
+        return False
+
     try:
         result = subprocess.run(
             ["bash", "scripts/manage_test_databases.sh", "reset-test-dbs"],
@@ -62,22 +70,33 @@ def _run_db_reset() -> bool:
 @pytest.fixture(scope="session", autouse=True)
 def reset_test_databases():
     """Session-scoped fixture to reset test databases before and after test session.
-    
+
     Runs `scripts/manage_test_databases.sh reset-test-dbs` before the test session
     to ensure clean state, and again after the session to leave databases clean.
-    Skips gracefully if gcloud auth is not available (e.g., in CI without credentials).
+    If the reset fails (e.g. no gcloud auth), only ``db_integration`` tests are
+    skipped — unit tests continue to run.
     """
+    global _DB_READY
+
     # Before session
     print("\n=== Resetting test databases (session start) ===")
-    success = _run_db_reset()
-    if not success:
-        pytest.skip("Database reset failed, skipping db_integration tests")
-    
+    _DB_READY = _run_db_reset()
+
     yield
-    
+
     # After session
     print("\n=== Resetting test databases (session end) ===")
     _run_db_reset()
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip db_integration tests when the database is unavailable."""
+    global _DB_READY
+    if not _DB_READY:
+        skip_db = pytest.mark.skip(reason="Database unavailable — db_integration tests require PostgreSQL")
+        for item in items:
+            if "db_integration" in item.keywords:
+                item.add_marker(skip_db)
 
 
 @pytest.fixture
