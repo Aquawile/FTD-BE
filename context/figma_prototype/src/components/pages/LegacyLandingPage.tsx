@@ -66,11 +66,11 @@ function LegacyLandingPage({ navigate }: { navigate: (p: Page) => void }) {
                   <div className="text-muted-foreground text-sm mt-0.5">NVIDIA Corporation</div>
                 </div>
                 <div className="text-right">
-                <div className="font-mono font-bold text-lg text-foreground">—</div>
-                <div className="text-emerald-400 text-sm flex items-center gap-1 justify-end"><TrendingUp size={12} />—%</div>
+                <div className="font-mono font-bold text-lg text-foreground">$873.50</div>
+                <div className="text-emerald-400 text-sm flex items-center gap-1 justify-end"><TrendingUp size={12} />+4.2%</div>
                 </div>
               </div>
-                <HypeEvidenceBar hype={0} evidence={0} />
+                <HypeEvidenceBar hype={84} evidence={71} />
               {NEWS_ARTICLES.slice(0, 2).map(a => (
                 <div key={a.id} className="flex items-start gap-3 p-3 bg-secondary/50 rounded-lg border border-border/50">
                   <div className="flex-1 min-w-0">
@@ -78,8 +78,8 @@ function LegacyLandingPage({ navigate }: { navigate: (p: Page) => void }) {
                     <div className="text-sm font-medium text-foreground truncate">{a.headline}</div>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-xs font-mono" style={{ color: getHypeColor(a.hype) }}>H:</span>
-                    <span className="text-xs font-mono" style={{ color: getEvidenceColor(a.evidence) }}>E:</span>
+                    <span className="text-xs font-mono" style={{ color: getHypeColor(a.hype) }}>H:{a.hype}</span>
+                    <span className="text-xs font-mono" style={{ color: getEvidenceColor(a.evidence) }}>E:{a.evidence}</span>
                   </div>
                 </div>
               ))}
@@ -87,8 +87,8 @@ function LegacyLandingPage({ navigate }: { navigate: (p: Page) => void }) {
             <div className="space-y-3">
               <div className="p-3 bg-secondary/50 rounded-lg border border-border/50">
                 <div className="text-xs text-muted-foreground mb-2">Hype vs Evidence</div>
-                <div className="text-3xl font-mono font-bold" style={{ color: "#F59E0B" }}>—</div>
-                <div className="text-xs text-muted-foreground">vs. Evidence <span style={{ color: "#10B981" }}>—</span></div>
+                <div className="text-3xl font-mono font-bold" style={{ color: "#F59E0B" }}>84</div>
+                <div className="text-xs text-muted-foreground">vs. Evidence <span style={{ color: "#10B981" }}>71</span></div>
               </div>
               <div className="p-3 bg-secondary/50 rounded-lg border border-border/50">
                 <div className="text-xs text-muted-foreground mb-2">AI Summary</div>

@@ -68,7 +68,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
                     <div className="space-y-1.5"><label htmlFor="firstName" className="text-sm font-medium">First name</label><Input id="firstName" value={firstName} onChange={setFirstName} placeholder="First name" /></div>
                     <div className="space-y-1.5"><label htmlFor="lastName" className="text-sm font-medium">Last name</label><Input id="lastName" value={lastName} onChange={setLastName} placeholder="Last name" /></div>
                   </div>
-                  <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><Input id="email" autoComplete="new-password" type="email" value={emailVal} onChange={setEmailVal} placeholder="you@example.com" icon={<Mail size={14} />} /></div>
+                  <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><Input id="email" type="email" value={emailVal} onChange={setEmailVal} placeholder="you@example.com" icon={<Mail size={14} />} /></div>
                   <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile}>{saved ? "Saved" : "Save Profile"}</Btn>
                 </div>
             )}
@@ -80,9 +80,9 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
           <Card className="p-5">
             <h3 className="font-semibold mb-4">Change Password</h3>
             <div className="space-y-3">
-              <div className="space-y-1.5"><label className="text-sm font-medium">Current password</label>              <Input type="password" autoComplete="new-password" placeholder="••••••••" icon={<Lock size={14} />} /></div>
-              <div className="space-y-1.5"><label className="text-sm font-medium">New password</label><Input type="password" autoComplete="new-password" placeholder="New password" icon={<Lock size={14} />} /></div>
-              <div className="space-y-1.5"><label className="text-sm font-medium">Confirm new password</label><Input type="password" autoComplete="new-password" placeholder="Confirm password" icon={<Lock size={14} />} /></div>
+              <div className="space-y-1.5"><label className="text-sm font-medium">Current password</label>              <Input type="password" placeholder="••••••••" icon={<Lock size={14} />} /></div>
+              <div className="space-y-1.5"><label className="text-sm font-medium">New password</label><Input type="password" placeholder="New password" icon={<Lock size={14} />} /></div>
+              <div className="space-y-1.5"><label className="text-sm font-medium">Confirm new password</label><Input type="password" placeholder="Confirm password" icon={<Lock size={14} />} /></div>
               <Btn variant="primary" size="sm" icon={<Lock size={12} />}>Update Password</Btn>
             </div>
           </Card>

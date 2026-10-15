@@ -49,7 +49,7 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
           </div>
           <div className="space-y-1.5">
             <label htmlFor="reg-password" className="text-sm font-medium">Password</label>
-            <Input id="reg-password" type="password" autoComplete="new-password" value={pw} onChange={setPw} placeholder="Min. 8 characters" icon={<Lock size={14} />} />
+            <Input id="reg-password" type="password" value={pw} onChange={setPw} placeholder="Min. 8 characters" icon={<Lock size={14} />} />
           </div>
           {pw.length > 0 && (
             <div className="space-y-1">

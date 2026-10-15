@@ -85,7 +85,6 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
-          autoComplete="off"
           placeholder="Search tickers, companies, topics..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
