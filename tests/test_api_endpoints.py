@@ -171,7 +171,7 @@ class TestDashboardEndpoint:
 
 class TestTrackedTickersEndpoint:
     @pytest.mark.unit
-    def test_get_tracked_tickers_returns_list(self, _mock_user) -> None:
+    def test_get_tracked_tickers_returns_list(self) -> None:
         fake = [
             TrackedTicker(
                 symbol="AAPL",
@@ -184,7 +184,7 @@ class TestTrackedTickersEndpoint:
             ),
         ]
         with patch("app.routes.tickers.get_tracked_tickers", return_value=fake):
-            response = client.get("/tickers/tracked", headers=_auth_headers())
+            response = client.get("/tickers/tracked")
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -195,32 +195,33 @@ class TestTrackedTickersEndpoint:
         assert data[0]["sector"] == "Technology"
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_empty_list(self, _mock_user) -> None:
+    def test_get_tracked_tickers_empty_list(self) -> None:
         with patch("app.routes.tickers.get_tracked_tickers", return_value=[]):
-            response = client.get("/tickers/tracked", headers=_auth_headers())
+            response = client.get("/tickers/tracked")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_respects_limit_param(self, _mock_user) -> None:
+    def test_get_tracked_tickers_respects_limit_param(self) -> None:
         with patch("app.routes.tickers.get_tracked_tickers") as mock_fn:
             mock_fn.return_value = []
-            client.get("/tickers/tracked?limit=5", headers=_auth_headers())
+            client.get("/tickers/tracked?limit=5")
             mock_fn.assert_called_once_with(limit=5)
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_limit_rejected_when_too_large(self, _mock_user) -> None:
+    def test_get_tracked_tickers_limit_rejected_when_too_large(self) -> None:
         with patch("app.routes.tickers.get_tracked_tickers") as mock_fn:
             mock_fn.return_value = []
-            response = client.get("/tickers/tracked?limit=99999", headers=_auth_headers())
+            response = client.get("/tickers/tracked?limit=99999")
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
             mock_fn.assert_not_called()
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_requires_auth(self) -> None:
-        response = client.get("/tickers/tracked")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    def test_get_tracked_tickers_is_public(self) -> None:
+        with patch("app.routes.tickers.get_tracked_tickers", return_value=[]):
+            response = client.get("/tickers/tracked")
+        assert response.status_code == status.HTTP_200_OK
 
 
 # ---------------------------------------------------------------------------

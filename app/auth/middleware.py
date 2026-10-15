@@ -20,6 +20,7 @@ PUBLIC_PATHS = {
     "/auth/register",
     "/auth/me",
     "/dashboard/stats",
+    "/tickers/tracked",
 }
 
 SEC_PROXY_PREFIX = "/tickers/"
