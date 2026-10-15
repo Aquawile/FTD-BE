@@ -1,14 +1,52 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { Activity, AlertTriangle, ArrowRight, Check, FileText } from "lucide-react";
-import { TICKERS, ALERTS_DATA } from "../../mockData";
+import { useAlerts } from "../../hooks";
+import { useTrackedTickers } from "../../hooks/tickerHooks";
 
 function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
+  const { alerts: ALERTS_DATA, loading, error } = useAlerts(50);
+  const { tickers: trackedTickers } = useTrackedTickers(50);
   const [filter, setFilter] = useState("all");
-  const filtered = filter === "all" ? ALERTS_DATA : filter === "unread" ? ALERTS_DATA.filter(a => !a.read) : ALERTS_DATA.filter(a => a.severity === filter);
-  const alertTypeIcon = (type: string) => type === "filing" ? <FileText size={14} /> : type === "narrative_shift" ? <Activity size={14} /> : <AlertTriangle size={14} />;
-  const alertTypeColor = (t: string) => t === "filing" ? "#10B981" : t === "narrative_shift" ? "#F59E0B" : "#F97316";
+
+  const filtered = filter === "all"
+    ? ALERTS_DATA
+    : filter === "unread"
+      ? ALERTS_DATA.filter(a => !a.read)
+      : ALERTS_DATA.filter(a => a.severity === filter);
+
+  const alertTypeIcon = (type: string) =>
+    type === "filing" ? <FileText size={14} /> : type === "narrative_shift" ? <Activity size={14} /> : <AlertTriangle size={14} />;
+
+  const alertTypeColor = (t: string) =>
+    t === "filing" ? "#10B981" : t === "narrative_shift" ? "#F59E0B" : "#F97316";
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Alerts</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">Loading alerts...</p>
+          </div>
+        </div>
+        <div className="animate-pulse space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i} className="p-4"><div className="h-3 bg-secondary rounded w-3/4" /></Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <Card className="p-4 text-sm text-red-400">Unable to load alerts</Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -33,9 +71,9 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="font-mono font-bold text-sm text-foreground">{a.ticker}</span>
+                  <span className="font-mono font-bold text-sm text-foreground">{a.ticker || "—"}</span>
                   <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.severity}</Badge>
-                  <Badge variant="neutral" className="text-xs capitalize">{a.type.replace("_", " ")}</Badge>
+                  <Badge variant="neutral" className="text-xs capitalize">{a.type?.replace("_", " ") || "—"}</Badge>
                   {!a.read && <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />}
                 </div>
                 <p className="text-sm text-foreground">{a.message}</p>
@@ -45,13 +83,16 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
             </div>
           </Card>
         ))}
+        {filtered.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground py-8">No alerts match your filter.</p>
+        )}
       </div>
 
       {/* Subscription settings */}
       <Card className="mt-6 p-5">
         <h3 className="font-semibold mb-4">Alert Subscriptions</h3>
         <div className="space-y-3 text-sm">
-          {TICKERS.slice(0, 5).map(t => (
+          {trackedTickers.slice(0, 5).map(t => (
             <div key={t.symbol} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
               <div className="flex items-center gap-2">
                 <span className="font-mono font-semibold text-xs text-foreground w-12">{t.symbol}</span>
@@ -64,14 +105,13 @@ function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
               </div>
             </div>
           ))}
+          {trackedTickers.length === 0 && !loading && (
+            <p className="text-xs text-muted-foreground text-center py-4">No tracked tickers.</p>
+          )}
         </div>
       </Card>
     </div>
   );
 }
-
-// ────────────────────────────────────────────────
-// PAGE 19: Account Settings (Profile)
-// ────────────────────────────────────────────────
 
 export default AlertsPage;

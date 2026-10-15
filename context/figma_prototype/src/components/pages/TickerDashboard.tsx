@@ -3,7 +3,8 @@ import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, ScorePill, cn, getHypeColor, getEvidenceColor } from "../ui";
 import { AlertTriangle, Bell, Briefcase, CheckCircle, Download, ExternalLink, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
-import { TICKERS } from "../../mockData";
+import { apiRequest, getTrackedTickers } from "../../api";
+import { TrackedTicker } from "../../types";
 
 interface NewsArticle {
   id: number;
@@ -17,18 +18,6 @@ interface NewsArticle {
   claims: string[];
   evidenceLinks: string[];
   flagged: boolean;
-}
-import { apiRequest } from "../../api";
-
-interface TrackedTicker {
-  symbol: string;
-  name: string;
-  sector: string | null;
-  current_price: number | null;
-  evidence_score: number | null;
-  hype_score: number | null;
-  change_percent: number | null;
-  price_as_of: string | null;
 }
 
 interface PriceRow {
@@ -61,19 +50,9 @@ interface FilingSummary {
   url: string | null;
 }
 
-interface TickerData {
-  symbol: string;
-  name: string;
-  sector: string;
-  hype: number;
-  evidence: number;
-  price: number;
-  change: number;
-}
-
 function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null; onReport: () => void }) {
   const [tab, setTab] = useState("overview");
-  const [tickerData, setTickerData] = useState<TickerData | null>(null);
+  const [tickerData, setTickerData] = useState<TrackedTicker | null>(null);
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [news, setNews] = useState<NewsRow[]>([]);
   const [articles, setArticles] = useState<NewsArticle[]>([]);
@@ -81,101 +60,72 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
   const [loading, setLoading] = useState(true);
   const tabs = ["overview", "news", "evidence"];
 
-  const mockTicker = TICKERS.find(t => t.symbol === ticker) || TICKERS[0];
-
   useEffect(() => {
     let cancelled = false;
-    const fetchData = async () => {
-      if (!firebaseUser) {
-        setTickerData({
-          symbol: ticker,
-          name: mockTicker.name,
-          sector: mockTicker.sector,
-          hype: mockTicker.hype,
-          evidence: mockTicker.evidence,
-          price: mockTicker.price,
-          change: mockTicker.change,
-        });
-        setArticles(NEWS_ARTICLES.filter(a => a.ticker === ticker || a.ticker === ticker.slice(0, 3)));
-        setLoading(false);
-        return;
-      }
+    const loadData = async () => {
+      if (!cancelled) setLoading(true);
       try {
-        const today = new Date();
-        const start = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-        const end = today.toISOString().split("T")[0];
-
-        const [pricesRes, newsRes, filingsRes] = await Promise.all([
-          apiRequest(`/tickers/${ticker}/prices?start=${start}&end=${end}`, firebaseUser),
-          apiRequest(`/tickers/${ticker}/news?start=${start}&end=${end}&limit=50`, firebaseUser),
-          apiRequest(`/tickers/${ticker}/filings`, firebaseUser),
+        const dateRange = {
+          start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          end: new Date().toISOString().split("T")[0],
+        };
+        const [trackedRes, pricesRes, newsRes, filingsRes] = await Promise.all([
+          getTrackedTickers(500),
+          firebaseUser
+            ? apiRequest(`/tickers/${ticker}/prices?start=${dateRange.start}&end=${dateRange.end}`, firebaseUser).then(r => r.ok ? r.json() : [])
+            : Promise.resolve([]),
+          firebaseUser
+            ? apiRequest(`/tickers/${ticker}/news?start=${dateRange.start}&end=${dateRange.end}&limit=50`, firebaseUser).then(r => r.ok ? r.json() : [])
+            : Promise.resolve([]),
+          firebaseUser
+            ? apiRequest(`/tickers/${ticker}/filings`, firebaseUser).then(r => r.ok ? r.json() : [])
+            : Promise.resolve([]),
         ]);
 
         if (!cancelled) {
-          if (pricesRes.ok) {
-            const priceData: PriceRow[] = await pricesRes.json();
-            setPrices(priceData);
-            const latest = priceData[priceData.length - 1];
-            if (latest) {
-              setTickerData({
-                symbol: ticker,
-                name: mockTicker.name,
-                sector: mockTicker.sector,
-                hype: mockTicker.hype,
-                evidence: mockTicker.evidence,
-                price: Number(latest.current ?? mockTicker.price),
-                change: Number(latest.percent_change ?? mockTicker.change),
-              });
-            }
-          }
-          if (newsRes.ok) {
-            const newsData: NewsRow[] = await newsRes.json();
-            setNews(newsData);
-          }
-          if (filingsRes?.ok) {
-            const filingsData: FilingSummary[] = await filingsRes.json();
-            setFilings(filingsData.slice(0, 10));
-          }
-          setLoading(false);
+          const match = Array.isArray(trackedRes) ? trackedRes.find((t: TrackedTicker) => t.symbol === ticker) : null;
+          setTickerData(match || null);
+          setPrices(pricesRes || []);
+          setNews(newsRes || []);
+          setArticles([]);
+          setFilings((filingsRes || []).slice(0, 10));
         }
       } catch {
-        if (!cancelled) {
-          setLoading(false);
-        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
-    fetchData();
+    loadData();
     return () => { cancelled = true; };
-  }, [ticker, firebaseUser, mockTicker]);
+  }, [ticker, firebaseUser]);
 
   const t = tickerData || {
     symbol: ticker,
-    name: mockTicker.name,
-    sector: mockTicker.sector,
-    hype: mockTicker.hype,
-    evidence: mockTicker.evidence,
-    price: mockTicker.price,
-    change: mockTicker.change,
+    name: ticker,
+    sector: "",
+    current_price: 0,
+    evidence_score: 50,
+    hype_score: 50,
+    change_percent: 0,
   };
 
   const flagArticle = (id: number) => setArticles(prev => prev.map(a => a.id === id ? { ...a, flagged: !a.flagged } : a));
 
-  const formatPrice = (price: number | null) => {
-    if (price === null) return "—";
+  const formatPrice = (price: number | null | undefined) => {
+    if (price == null) return "—";
     return price.toLocaleString();
   };
 
   const getFinancialFromPrices = () => {
-    if (prices.length === 0) return null;
+    if (!prices || prices.length === 0) return null;
     const latest = prices[prices.length - 1];
-    const prev = prices[prices.length - 2];
     return {
       currentPrice: latest.current ?? null,
       previousClose: latest.previous_close ?? null,
       open: latest.open ?? null,
       high: latest.high ?? null,
       low: latest.low ?? null,
-      dailyChange: latest.percent_change != null ? parseFloat(latest.percent_change) : null,
+      dailyChange: latest.percent_change != null ? parseFloat(String(latest.percent_change)) : null,
     };
   };
 

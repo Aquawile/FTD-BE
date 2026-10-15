@@ -3,9 +3,8 @@ import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Sparkline, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
-import { fetchWorkspaces } from "../../api";
-import { WorkspaceResponse } from "../../types";
+import { fetchWorkspaces, getTrackedTickers, getAlerts } from "../../api";
+import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
 
 function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
   const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null; vectorized_sec_count: number } | null>(null);
@@ -13,6 +12,10 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
   const [statsError, setStatsError] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
   const [wsLoading, setWsLoading] = useState(true);
+  const [alerts, setAlerts] = useState<AlertResponse[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [trackedTickers, setTrackedTickers] = useState<TrackedTicker[]>([]);
+  const [tickersLoading, setTickersLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +30,39 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
       }
     };
     fetchStats();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchAlerts = async () => {
+      try {
+        const data = await getAlerts(3);
+        if (!cancelled) setAlerts(data);
+      } catch {
+        if (!cancelled) setAlerts([]);
+      } finally {
+        if (!cancelled) setAlertsLoading(false);
+      }
+    };
+    fetchAlerts();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchTickers = async () => {
+      setTickersLoading(true);
+      try {
+        const data = await getTrackedTickers(50);
+        if (!cancelled) setTrackedTickers(data);
+      } catch {
+        if (!cancelled) setTrackedTickers([]);
+      } finally {
+        if (!cancelled) setTickersLoading(false);
+      }
+    };
+    fetchTickers();
     return () => { cancelled = true; };
   }, []);
 
@@ -58,7 +94,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     return String(n);
   };
 
-  const topMovers = TICKERS.slice(0, 5);
+  const topMovers = trackedTickers.slice(0, 5);
   const spData = [45, 52, 48, 63, 71, 68, 74, 69, 77, 82, 79, 84];
 
   return (
@@ -114,7 +150,18 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
           </div>
           <Card>
             <div className="divide-y divide-border">
-              {topMovers.map(t => (
+              {tickersLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 p-4">
+                    <div className="w-10 h-10 rounded-xl bg-secondary animate-pulse shrink-0" />
+                    <div className="flex-1 space-y-1"><div className="h-3 bg-secondary rounded w-1/2" /><div className="h-3 bg-secondary rounded w-1/3" /></div>
+                    <div className="w-12 h-3 bg-secondary rounded animate-pulse shrink-0" />
+                  </div>
+                ))
+              ) : topMovers.map(t => {
+                const changePct = (typeof t.change_percent === "number" ? t.change_percent : 0) || 0;
+                const price = t.current_price ?? 0;
+                return (
                 <div
                   key={t.symbol}
                   className="flex items-center gap-4 p-4 hover:bg-secondary/30 cursor-pointer transition-all"
@@ -126,24 +173,25 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-semibold text-sm text-foreground">{t.symbol}</span>
-                      <span className="text-muted-foreground text-xs truncate">{t.name}</span>
+                      <span className="text-muted-foreground text-xs truncate">{t.name || t.symbol}</span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-3">
                       <div className="text-xs text-muted-foreground">
-                        Price data available
+                        Evidence: {t.evidence_score ?? "—"} | Hype: {t.hype_score ?? "—"}
                       </div>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="font-mono text-sm font-semibold text-foreground">${t.price.toLocaleString()}</div>
-                    <div className={cn("text-xs flex items-center gap-0.5 justify-end", t.change > 0 ? "text-emerald-400" : "text-red-400")}>
-                      {t.change > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                      {t.change > 0 ? "+" : ""}{t.change}%
+                    <div className="font-mono text-sm font-semibold text-foreground">${price.toLocaleString()}</div>
+                    <div className={cn("text-xs flex items-center gap-0.5 justify-end", changePct > 0 ? "text-emerald-400" : "text-red-400")}>
+                      {changePct > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                      {changePct > 0 ? "+" : ""}{changePct}%
                     </div>
                   </div>
-                  <Sparkline data={spData.map(v => v + Math.random() * 8 - 4)} color={t.change > 0 ? "#10B981" : "#EF4444"} />
+                  <Sparkline data={spData.map(v => v + Math.random() * 8 - 4)} color={changePct > 0 ? "#10B981" : "#EF4444"} />
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         </div>
@@ -157,17 +205,21 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
               <button onClick={() => navigate("alerts")} className="text-xs text-primary hover:underline cursor-pointer">All alerts →</button>
             </div>
             <div className="space-y-2">
-              {ALERTS_DATA.slice(0, 3).map(a => (
+              {alertsLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="p-3"><div className="animate-pulse space-y-1"><div className="h-2.5 bg-secondary rounded w-3/4" /><div className="h-2.5 bg-secondary rounded w-1/2" /></div></Card>
+                ))
+              ) : alerts.map(a => (
                 <Card key={a.id} className="p-3">
                   <div className="flex items-start gap-2">
                     <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", a.read ? "bg-secondary" : "bg-orange-400")} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1 mb-0.5">
-                        <span className="font-mono font-semibold text-xs text-foreground">{a.ticker}</span>
+                        <span className="font-mono font-semibold text-xs text-foreground">{a.ticker || "—"}</span>
                         <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">{a.message}</p>
-                      <div className="text-xs text-muted-foreground/60 mt-1">{a.time}</div>
+                      <div className="text-xs text-muted-foreground/60 mt-1">{a.time || "—"}</div>
                     </div>
                   </div>
                 </Card>
