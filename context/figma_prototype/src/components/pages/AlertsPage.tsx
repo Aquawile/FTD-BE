@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
+import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { Activity, AlertTriangle, ArrowRight, Check, FileText } from "lucide-react";
 import { useAlerts } from "../../hooks";
 import { useTrackedTickers } from "../../hooks/tickerHooks";
 
-function AlertsPage({ navigate }: { navigate: (p: Page) => void }) {
-  const { alerts: ALERTS_DATA, loading, error } = useAlerts(50);
+function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
+  const { alerts: ALERTS_DATA, loading, error } = useAlerts(50, firebaseUser);
   const { tickers: trackedTickers } = useTrackedTickers(50);
   const [filter, setFilter] = useState("all");
 

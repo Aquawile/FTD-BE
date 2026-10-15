@@ -18,7 +18,7 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
             </div>
             <div className="space-y-1.5">
               <label htmlFor="forgot-email" className="text-sm font-medium">Email address</label>
-              <Input id="forgot-email" autoComplete="new-password" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+              <Input id="forgot-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
             </div>
             <Btn variant="primary" className="w-full justify-center" onClick={() => setSent(true)} disabled={!email.includes("@")}>
               <Send size={14} /> Send Reset Link

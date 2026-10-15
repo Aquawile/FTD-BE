@@ -24,7 +24,7 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser }: { 
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Description (optional)</label>
-              <textarea autoComplete="off" className="w-full bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none" rows={3} placeholder="Track concurrent AI chip developments..." />
+              <textarea className="w-full bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none" rows={3} placeholder="Track concurrent AI chip developments..." />
             </div>
             <Btn variant="primary" size="sm" icon={<Check size={12} />}>Save Changes</Btn>
           </div>

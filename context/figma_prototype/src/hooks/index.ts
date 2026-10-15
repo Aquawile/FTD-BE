@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { FirebaseUser } from "firebase/auth";
+import { apiRequest } from "../api";
 
 export * from "./tickerHooks";
 
@@ -163,23 +165,28 @@ export function useRemoveTickerFromWorkspace() {
 // Alert Hooks
 // ────────────────────────────────────────────────
 
-export function useAlerts(limit = 10) {
+export function useAlerts(limit = 10, firebaseUser: FirebaseUser | null = null) {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  const fetchAlerts = async () => {
+    const res = await apiRequest(`/alerts?limit=${limit}`, firebaseUser);
+    if (!res.ok) throw new Error("Failed to fetch alerts");
+    return res.json();
+  };
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/alerts?limit=${limit}`)
-      .then(r => r.ok ? r.json() : Promise.reject())
+    fetchAlerts()
       .then(data => { if (!cancelled) setAlerts(data); })
       .catch(() => { if (!cancelled) setError(true); setLoading(false); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { /* cancelled = true */ };
-  }, [limit]);
+    return () => { cancelled = true; };
+  }, [limit, firebaseUser]);
 
-  return { alerts, loading, error, refetch: () => fetch(`/api/alerts?limit=${limit}`).then(r => r.ok ? r.json() : Promise.reject()).then(setAlerts).catch(() => setError(true)) };
+  return { alerts, loading, error, refetch: () => fetchAlerts().then(setAlerts).catch(() => setError(true)) };
 }
 
 // ────────────────────────────────────────────────

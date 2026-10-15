@@ -3,7 +3,7 @@ import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Sparkline, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
-import { fetchWorkspaces, getTrackedTickers, getAlerts } from "../../api";
+import { fetchWorkspaces, getTrackedTickers, apiRequest } from "../../api";
 import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
 
 function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
@@ -37,7 +37,13 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     let cancelled = false;
     const fetchAlerts = async () => {
       try {
-        const data = await getAlerts(3);
+        if (!firebaseUser) {
+          setAlerts([]);
+          return;
+        }
+        const res = await apiRequest("/alerts?limit=3", firebaseUser);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
         if (!cancelled) setAlerts(data);
       } catch {
         if (!cancelled) setAlerts([]);
@@ -47,7 +53,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     };
     fetchAlerts();
     return () => { cancelled = true; };
-  }, []);
+  }, [firebaseUser]);
 
   useEffect(() => {
     let cancelled = false;

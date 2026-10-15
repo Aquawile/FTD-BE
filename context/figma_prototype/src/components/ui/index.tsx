@@ -110,14 +110,13 @@ export interface InputProps {
   className?: string;
 }
 
-export function Input({ id, placeholder, value, onChange, type = "text", icon, className, autoComplete = "off" }: InputProps & { autoComplete?: string }) {
+export function Input({ id, placeholder, value, onChange, type = "text", icon, className }: InputProps) {
   return (
     <div className={cn("relative", className)}>
       {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</div>}
       <input
         id={id}
         type={type}
-        autoComplete={autoComplete}
         placeholder={placeholder}
         value={value}
         onChange={e => onChange?.(e.target.value)}

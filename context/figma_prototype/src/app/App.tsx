@@ -125,7 +125,7 @@ function App() {
       case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} refreshWorkspace={refreshWorkspace} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} />;
       case "chat": return <ChatPage navigate={navigate} />;
-      case "alerts": return <AlertsPage navigate={navigate} />;
+      case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} />;
       case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
       case "admin": return <AdminDashboard navigate={navigate} />;
       case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
