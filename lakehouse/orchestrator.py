@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import gc
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -29,8 +30,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# The live staging tables are maintained incrementally by scripts/sync_all_recent.sh.
+# This writer TRUNCATEs a table and rewrites only the current run's window, which
+# wiped history and reintroduced duplicate/misattributed rows (CLAUDE.md known
+# issues #8-#10). It is disabled unless explicitly re-enabled for a one-off rebuild.
+_ALLOW_POSTGRES_TRUNCATE = os.getenv("LAKEHOUSE_ALLOW_POSTGRES_TRUNCATE") == "1"
+
+
 def _write_table_to_postgres(settings: LakehouseSettings, table_name: str, df) -> None:
     if table_name not in settings.postgres_tables:
+        return
+    if not _ALLOW_POSTGRES_TRUNCATE:
+        logger.warning(
+            "Skipping PostgreSQL write for %s: truncate+rewrite is disabled "
+            "(set LAKEHOUSE_ALLOW_POSTGRES_TRUNCATE=1 for a deliberate rebuild)", table_name)
         return
     if df is None or df.empty:
         logger.warning("Skipping PostgreSQL write for %s: no data", table_name)

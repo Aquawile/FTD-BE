@@ -334,7 +334,8 @@ class TestTickerNewsEndpoint:
                 content_body="Apple announces new product",
             ),
         ]
-        with patch("app.routes.tickers.get_ticker_news", return_value=fake):
+        with patch("app.routes.tickers.get_ticker_news", return_value=fake), \
+             patch("app.routes.tickers.get_ticker_news_bounds", return_value=(1, date(2024, 6, 1))):
             response = client.get(
                 "/tickers/AAPL/news?start=2024-01-01&end=2024-12-31",
                 headers=_auth_headers(),
@@ -345,6 +346,24 @@ class TestTickerNewsEndpoint:
         assert len(data) == 1
         assert data[0]["target_ticker"] == "AAPL"
         assert "Apple announces" in data[0]["content_body"]
+
+    @pytest.mark.unit
+    def test_get_news_pages_with_offset_and_reports_totals(self, _mock_permissions) -> None:
+        with patch("app.routes.tickers.get_ticker_news", return_value=[]) as rows, \
+             patch("app.routes.tickers.get_ticker_news_bounds", return_value=(137, date(2026, 6, 29))):
+            response = client.get(
+                "/tickers/AAPL/news?start=2026-01-01&end=2026-10-16&limit=20&offset=40",
+                headers=_auth_headers(),
+            )
+        assert response.status_code == status.HTTP_200_OK
+        assert rows.call_args.args == ("AAPL", date(2026, 1, 1), date(2026, 10, 16), 20, 40)
+        assert response.headers["X-Total-Count"] == "137"
+        assert response.headers["X-Earliest-Date"] == "2026-06-29"
+
+    @pytest.mark.unit
+    def test_get_news_negative_offset_returns_422(self, _mock_permissions) -> None:
+        response = client.get("/tickers/AAPL/news?start=2026-01-01&end=2026-10-16&offset=-1", headers=_auth_headers())
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.unit
     def test_get_news_missing_dates_returns_422(self, _mock_permissions) -> None:

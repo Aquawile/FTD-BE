@@ -5,7 +5,7 @@ LOG_FILE="/var/log/lakehouse-pipeline.log"
 PGHOST="10.168.0.3"
 PGDATABASE="ftd_lakehouse_staging"
 PGUSER="ftd_app"
-PGPASSWORD="temp_password_123"
+PGPASSWORD="${PGPASSWORD:-}"  # never hardcode; Postgres writes are disabled anyway (see lakehouse/orchestrator.py)
 PGPORT="5432"
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) Starting lakehouse pipeline" | tee -a "$LOG_FILE"
@@ -25,14 +25,14 @@ fi
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) Installing dependencies..." | tee -a "$LOG_FILE"
 /home/isabellabutera/app/.venv/bin/pip install beautifulsoup4 lxml python-dotenv psycopg2-binary 2>&1 | tee -a "$LOG_FILE"
 
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) Running lakehouse orchestrator with PostgreSQL output..." | tee -a "$LOG_FILE"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) Running lakehouse orchestrator (GCS parquet only; Postgres writes disabled)..." | tee -a "$LOG_FILE"
 PYTHONPATH=/home/isabellabutera/app/sec \
 PGHOST="$PGHOST" \
 PGPORT="$PGPORT" \
 PGDATABASE="$PGDATABASE" \
 PGUSER="$PGUSER" \
 PGPASSWORD="$PGPASSWORD" \
-/home/isabellabutera/app/.venv/bin/python -m lakehouse.orchestrator --postgres 2>&1 | tee -a "$LOG_FILE"
+/home/isabellabutera/app/.venv/bin/python -m lakehouse.orchestrator 2>&1 | tee -a "$LOG_FILE"
 
 LAKEHOUSE_EXIT=$?
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) Lakehouse pipeline completed with exit code $LAKEHOUSE_EXIT" | tee -a "$LOG_FILE"

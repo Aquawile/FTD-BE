@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.auth.dependencies import get_current_application_user, require_permission
 from app.crud import (
     get_ticker_news,
+    get_ticker_news_bounds,
     get_ticker_prices,
     get_tracked_tickers,
     search_tickers,
@@ -68,10 +69,22 @@ def route_get_news(
     ticker: str,
     start: Annotated[date, Query(description="Start date (YYYY-MM-DD)")],
     end: Annotated[date, Query(description="End date (YYYY-MM-DD)")],
+    response: Response,
     limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, description="Rows to skip (page * limit)"),
     permission: str = require_permission("tickers.news"),
 ) -> list[NewsRow]:
-    return get_ticker_news(ticker, start, end, limit)
+    """One page of news, most recent first.
+
+    Headers: X-Total-Count = articles in [start, end]; X-Earliest-Date = the
+    ticker's oldest article, so the UI can page from any start date to today.
+    """
+    rows = get_ticker_news(ticker, start, end, limit, offset)
+    total, earliest = get_ticker_news_bounds(ticker, start, end)
+    response.headers["X-Total-Count"] = str(total)
+    if earliest is not None:
+        response.headers["X-Earliest-Date"] = earliest.isoformat()
+    return rows
 
 
 class FilingSummaryResponse(BaseModel):
