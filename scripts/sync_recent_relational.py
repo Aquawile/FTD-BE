@@ -184,8 +184,10 @@ _NAME_SUFFIX_RE = re.compile(
 def normalize_company_name(name: str) -> str | None:
     """'NVIDIA CORP' -> 'NVIDIA', 'Apple Inc.' -> 'Apple'; None if too short to match safely."""
     base = re.sub(r"^the\s+", "", (name or "").strip(), flags=re.IGNORECASE)
-    for _ in range(3):
-        stripped = _NAME_SUFFIX_RE.sub("", base).strip(" ,.")
+    for _ in range(4):
+        # SEC conformed names carry state tags and slashes: "NORTHROP GRUMMAN CORP /DE/", "WALT DISNEY CO/"
+        stripped = re.sub(r"\s*/\s*[A-Z]{2,4}\s*/?\s*$|/+\s*$", "", base)
+        stripped = _NAME_SUFFIX_RE.sub("", stripped).strip(" ,./")
         if stripped == base:
             break
         base = stripped
@@ -223,6 +225,16 @@ def load_company_names(cur) -> dict[str, list[str]]:
     return names
 
 
+def batch_tickers(payload: dict, symbols: set[str]) -> list[str]:
+    """Tracked tickers a GNews batch file was fetched for.
+
+    Files written since the name-based queries list them in "tickers"; older
+    files only have "$TICK" terms in the query string.
+    """
+    raw = payload.get("tickers") or re.findall(r"\$([A-Z]{1,5})", payload.get("query", ""))
+    return [str(t).upper() for t in raw if str(t).upper() in symbols]
+
+
 def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
               since_override: date | None = None, strict: bool = False,
               names: dict[str, list[str]] | None = None) -> int:
@@ -249,7 +261,7 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
             except Exception as exc:
                 logger.warning("gnews: failed to parse %s: %s", blob.name, exc)
                 continue
-            tickers = [t for t in re.findall(r"\$([A-Z]{1,5})", payload.get("query", "")) if t in symbols]
+            tickers = batch_tickers(payload, symbols)
             if not tickers:
                 continue
             fetched_at = payload.get("fetched_at")

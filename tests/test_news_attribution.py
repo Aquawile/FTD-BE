@@ -19,6 +19,9 @@ _spec.loader.exec_module(srr)
     ("The Walt Disney Company", "Walt Disney"),
     ("3M COMPANY", "3M"),
     ("Co", None),
+    ("NORTHROP GRUMMAN CORP /DE/", "NORTHROP GRUMMAN"),
+    ("WALT DISNEY CO/", "WALT DISNEY"),
+    ("VERTEX PHARMACEUTICALS INC / MA", "VERTEX PHARMACEUTICALS"),
 ])
 def test_normalize_company_name(raw, expected):
     assert srr.normalize_company_name(raw) == expected
