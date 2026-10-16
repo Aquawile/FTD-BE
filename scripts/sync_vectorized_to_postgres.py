@@ -5,15 +5,19 @@ Non-destructive: uses INSERT ... ON CONFLICT (source_object, chunk_index)
 DO NOTHING to avoid overwriting or duplicating existing records.
 
 Designed to be run as a periodic cron job to keep PostgreSQL in sync with GCS.
+By default only files written to GCS since the newest ``vectorized_at`` already
+in PostgreSQL (minus a lookback) are downloaded; ``--full`` rescans everything.
 
 Usage:
-    python3 scripts/sync_vectorized_to_postgres.py
+    python3 scripts/sync_vectorized_to_postgres.py [--full] [--lookback-days 2]
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.cloud import storage
@@ -32,15 +36,26 @@ BATCH_SIZE = 500
 MAX_WORKERS = 10
 
 
-def list_all_blobs():
-    """List all JSON blobs in the vectorized bucket."""
+def list_all_blobs(since: datetime | None = None):
+    """List JSON blobs in the vectorized bucket, optionally only those updated since ``since``."""
     client = storage.Client()
     bucket = client.bucket(BUCKET)
     blobs = []
     for blob in bucket.list_blobs():
-        if blob.name.endswith(".json"):
-            blobs.append(blob)
+        if not blob.name.endswith(".json"):
+            continue
+        if since is not None and blob.updated is not None and blob.updated < since:
+            continue
+        blobs.append(blob)
     return blobs
+
+
+def _latest_vectorized_at() -> datetime | None:
+    """Newest vectorized_at already mirrored in PostgreSQL."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(vectorized_at) FROM sec_vectorized_chunks")
+            return cur.fetchone()[0]
 
 
 def process_blob(blob):
@@ -72,10 +87,18 @@ def process_blob(blob):
     return records
 
 
-def sync():
+def sync(full: bool = False, lookback_days: int = 2):
     """Main sync function."""
-    blobs = list_all_blobs()
-    print(f"Found {len(blobs)} JSON files in GCS bucket '{BUCKET}'")
+    since = None
+    if not full:
+        latest = _latest_vectorized_at()
+        if latest is not None:
+            if latest.tzinfo is None:
+                latest = latest.replace(tzinfo=timezone.utc)
+            since = latest - timedelta(days=lookback_days)
+    blobs = list_all_blobs(since)
+    scope = "all files" if since is None else f"files updated since {since.isoformat()}"
+    print(f"Found {len(blobs)} JSON files in GCS bucket '{BUCKET}' ({scope})")
 
     total_inserted = 0
     total_skipped = 0
@@ -145,4 +168,8 @@ def sync():
 
 
 if __name__ == "__main__":
-    sync()
+    parser = argparse.ArgumentParser(description="Mirror ftd-vectorized-data JSON chunks into PostgreSQL.")
+    parser.add_argument("--full", action="store_true", help="Rescan every file instead of only recent ones")
+    parser.add_argument("--lookback-days", type=int, default=2)
+    args = parser.parse_args()
+    sync(full=args.full, lookback_days=args.lookback_days)

@@ -399,10 +399,18 @@ ftd-vectorized-data/** ──(scripts/sync_vectorized_to_postgres.py)──► s
 SEC endpoints list GCS on every request, so new vectorized filings show up with no extra step.
 `sec_vectorized_chunks` (35,757 rows) is a Postgres mirror of all vectorized files and is not read by the API.
 
-**Keeping relational data current**: `scripts/sync_recent_relational.py` (incremental, idempotent:
-reads raw date folders since the newest date already in Postgres, upserts prices, inserts new
-news rows, refreshes `tickers` price snapshot). Wrapper for cron: `scripts/sync_recent_relational.sh`
-(takes PG* env from the `ftd-api` systemd unit). Both are copied to `~/prices/` on `ftd-staging-api`.
+**Keeping data current (cron on `ftd-staging-api`, UTC)**: `scripts/sync_all_recent.sh` runs at
+22:20 (after raw prices land ~22:09) and 00:20 (after GNews lands ~00:00). It takes PG* env from
+the `ftd-api` systemd unit and runs, independently:
+
+1. `scripts/sync_recent_relational.py` (on VM: `~/prices/`): incremental, idempotent. Reads raw
+   date folders since the newest date already in Postgres, upserts prices, inserts new news rows,
+   refreshes the `tickers` price snapshot. A missed run is caught up by the next one.
+2. `scripts/sync_vectorized_to_postgres.py` (on VM: `~/app/scripts/`): mirrors vectorized files
+   updated since the newest `vectorized_at` in `sec_vectorized_chunks` (`--full` rescans everything).
+
+Log: `~/prices/sync_all_recent.log`. API endpoints need no cache busting: nginx doesn't cache
+`/api/`, and the app only caches SEC filing HTML, which never changes once filed.
 
 ### Alert Data Flow (requires auth)
 
@@ -862,7 +870,7 @@ There is no `latest_price_data` table; latest prices come from `staging_finnhub`
 
 - The API VM cron `20 22 * * * ~/prices/lakehouse_run.sh` exits immediately every night: cron has no `PGPASSWORD`, and `lakehouse_run.py` imports `src.*` from `~/app/sec`, which doesn't exist. It also only loaded prices, not news.
 - Backfilled 2026-09-18 → 2026-10-15 with `scripts/sync_recent_relational.py` (11,778 price rows, 97,084 news rows, 492 ticker snapshots).
-- **Fixed 2026-10-16**: crontab now runs `20 22 * * * ~/prices/sync_recent_relational.sh` (VM is UTC; raw prices land ~22:09 UTC). The old `lakehouse_run.sh` line is kept commented out; previous crontab backed up in `~/backups/`. Verified under a cron-like empty environment (exit 0). Log: `~/prices/sync_recent_relational.log`.
+- **Fixed 2026-10-16**: crontab now runs `~/prices/sync_all_recent.sh` at 22:20 and 00:20 UTC (see Data Inventory → Keeping data current). The old `lakehouse_run.sh` line is kept commented out; previous crontab backed up in `~/backups/`. Verified under a cron-like empty environment.
 - The 9,840 news rows from the old loader (all `ingest_date = 2026-09-18`) contain 1,580 duplicate (ticker, url, date) groups. Rows inserted by the sync script have no duplicates.
 
 ### 9. `target_cik` Is Misaligned in Staging Tables
