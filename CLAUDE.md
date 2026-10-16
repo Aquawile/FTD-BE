@@ -91,7 +91,7 @@ gcloud-bucket-data/
 │   ├── test_api_endpoints.py     # API endpoint tests (auth, routes, response shapes)
 │   └── test_user_sync.py         # User sync integration tests
 ├── scripts/
-│   ├── start_app.sh              # Start/restart uvicorn on backend VM
+│   ├── start_app.sh              # Start uvicorn on the dev VM (staging uses systemd ftd-api)
 │   ├── verify_deployment.sh      # Post-deployment verification script
 │   └── provision_staging_vms.sh  # VM provisioning script
 ├── migrations/                   # Database migrations
@@ -429,7 +429,7 @@ GET /api/alerts
 
 ### Backend (on `ftd-staging-api` VM)
 
-Set in `/etc/systemd/system/ftd-api.service` and via `scripts/start_app.sh`:
+Set in `/etc/systemd/system/ftd-api.service` (the only way staging runs the API; `scripts/start_app.sh` is for the dev VM):
 
 | Variable | Value | Description |
 |---|---|---|
@@ -653,42 +653,41 @@ get_timeline_from_gcs(ticker, start, end, limit, offset) -> list[TimelineEvent]
 
 ## 10. Deployment
 
-### Backend Deployment
+### How staging is deployed
+
+**Normal path: push to the `staging` branch.** `Deploy to GCP` (`.github/workflows/deploy.yml`) waits for CI, then runs:
+
+1. **Migrations:** applies every `app/auth/migrations/NNN_*.sql` not recorded in `schema_migrations`, each in one transaction (`ON_ERROR_STOP`) together with its ledger row. Legacy 001–005 are recorded, not re-run, when their schema exists.
+2. **Backend:** tarball → unpack to `~/app/.release` → `pip install` → swap into `~/app/app` (previous kept as `~/app/app.prev`) → `sudo systemctl restart ftd-api` → health check `:8080/health` → auto-rollback if unhealthy → write `~/version.json` → verify `/version` reports the SHA.
+3. **Web:** `vite build` → tarball → `~/frontend/dist.new` → swap into `~/frontend/dist` (previous kept as `dist.prev`) → `nginx -t` + reload → health check → rollback on failure → write `~/version.json`.
+
+**Layout the VM expects (don't deviate):**
+- API runs **only** as systemd `ftd-api.service`: `uvicorn app.main:app` on **:8080**, `WorkingDirectory=/home/isabellabutera/app`, `Restart=always`. Never `pkill uvicorn` or start a second copy (`scripts/start_app.sh` is for the dev VM only).
+- Backend code lives in **`/home/isabellabutera/app/app/`**. Nothing else belongs at the top of `~/app/` except `.venv/` and `scripts/`.
+- Deployment metadata is **`/home/isabellabutera/version.json`** on each VM (read per request by `/version`).
+
+### Manual deploy (fallback only; mirrors the pipeline)
 
 ```bash
-# 1. Build/prepare code locally
-# 2. Copy code to API VM
-gcloud compute scp --recurse app/* isabellabutera@ftd-staging-api:/home/isabellabutera/app/ \
-  --zone us-west2-a --tunnel-through-iap
+# Backend: swap the whole package dir, then restart the service
+tar --exclude='__pycache__' -czf /tmp/ftd-release.tgz app requirements.txt
+gcloud compute scp /tmp/ftd-release.tgz isabellabutera@ftd-staging-api:/tmp/ --zone us-west2-a --tunnel-through-iap
+gcloud compute ssh isabellabutera@ftd-staging-api --zone us-west2-a --tunnel-through-iap --command 'set -euo pipefail
+  cd ~/app && rm -rf .release && mkdir .release && tar -xzf /tmp/ftd-release.tgz -C .release
+  .venv/bin/pip install --quiet -r .release/requirements.txt
+  rm -rf app.prev && mv app app.prev && mv .release/app app && rm -rf .release
+  sudo systemctl restart ftd-api.service && sleep 5 && curl -s localhost:8080/health'
+# then write ~/version.json (commit_sha, branch, deployed_at, environment) only if healthy
 
-# 3. Copy version.json
-gcloud compute scp version.json isabellabutera@ftd-staging-api:/home/isabellabutera/app/
-
-# 4. Restart service
-gcloud compute ssh isabellabutera@ftd-staging-api --zone us-west2-a --tunnel-through-iap \
-  --command "sudo systemctl restart ftd-api.service"
-
-# 5. Verify
-gcloud compute ssh isabellabutera@ftd-staging-api --zone us-west2-a --tunnel-through-iap \
-  --command "systemctl status ftd-api.service --no-pager -l"
+# Frontend: replace dist as a whole (never copy dist/ into dist/: it nests)
+(cd context/figma_prototype && npx vite build && tar -czf /tmp/ftd-web.tgz -C dist .)
+gcloud compute scp /tmp/ftd-web.tgz isabellabutera@ftd-staging-web:/tmp/ --zone us-west2-a --tunnel-through-iap
+gcloud compute ssh isabellabutera@ftd-staging-web --zone us-west2-a --tunnel-through-iap --command 'set -euo pipefail
+  cd ~/frontend && rm -rf dist.new && mkdir dist.new && tar -xzf /tmp/ftd-web.tgz -C dist.new
+  rm -rf dist.prev && mv dist dist.prev && mv dist.new dist && sudo nginx -t && sudo systemctl reload nginx'
 ```
 
-### Frontend Deployment
-
-```bash
-# 1. Build locally
-cd context/figma_prototype
-npx vite build
-
-# 2. Copy dist to web VM
-gcloud compute scp --recurse dist/* isabellabutera@ftd-staging-web:/home/isabellabutera/frontend/dist/ \
-  --zone us-west2-a --tunnel-through-iap
-
-# 3. nginx is already configured to serve from dist/ — no restart needed for static files
-# To reload nginx (if config changed):
-gcloud compute ssh isabellabutera@ftd-staging-web --zone us-west2-a --tunnel-through-iap \
-  --command "sudo nginx -s reload"
-```
+Rollback: `mv app app.bad && mv app.prev app && sudo systemctl restart ftd-api` (or `dist.prev` → `dist` on the web VM).
 
 ### Cloudflare Tunnel (for testing)
 
@@ -916,11 +915,14 @@ gcloud compute ssh isabellabutera@ftd-postgres-vm --zone us-west2-a --tunnel-thr
 
 | Path (API VM) | Purpose |
 |---|---|
-| `/home/isabellabutera/app/` | Backend code root |
-| `/home/isabellabutera/app/app/` | Python package directory |
+| `/home/isabellabutera/app/` | Service working dir: holds only `app/`, `.venv/`, `scripts/` (+ `app.prev/` after a deploy) |
+| `/home/isabellabutera/app/app/` | Python package the service imports (deployed code) |
 | `/home/isabellabutera/app/.venv/` | Python virtual environment |
-| `/home/isabellabutera/app/version.json` | Deployment metadata |
-| `/tmp/uvicorn.log` | API server logs |
+| `/home/isabellabutera/app/scripts/` | `sync_vectorized_to_postgres.py` (run by cron) |
+| `/home/isabellabutera/prices/` | `sync_all_recent.sh`, `sync_recent_relational.py` (cron) |
+| `/home/isabellabutera/version.json` | Deployment metadata (served by `/version`) |
+| `/home/isabellabutera/backups/` | Pre-deploy backups and moved stale files |
+| `journalctl -u ftd-api.service` | API server logs |
 
 | Path (Web VM) | Purpose |
 |---|---|
@@ -940,8 +942,6 @@ sudo systemctl restart ftd-api.service
 # Logs (follow)
 sudo journalctl -u ftd-api.service -f
 
-# Or tail log file
-tail -50 /tmp/uvicorn.log
 ```
 
 ### Useful curl Commands
@@ -1019,7 +1019,7 @@ The split was done via `gh CLI` and all use the main `gcloud-bucket-data` direct
 
 The backend reads env vars from:
 1. systemd service file (`/etc/systemd/system/ftd-api.service`)
-2. Shell environment (set by `scripts/start_app.sh`)
+2. Shell environment (`scripts/start_app.sh`, dev VM only; staging uses the systemd unit)
 3. `.env` file (via python-dotenv, if present at `/home/isabellabutera/app/.env`)
 
 For local development: copy `start_app.sh` and modify the defaults, or set env vars directly.
