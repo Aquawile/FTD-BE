@@ -58,27 +58,29 @@ scp_cmd() {
 # JSON output for verification results
 CHECK_RESULTS=()
 
+# Results are built with jq so command output (HTML, quotes, newlines) can't break the JSON.
+# status: passed | failed | skipped. "actual" is capped at 500 characters.
 add_check_result() {
     local name="$1"
-    local passed="$2"
+    local status="$2"
     local expected="$3"
-    local actual="$4"
-    CHECK_RESULTS+=("{\"name\":\"${name}\",\"passed\":${passed},\"expected\":\"${expected}\",\"actual\":\"${actual}\"}")
+    local actual="${4:0:500}"
+    CHECK_RESULTS+=("$(jq -cn --arg name "${name}" --arg status "${status}" --arg expected "${expected}" --arg actual "${actual}" \
+        '{name: $name, status: $status, passed: ($status == "passed"), expected: $expected, actual: $actual}')")
 }
 
 write_json_results() {
-    local json="{\"environment\":\"${ENVIRONMENT}\",\"expected_commit\":\"${EXPECTED_COMMIT}\",\"checks\":["
-    local first=true
-    for result in "${CHECK_RESULTS[@]}"; do
-        if [[ "$first" == true ]]; then
-            first=false
-        else
-            json="${json},"
-        fi
-        json="${json}${result}"
-    done
-    json="${json}]}"
-    echo "$json" > verification-results.json
+    if [[ ${#CHECK_RESULTS[@]} -eq 0 ]]; then
+        echo "" | jq -s --arg env "${ENVIRONMENT}" --arg commit "${EXPECTED_COMMIT}" \
+            '{environment: $env, expected_commit: $commit, checks: []}' > verification-results.json
+        return
+    fi
+    printf '%s\n' "${CHECK_RESULTS[@]}" | jq -s --arg env "${ENVIRONMENT}" --arg commit "${EXPECTED_COMMIT}" \
+        '{environment: $env, expected_commit: $commit,
+          summary: {passed: map(select(.status == "passed")) | length,
+                    failed: map(select(.status == "failed")) | length,
+                    skipped: map(select(.status == "skipped")) | length},
+          checks: .}' > verification-results.json
 }
 
 run_check() {
@@ -94,21 +96,21 @@ run_check() {
         error "FAIL: ${check_name} - SSH command failed"
         error "Output: ${output}"
         FAILED_CHECKS+=("${check_name}: SSH failed")
-        add_check_result "${check_name}" "false" "${expected}" "${output}"
-        return 1
+        add_check_result "${check_name}" "failed" "${expected}" "${output}"
+        return 0
     fi
 
     if [[ -n "${expected}" ]] && ! echo "${output}" | grep -q "${expected}"; then
         error "FAIL: ${check_name} - Expected pattern '${expected}' not found"
         error "Actual output: ${output}"
         FAILED_CHECKS+=("${check_name}: Expected '${expected}', got '${output}'")
-        add_check_result "${check_name}" "false" "${expected}" "${output}"
-        return 1
+        add_check_result "${check_name}" "failed" "${expected}" "${output}"
+        return 0
     fi
 
     log "PASS: ${check_name}"
     PASSED_CHECKS+=("${check_name}")
-    add_check_result "${check_name}" "true" "${expected}" "${output}"
+    add_check_result "${check_name}" "passed" "${expected}" "${output}"
     return 0
 }
 
@@ -228,17 +230,17 @@ OTHER_VM_STATUS=$(gcloud compute instances describe "${OTHER_API_VM}" --zone="${
 if [[ -n "${OTHER_VM_STATUS}" ]] && [[ "${OTHER_VM_STATUS}" != "RUNNING" ]]; then
     log "SKIP: Cross-deployment check - ${OTHER_ENV} VM ${OTHER_API_VM} is ${OTHER_VM_STATUS}"
     SKIPPED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} VM ${OTHER_API_VM} is ${OTHER_VM_STATUS}")
-    add_check_result "Cross-deployment check" "true" "${OTHER_ENV} unchanged" "skipped: ${OTHER_API_VM} ${OTHER_VM_STATUS}"
+    add_check_result "Cross-deployment check" "skipped" "${OTHER_ENV} unchanged" "${OTHER_API_VM} is ${OTHER_VM_STATUS}"
 else
     OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "python3 -c \"import json, sys; print(json.load(open('/home/isabellabutera/version.json'))['commit_sha'])\"" 2>/dev/null || echo "")
     if [[ -n "${OTHER_EXPECTED_COMMIT}" ]] && [[ "${OTHER_EXPECTED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
         log "Cross-deployment check: ${OTHER_ENV} at ${OTHER_EXPECTED_COMMIT} (expected different from ${EXPECTED_COMMIT})"
         PASSED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} unchanged")
-        add_check_result "Cross-deployment check" "true" "${OTHER_ENV} unchanged" "${OTHER_EXPECTED_COMMIT}"
+        add_check_result "Cross-deployment check" "passed" "${OTHER_ENV} unchanged" "${OTHER_EXPECTED_COMMIT}"
     else
         error "FAIL: Cross-deployment check - could not verify ${OTHER_ENV} version (VM status: ${OTHER_VM_STATUS:-unknown})"
         FAILED_CHECKS+=("Cross-deployment check: Could not verify ${OTHER_ENV}")
-        add_check_result "Cross-deployment check" "false" "${OTHER_ENV} unchanged" "${OTHER_EXPECTED_COMMIT}"
+        add_check_result "Cross-deployment check" "failed" "${OTHER_ENV} unchanged" "${OTHER_EXPECTED_COMMIT}"
     fi
 fi
 
