@@ -366,7 +366,8 @@ Every daily feed lands raw in `raw-data-strg`, then fans out to two stores:
 raw-data-strg/prices/{date}/data.jsonl ──► staging_finnhub ──► tickers (price snapshot)
              (22:09 UTC daily)          └► ftd-vectorized-data/prices/{date}/data.json
 raw-data-strg/gnews/{date}/batch_NNN.json ► staging_gnews
-             (~00:00 UTC daily)          └► ftd-vectorized-data/gnews/{date}/batch_NNN.json
+             (~00:00 UTC daily; queries: company name OR ticker, see known issue #10)
+                                         └► ftd-vectorized-data/gnews/{date}/batch_NNN.json
 raw-data-strg/SEC/{form}/{CIK}/{acc}/*.htm ► ftd-vectorized-data/sec-{8k,10k}/{CIK}/{acc}/{ticker}-{date}.json
                                           (SEC content is NOT in live Postgres tables)
 ftd-vectorized-data/** ──(scripts/sync_vectorized_to_postgres.py)──► sec_vectorized_chunks (mirror)
@@ -892,7 +893,11 @@ There is no `latest_price_data` table; latest prices come from `staging_finnhub`
 
 ### 10. News Attribution Is Per GNews Query Batch
 
-- Each GNews batch queries ~5 tickers (`"$MMM" OR "$AOS" …`), and every article is attributed to all of them (same as `lakehouse/pipelines/gnews_normalizer.py`). So a ticker's news can include articles about the other tickers in its batch.
+- Each GNews batch covers ~5 tickers, and every article in it is filed under all of them. A ticker's news can therefore include articles about the others in its batch. **This is deliberate:** articles can be indirectly related without naming the company, so nothing is filtered or deleted.
+- **Until 2026-10-16** queries were `"$MMM" OR "$AOS" …`. GNews ignores `$`, so bare tickers matched unrelated text (e.g. "NOC" certificates filed under NVDA's batch). Only ~2% of stored rows name their ticker or company (`scripts/news_attribution_report.py`, read-only).
+- **Since 2026-10-16 (gnews-ingest v45)** each ticker is searched by full company name **and** ticker: `"3M" OR "MMM" OR "A. O. Smith" OR "AOS" …` (`gnews/queries.py`). Names come from `gs://raw-data-strg/SEC/config/company_names.json` (464 of 500 tickers; rebuild with `scripts/build_company_names.py` from 10-K `dei:EntityRegistrantName`). Still 100 requests/day (GNews free-plan limit), 5 tickers per query, each query ≤ 200 chars. Each batch file now also stores its `tickers`, which the sync reads (`batch_tickers()`; falls back to `"$TICK"` for older files).
+- `sync_recent_relational.py --strict-attribution` exists but is **off**; the nightly cron keeps every fetched article.
+- The gnews-ingest function is deployed only by the dev pipeline (`rawdataingestion` push with "gnews"/"deploy" in the message) or by hand with the same flags as `deploy.yml` plus `COMPANY_NAMES_GCS_PATH`.
 
 ---
 
