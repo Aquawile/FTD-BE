@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [rawdataingestion, staging, "feature/**"]
+    branches: [rawdataingestion, staging, "feature/**", "hotfix/**"]
   pull_request:
     branches: [rawdataingestion, staging]
   workflow_dispatch:

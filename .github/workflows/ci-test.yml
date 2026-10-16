@@ -2,7 +2,7 @@ name: CI Test
 
 on:
   push:
-    branches: [rawdataingestion, staging, "feature/**"]
+    branches: [rawdataingestion, staging, "feature/**", "hotfix/**"]
   workflow_dispatch:
 
 jobs:
