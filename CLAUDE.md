@@ -352,10 +352,57 @@ GET /api/dashboard/stats
 GET /api/tickers/tracked
   → tickers.py: route_get_tracked_tickers()
   → crud.py: get_tracked_tickers()
-  → Reads from PostgreSQL: tickers table
-  → join with latest_price_data (evidence_score, hype_score, change_percent)
+  → Reads from PostgreSQL: tickers table (name, sector, evidence/hype scores)
+  → LEFT JOIN latest staging_finnhub quote per symbol (_LATEST_PRICES);
+    current_price / change_percent / price_as_of come from whichever is newer
   → Returns TrackedTicker objects (494 total)
 ```
+
+### Data Inventory: Relational vs Vectorized (as of 2026-10-15)
+
+Every daily feed lands raw in `raw-data-strg`, then fans out to two stores:
+**relational** (PostgreSQL, structured rows the API filters/sorts) and
+**vectorized** (`ftd-vectorized-data`, JSON with 384-dim MiniLM embeddings per text chunk).
+
+```
+raw-data-strg/prices/{date}/data.jsonl ──► staging_finnhub ──► tickers (price snapshot)
+             (22:09 UTC daily)          └► ftd-vectorized-data/prices/{date}/data.json
+raw-data-strg/gnews/{date}/batch_NNN.json ► staging_gnews
+             (~00:00 UTC daily)          └► ftd-vectorized-data/gnews/{date}/batch_NNN.json
+raw-data-strg/SEC/{form}/{CIK}/{acc}/*.htm ► ftd-vectorized-data/sec-{8k,10k}/{CIK}/{acc}/{ticker}-{date}.json
+                                          (SEC content is NOT in live Postgres tables)
+ftd-vectorized-data/** ──(scripts/sync_vectorized_to_postgres.py)──► sec_vectorized_chunks (mirror)
+```
+
+**Relational (PostgreSQL `ftd_lakehouse_staging`)**
+
+| Table | Holds | Fed by | Latest | Read by (API → webapp) |
+|---|---|---|---|---|
+| `tickers` | 494 symbols: name, sector, scores, price snapshot | `sync_recent_relational.py` refreshes price cols | 2026-10-15 | `/tickers/tracked` (Dashboard, Search, Alerts, Workspace, TickerDashboard header), `/tickers/search`, `/dashboard/stats` |
+| `staging_finnhub` | Daily quote per symbol (current, open/high/low, change, %) | raw `prices/` | 2026-10-15 | `/tickers/{t}/prices` (TickerDashboard financials), `/tickers/{t}/timeline`, `/tickers/tracked` |
+| `staging_gnews` | News article rows per queried symbol | raw `gnews/` | 2026-10-14 (GNews free plan has 12h delay) | `/tickers/{t}/news` (TickerDashboard news), `/tickers/{t}/timeline`, `/search?source=gnews` |
+| `staging_sec_archive` | 754,219 historical SEC elements (frozen) | lakehouse parquet (Jul 2026) | static | `/dashboard/stats` `articles_count` |
+| `fiscal_parameters` | Fiscal year end per CIK | lakehouse parquet | static | `/tickers/{t}/fiscal-year-end` |
+| `alerts`, `workspaces`, `workspace_tickers`, `users`, `user_permissions`, `permissions`, `api_usage_log` | App/user state | the app itself | live | `/alerts`, `/workspaces`, `/users`, audit |
+| `unified_staging` (VIEW) | **Always empty** (`SELECT … FROM unified_staging_archive WHERE false`) | — | — | Not read anymore; `crud._RELATIONAL_UNIFIED` unions finnhub + gnews instead |
+| `staging_sec` (VIEW) | Deprecated SEC view | — | — | Only deprecated crud functions (increment DB-access counters) |
+
+**Vectorized (GCS `ftd-vectorized-data`)**
+
+| Prefix | Files | Holds | Latest | Read by (API → webapp) |
+|---|---|---|---|---|
+| `sec-10k/{CIK}/…` | 495 | 10-K chunks + embeddings, `sec_metadata` | filing 2026-06-22 | `/tickers/{t}/filings` (TickerDashboard filings), `/filings/{acc}/elements`, `/tickers/{t}/timeline` (sec), `/search`, `/dashboard/stats` `vectorized_sec_count` |
+| `sec-8k/{CIK}/…` | 212 | 8-K chunks + embeddings | filing 2026-06-26 | same as above |
+| `gnews/{date}/…` | 1,498 | News batch text + embeddings | 2026-10-15 | Not served by the API (mirrored to `sec_vectorized_chunks`) |
+| `prices/{date}/…` | 16 | Price text + embeddings | 2026-10-15 | Not served by the API (mirrored to `sec_vectorized_chunks`) |
+
+SEC endpoints list GCS on every request, so new vectorized filings show up with no extra step.
+`sec_vectorized_chunks` (35,757 rows) is a Postgres mirror of all vectorized files and is not read by the API.
+
+**Keeping relational data current**: `scripts/sync_recent_relational.py` (incremental, idempotent:
+reads raw date folders since the newest date already in Postgres, upserts prices, inserts new
+news rows, refreshes `tickers` price snapshot). Wrapper for cron: `scripts/sync_recent_relational.sh`
+(takes PG* env from the `ftd-api` systemd unit). Both are copied to `~/prices/` on `ftd-staging-api`.
 
 ### Alert Data Flow (requires auth)
 
@@ -740,27 +787,28 @@ def _mock_permissions():
 | 008 | rename_sec_tables | Table reorganization |
 | 009 | sec_vectorized_chunks_migration | Data migration tracking |
 
-### PostgreSQL Tables (17 total)
+### PostgreSQL Tables (17 base tables + 2 views, verified 2026-10-15)
 
 | Table | Purpose | Rows |
 |---|---|---|
-| `tickers` | Ticker symbols, CIKs, sectors, scores | 494 |
-| `latest_price_data` | Current prices, change % | ~494 |
-| `staging_gnews` | News articles | ~754K |
-| `staging_sec_archive` | SEC archive records | ~754K |
-| `unified_staging` | Unified data staging | ~754K |
-| `sec_vectorized_chunks` | Vectorized data tracking | 26,918 |
-| `users` | Application users | 2 |
-| `user_permissions` | User permission assignments | — |
-| `permissions` | Permission definitions | 10+ |
-| `workspaces` | User workspaces | — |
-| `workspace_tickers` | Workspace-ticker mappings | — |
-| `alerts` | User alerts | 0 |
-| `api_usage_log` | Audit log | 109+ |
-| `fiscal_year_end` | Fiscal year data | — |
-| `price_history` | Historical prices | — |
-| `sec_filings` | SEC filing metadata | — |
-| `etf_holdings` | ETF holdings data | — |
+| `tickers` | Symbols, names, sectors, scores, price snapshot (no `cik` column) | 494 |
+| `staging_finnhub` | Daily price quotes | 35,239 |
+| `staging_gnews` | News articles | 106,924 |
+| `staging_sec_archive` | Historical SEC elements (frozen) | 754,219 |
+| `unified_staging_archive` | Empty | 0 |
+| `sec_vectorized_chunks` | Mirror of `ftd-vectorized-data` (SEC + gnews + prices) | 35,757 |
+| `fiscal_parameters` | Fiscal year end per CIK | 477 |
+| `users` | Application users | 8 |
+| `user_permissions` / `user_permissions_index` | Permission assignments | 37 / 54 |
+| `permissions` | Permission definitions | 9 |
+| `workspaces` / `workspace_tickers` | User workspaces | 1 / 1 |
+| `alerts` / `alert_subscriptions` | User alerts | 0 / 2 |
+| `api_usage_log` | Audit log | 224 |
+| `schema_migrations` | Applied migrations | 7 |
+| `unified_staging` (VIEW) | Always empty — see Data Inventory | 0 |
+| `staging_sec` (VIEW) | Deprecated | — |
+
+There is no `latest_price_data` table; latest prices come from `staging_finnhub`.
 
 ---
 
@@ -793,11 +841,10 @@ def _mock_permissions():
 - If that table fails, it falls back to `count_vectorized_content()` (26,918 chunks)
 - These numbers differ because `staging_sec_archive` contains article-level records, while `vectorized_sec_count` counts individual text chunks within filings
 
-### 5. Ticker Search Returns Empty Results
+### 5. Ticker Search Returns Empty Results (FIXED 2026-10-15)
 
-- `GET /api/tickers/search?q=NVDA` returns `[]` (empty) despite NVDA being in the database
-- **Cause**: The `search_tickers()` function searches `unified_staging` table for `u.target_ticker ILIKE '%NVDA%'`, but the PostgreSQL query may have a join issue or the table structure differs
-- **Investigation needed**: Check `search_tickers()` in `crud.py` lines 25-70
+- **Cause**: `unified_staging` is a view defined `WHERE false`, so every query on it returned nothing (search, timeline finnhub/gnews, non-SEC content search, and step 2 of ticker→CIK resolution).
+- **Fix**: `search_tickers()` reads `tickers`; timeline and content search read `crud._RELATIONAL_UNIFIED` (`staging_finnhub` UNION ALL `staging_gnews`). `crud.get_dashboard_stats()` still references the view but no route calls it.
 
 ### 6. Ticker "A" in Tracked Tickers
 
@@ -810,6 +857,23 @@ def _mock_permissions():
 - `App.tsx` still imports and re-exports mock data: `import { TICKERS, NEWS_ARTICLES, ... } from "../mockData"`
 - These are used for the landing page and fallback scenarios
 - Not a bug, but worth noting for full migration
+
+### 8. Relational Data Stopped Loading on 2026-09-17 (backfilled 2026-10-15)
+
+- The API VM cron `20 22 * * * ~/prices/lakehouse_run.sh` exits immediately every night: cron has no `PGPASSWORD`, and `lakehouse_run.py` imports `src.*` from `~/app/sec`, which doesn't exist. It also only loaded prices, not news.
+- Backfilled 2026-09-18 → 2026-10-15 with `scripts/sync_recent_relational.py` (11,778 price rows, 97,084 news rows, 492 ticker snapshots).
+- **Fixed 2026-10-16**: crontab now runs `20 22 * * * ~/prices/sync_recent_relational.sh` (VM is UTC; raw prices land ~22:09 UTC). The old `lakehouse_run.sh` line is kept commented out; previous crontab backed up in `~/backups/`. Verified under a cron-like empty environment (exit 0). Log: `~/prices/sync_recent_relational.log`.
+- The 9,840 news rows from the old loader (all `ingest_date = 2026-09-18`) contain 1,580 duplicate (ticker, url, date) groups. Rows inserted by the sync script have no duplicates.
+
+### 9. `target_cik` Is Misaligned in Staging Tables
+
+- In `staging_finnhub` / `staging_gnews`, `target_cik` is wrong for ~428 of 447 symbols (e.g. AAPL → `0000006951`, correct is `0000320193`; NVDA → `0000029989`, correct is `0001045810`). It looks like an off-by-N zip in the lakehouse ticker→CIK mapping.
+- The correct CIKs are the folder names in `ftd-vectorized-data/sec-*/{CIK}/`. `_resolve_ticker_to_cik` reaches that path because step 1 (`tickers.cik`) doesn't exist and step 2 (`unified_staging`) is empty. **Do not resolve CIKs from the staging tables** until they're corrected.
+- `/tickers/search` returns `cik: ""` for this reason.
+
+### 10. News Attribution Is Per GNews Query Batch
+
+- Each GNews batch queries ~5 tickers (`"$MMM" OR "$AOS" …`), and every article is attributed to all of them (same as `lakehouse/pipelines/gnews_normalizer.py`). So a ticker's news can include articles about the other tickers in its batch.
 
 ---
 
