@@ -147,7 +147,8 @@ gcloud-bucket-data/
 
 ### Key Design Decisions
 
-1. **SEC data in GCS, not PostgreSQL**: After Layer 8, SEC filing content (754K+ articles) is stored as vectorized JSON in GCS buckets. PostgreSQL only holds relational metadata (tickers, prices, news, user workspace data).
+1. **Client sees relational data; operations run on vectorized data; nothing leaves GCS + Postgres.** SEC filings are vectorized JSON in GCS (`ftd-vectorized-data`), mirrored chunk-for-chunk into Postgres `sec_vectorized_chunks` by the sync cron. SEC lookups, filing lists, elements and search query that mirror per request. Article and ticker counts come from the relational tables (`staging_sec_archive`, which is paused, and `tickers`).
+   **Rules:** fetch only what the request needs, at request time, most recent first. No precomputed summary tables, no in-process or external caches, and no request may list or download the whole bucket.
 
 2. **Dual auth**: Firebase ID tokens OR internal JWT. The AuthMiddleware tries Firebase first, falls back to internal JWT verification.
 
@@ -298,7 +299,7 @@ class DashboardStats(BaseModel):
     tickers_count: int = 0         # COUNT DISTINCT from tickers table
     alerts_count: int = 0          # COUNT from alerts table
     evidence_score: Optional[float] = None
-    vectorized_sec_count: int = 0  # count_vectorized_content() — GCS chunks
+    vectorized_sec_count: int = 0  # count_vectorized_content() — COUNT on sec_vectorized_chunks (SEC rows)
 
 class AlertResponse(BaseModel):
     id: int
@@ -327,9 +328,9 @@ Frontend Request:
   GET /api/tickers/NVDA/filings
   → tickers.py: route_get_filings()
   → vectorized_gcs.py: list_filings_for_ticker("NVDA")
-  → _resolve_ticker_to_cik("NVDA")  [PostgreSQL tickers table]
-  → _list_vectorized_blobs("sec-8k/{CIK}/")  [GCS]
-  → Returns list of FilingSummary objects
+  → _resolve_ticker_to_cik("NVDA")   [1 query: sec_vectorized_chunks path SEC/{form}/{CIK}/…/nvda-{date}.htm]
+  → GROUP BY source_object for SEC/8-K/{CIK}/% and SEC/10-K/{CIK}/%   [sec_vectorized_chunks]
+  → Returns FilingSummary rows, most recent first (~0.04s; no GCS reads)
 ```
 
 ### Dashboard Stats Flow
@@ -337,11 +338,7 @@ Frontend Request:
 ```
 GET /api/dashboard/stats
   → dashboard.py: route_dashboard_stats()
-  → count_vectorized_content()
-      → Lists ALL .json blobs in ftd-vectorized-data (sec-8k/ + sec-10k/)
-      → Downloads each, counts len(parsed["chunks"])
-      → ThreadPoolExecutor(max_workers=20) for concurrent downloads
-      → Returns total chunk count (currently 26,918)
+  → count_vectorized_content()  → COUNT(*) on sec_vectorized_chunks WHERE source_object LIKE 'SEC/%' (26,918; ~20 ms)
   → query_dict("SELECT COUNT(*) FROM staging_sec_archive")  → articles_count (754,219)
   → query_dict("SELECT COUNT(DISTINCT symbol) FROM tickers")  → tickers_count (494)
   → query_dict("SELECT COUNT(*) FROM alerts")  → alerts_count (0)
@@ -397,8 +394,10 @@ ftd-vectorized-data/** ──(scripts/sync_vectorized_to_postgres.py)──► s
 | `gnews/{date}/…` | 1,498 | News batch text + embeddings | 2026-10-15 | Not served by the API (mirrored to `sec_vectorized_chunks`) |
 | `prices/{date}/…` | 16 | Price text + embeddings | 2026-10-15 | Not served by the API (mirrored to `sec_vectorized_chunks`) |
 
-SEC endpoints list GCS on every request, so new vectorized filings show up with no extra step.
-`sec_vectorized_chunks` (35,757 rows) is a Postgres mirror of all vectorized files and is not read by the API.
+SEC endpoints read the `sec_vectorized_chunks` mirror per request (scoped by ticker, accession or keyword; most recent first).
+The mirror is refreshed incrementally by the sync cron, so a newly vectorized filing appears after the next run (22:20 / 00:20 UTC).
+Raw filing HTML (`/tickers/{t}/filings/{acc}/content`) is read from `raw-data-strg` under that one accession's prefix.
+Measured on staging 2026-10-16: every data endpoint makes 0 GCS list/download calls; SEC search 12s → 0.13s, filings/timeline/elements 0.01–0.04s.
 
 **Keeping data current (cron on `ftd-staging-api`, UTC)**: `scripts/sync_all_recent.sh` runs at
 22:20 (after raw prices land ~22:09) and 00:20 (after GNews lands ~00:00). It takes PG* env from
@@ -605,7 +604,7 @@ HTTP Request
 
 | Service | File | Purpose |
 |---|---|---|
-| Vectorized GCS | `app/services/vectorized_gcs.py` | All SEC data reads from GCS (592 lines) |
+| Vectorized data | `app/services/vectorized_gcs.py` | Request-scoped SEC reads from `sec_vectorized_chunks`; raw HTML from `raw-data-strg` |
 | Audit logging | `app/services/audit.py` | Logs API requests + SEC proxy access |
 | Data service | `app/services/data_service.py` | Orchestrates data operations |
 | User fingerprint | `app/services/user_fingerprint.py` | Extracts user identity from request |
@@ -616,21 +615,23 @@ HTTP Request
 ```python
 # Resolve ticker symbol to SEC CIK
 _resolve_ticker_to_cik(ticker: str) -> str | None
-  → Tries PostgreSQL tickers table → unified_staging → GCS blob names
+  → One query: CIK from mirror paths SEC/{form}/{CIK}/…/{ticker}-{YYYYMMDD}.htm (572 of 707 files carry a ticker)
 
 # List filings for a ticker
 list_filings_for_ticker(ticker: str) -> list[FilingSummary]
-  → Resolve CIK → list GCS blobs → parse sec_metadata → sort by date DESC
+  → Resolve CIK → GROUP BY file in the mirror → most recent first
 
 # Get filing elements/chunks
 get_filing_elements_by_accession(accession_number: str) -> list[FilingElement]
-  → Extract CIK from accession → fast-path directory lookup in GCS
+  → Indexed lookup on accession_number (dashed or undashed) → chunks in order
 
 # Count total vectorized content elements
 count_vectorized_content() -> int
-  → Lists all blobs in sec-8k/ and sec-10k/
-  → Concurrent download (ThreadPoolExecutor, 20 workers)
-  → Sums len(parsed["chunks"]) across all files
+  → One COUNT(*) of SEC rows in the mirror
+
+# Keyword search over SEC chunks
+search_vectorized_content(keyword, limit) -> list[SearchResult]
+  → ILIKE on text_preview (wildcards escaped), ORDER BY filing_date DESC, LIMIT
 
 # Serve SEC filing content
 get_filing_content_from_gcs(ticker, accession, cik) -> tuple[bytes, str, bool]
@@ -639,7 +640,7 @@ get_filing_content_from_gcs(ticker, accession, cik) -> tuple[bytes, str, bool]
 
 # Get timeline events
 get_timeline_from_gcs(ticker, start, end, limit, offset) -> list[TimelineEvent]
-  → Resolve CIK → list GCS blobs → parse → filter by date range
+  → Resolve CIK → first chunk of each file in the date range, most recent first
 ```
 
 ### Middleware Order (important!)
