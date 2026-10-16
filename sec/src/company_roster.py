@@ -28,6 +28,21 @@ def fetch_ticker_cik_map(sec_client: SecClient, url: str) -> dict[str, str]:
     return mapping
 
 
+def build_ticker_cik_map(tickers: list[str], ticker_to_cik: dict[str, str]) -> dict[str, str]:
+    """Ticker -> CIK for the tickers that resolve, looked up by ticker.
+
+    Use this instead of zip(tickers, resolve_target_ciks(...)[0]): that list
+    skips unresolved tickers and repeated CIKs (e.g. GOOG/GOOGL), so zipping it
+    against the full ticker list shifts every later ticker onto a neighbour's CIK.
+    """
+    mapping: dict[str, str] = {}
+    for ticker in tickers:
+        cik = ticker_to_cik.get(ticker)
+        if cik:
+            mapping[ticker.upper()] = cik
+    return mapping
+
+
 def resolve_target_ciks(
     tickers: list[str],
     ticker_to_cik: dict[str, str],

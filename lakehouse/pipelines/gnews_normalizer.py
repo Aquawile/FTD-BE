@@ -56,10 +56,9 @@ def load_gnews_frames(settings: LakehouseSettings, sample: int | None = None, si
         fallback_url=sec_settings.fortune_500_fallback_url,
         limit=settings.target_company_limit,
     )
-    from src.company_roster import fetch_ticker_cik_map, resolve_target_ciks
+    from src.company_roster import build_ticker_cik_map, fetch_ticker_cik_map
     ticker_map = fetch_ticker_cik_map(sec_client, sec_settings.company_tickers_url)
-    ciks, _ = resolve_target_ciks(target_tickers, ticker_map)
-    cik_map = {t.upper(): c for t, c in zip(target_tickers, ciks)}
+    cik_map = build_ticker_cik_map(target_tickers, ticker_map)
     allowed = set(cik_map.keys())
 
     since_dt = pd.Timestamp(since) if since else None
