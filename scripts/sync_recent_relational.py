@@ -60,23 +60,28 @@ def _list_date_folders(bucket: storage.Bucket, prefix: str, since: date) -> list
     return sorted(folders)
 
 
-def _load_ticker_maps(cur) -> tuple[set[str], dict[str, str]]:
-    """Tracked symbols and symbol -> CIK (from rows that already carry a CIK)."""
+_SEC_FILE_RE = re.compile(r"^SEC/(?:8-K|10-K)/(\d{10})/[^/]+/([a-z][a-z0-9_]*)-\d{8}\.html?$", re.IGNORECASE)
+
+
+def load_gcs_ticker_cik_map(bucket: storage.Bucket) -> dict[str, str]:
+    """Ticker -> CIK from SEC filings in GCS (SEC/{form}/{CIK}/{accession}/{ticker}-{date}.htm).
+
+    The filing path's CIK folder is authoritative. The CIKs already stored in
+    staging_finnhub / staging_gnews are NOT used: the old lakehouse loader
+    shifted them (CLAUDE.md known issue #9). Tickers seen under more than one
+    CIK, or with no ticker-named filing, are left out (stored as NULL).
+    """
+    seen: dict[str, set[str]] = {}
+    for blob in bucket.list_blobs(prefix="SEC/"):
+        match = _SEC_FILE_RE.match(blob.name)
+        if match:
+            seen.setdefault(match.group(2).upper(), set()).add(match.group(1))
+    return {ticker: next(iter(ciks)) for ticker, ciks in seen.items() if len(ciks) == 1}
+
+
+def _load_tracked_symbols(cur) -> set[str]:
     cur.execute("SELECT symbol FROM tickers")
-    symbols = {r[0].upper() for r in cur.fetchall()}
-    cur.execute(
-        """
-        SELECT target_ticker, MAX(target_cik)
-        FROM (
-            SELECT target_ticker, target_cik FROM staging_finnhub WHERE target_cik IS NOT NULL
-            UNION ALL
-            SELECT target_ticker, target_cik FROM staging_gnews WHERE target_cik IS NOT NULL
-        ) s
-        GROUP BY target_ticker
-        """
-    )
-    cik_map = {r[0].upper(): r[1] for r in cur.fetchall()}
-    return symbols, cik_map
+    return {r[0].upper() for r in cur.fetchall()}
 
 
 # ─── Prices ──────────────────────────────────────────────────────────────────
@@ -267,8 +272,9 @@ def main() -> int:
     conn = _connect()
     try:
         with conn.cursor() as cur:
-            symbols, cik_map = _load_ticker_maps(cur)
-        logger.info("Loaded %d tracked symbols, %d with CIKs", len(symbols), len(cik_map))
+            symbols = _load_tracked_symbols(cur)
+        cik_map = load_gcs_ticker_cik_map(bucket)
+        logger.info("Loaded %d tracked symbols; %d have a CIK from GCS filings", len(symbols), len(symbols & cik_map.keys()))
         sync_prices(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run)
         sync_news(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run)
         refresh_ticker_prices(conn, args.dry_run)
