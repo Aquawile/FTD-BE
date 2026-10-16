@@ -47,7 +47,6 @@ export function Sidebar({ page, navigate, collapsed, onCollapse }: {
             >
               <Icon size={16} className="shrink-0" />
               {!collapsed && <span>{item.label}</span>}
-              {!collapsed && item.id === "alerts" && <span className="ml-auto text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5 font-mono">2</span>}
             </button>
           );
         })}

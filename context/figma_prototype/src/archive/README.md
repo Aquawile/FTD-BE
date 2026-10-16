@@ -30,7 +30,7 @@ Ticker page: score pills, evidence matrix tab, mock article cards, hardcoded "NA
 Compare/Export buttons. Dashboard: hype/evidence line, random sparklines, AI chat card and
 button. Workspace: hardcoded avg hype/evidence/alerts cards. Login: "2.4M+ / 180K+ / 94%" stats
 and the admin link. Profile: fake sessions, fake API key tab, evidence preference.
-Workspace settings: hype toggles. Search: hype/evidence sort options.
+Workspace settings: hype toggles. Sidebar: hardcoded "2" alerts badge. Search: hype/evidence sort options.
 
 ## Restoring
 

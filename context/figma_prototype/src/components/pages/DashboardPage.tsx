@@ -60,7 +60,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     const fetchTickers = async () => {
       setTickersLoading(true);
       try {
-        const data = await getTrackedTickers(50);
+        const data = await getTrackedTickers(500);
         if (!cancelled) setTrackedTickers(data);
       } catch {
         if (!cancelled) setTrackedTickers([]);

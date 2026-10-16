@@ -339,3 +339,11 @@ From `src/components/pages/ProfilePage.tsx`
         </Card>
       )}
 ```
+
+## Sidebar_alerts_badge_hardcoded
+
+From `src/components/Shell.tsx` (sidebar nav item)
+
+```tsx
+              {!collapsed && item.id === "alerts" && <span className="ml-auto text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5 font-mono">2</span>}
+```
