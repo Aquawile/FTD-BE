@@ -1,7 +1,10 @@
 """GCP Cloud Function — ingests GNews API articles into GCS.
 
 Fetches financial news for Fortune 500 tickers using GNews Search API.
-Stores raw API responses as gnews/YYYY-MM-DD/batch_XXX.json in GCS.
+Each ticker is searched by its full company name and its ticker symbol
+(names from COMPANY_NAMES_GCS_PATH; see queries.py and
+scripts/build_company_names.py). Stores raw API responses, with the tickers
+each query covered, as gnews/YYYY-MM-DD/batch_XXX.json in GCS.
 """
 
 from __future__ import annotations
@@ -20,6 +23,8 @@ from google.cloud import storage
 from google.api_core import retry
 from google.api_core.exceptions import GoogleAPIError
 
+from queries import MAX_QUERY_LENGTH, MAX_REQUESTS_PER_RUN, build_batches
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -31,7 +36,9 @@ GCS_PREFIX = os.environ.get('GCS_PREFIX', 'gnews')
 GNEWS_API_KEY_SECRET = os.environ.get('GNEWS_API_KEY_SECRET', 'gnews-api-key')
 GNEWS_API_URL = 'https://gnews.io/api/v4/search'
 TICKERS_GCS_PATH = os.environ.get('TICKERS_GCS_PATH', 'SEC/config/fortune500.json')
-BATCH_SIZE = 5
+COMPANY_NAMES_GCS_PATH = os.environ.get('COMPANY_NAMES_GCS_PATH', 'SEC/config/company_names.json')
+QUERY_MAX_LENGTH = int(os.environ.get('GNEWS_MAX_QUERY_LENGTH', MAX_QUERY_LENGTH))
+REQUESTS_PER_RUN = int(os.environ.get('GNEWS_MAX_REQUESTS', MAX_REQUESTS_PER_RUN))
 MAX_ARTICLES_PER_REQUEST = 10
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 1
@@ -118,6 +125,17 @@ def _load_tickers_from_gcs(bucket: storage.Bucket) -> list[str]:
     return result
 
 
+def _load_company_names(bucket: storage.Bucket) -> dict[str, str]:
+    """Ticker -> company name; empty (ticker-only queries) if the file is missing."""
+    try:
+        payload = json.loads(bucket.blob(COMPANY_NAMES_GCS_PATH.strip()).download_as_text())
+        names = payload.get('names', payload) if isinstance(payload, dict) else {}
+        return {str(t).upper(): str(n) for t, n in names.items() if n}
+    except Exception as exc:
+        logger.warning("Company names unavailable at %s (%s); searching by ticker only", COMPANY_NAMES_GCS_PATH, exc)
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # GNews API
 # ---------------------------------------------------------------------------
@@ -169,6 +187,7 @@ def _write_batch_to_gcs(
     batch_num: int,
     query: str,
     payload: dict[str, Any],
+    tickers: list[str],
 ) -> str:
     """Write a batch response to GCS and return the path."""
     filename = f"batch_{batch_num:03d}.json"
@@ -177,6 +196,7 @@ def _write_batch_to_gcs(
     enriched = {
         'batch_number': batch_num,
         'query': query,
+        'tickers': tickers,
         'fetched_at': datetime.now(timezone.utc).isoformat(),
         'article_count': len(payload.get('articles', [])),
         'total_articles_available': payload.get('totalArticles', 0),
@@ -241,13 +261,17 @@ def gnews_ingest(request: Request):
     # ------------------------------------------------------------------
     # Batch and fetch
     # ------------------------------------------------------------------
-    batches: list[dict[str, Any]] = []
-    for i in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[i:i + BATCH_SIZE]
-        query = ' OR '.join(f'"${ticker}"' for ticker in batch)
-        batches.append({'tickers': batch, 'query': query})
+    names = _load_company_names(bucket)
+    try:
+        batches, dropped = build_batches(tickers, names, QUERY_MAX_LENGTH, REQUESTS_PER_RUN)
+    except ValueError as exc:
+        logger.error("Cannot fit tickers into the request budget: %s", exc)
+        return jsonify({'error': str(exc)}), 500
+    if dropped:
+        logger.warning("Searching %d tickers by symbol only to fit the request budget: %s", len(dropped), dropped)
 
-    logger.info("Starting ingestion: %d tickers in %d batches", len(tickers), len(batches))
+    logger.info("Starting ingestion: %d tickers (%d with company names) in %d batches",
+                len(tickers), sum(t in names for t in tickers), len(batches))
 
     date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     uploaded: list[dict[str, Any]] = []
@@ -259,7 +283,7 @@ def gnews_ingest(request: Request):
 
         try:
             payload = _fetch_gnews_batch(api_key, query)
-            gcs_path = _write_batch_to_gcs(bucket, date_str, batch_num, query, payload)
+            gcs_path = _write_batch_to_gcs(bucket, date_str, batch_num, query, payload, batch_tickers)
             uploaded.append({
                 'batch': batch_num,
                 'path': gcs_path,

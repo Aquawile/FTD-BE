@@ -47,8 +47,10 @@ def registrant_names_from_10k(bucket: storage.Bucket) -> dict[str, str]:
                 latest[ticker] = blob.name
     names: dict[str, str] = {}
     for ticker, path in sorted(latest.items()):
-        head = bucket.blob(path).download_as_bytes(start=0, end=400_000).decode("utf-8", errors="replace")
-        found = _REGISTRANT_RE.search(head)
+        blob = bucket.blob(path)
+        found = _REGISTRANT_RE.search(blob.download_as_bytes(start=0, end=400_000).decode("utf-8", errors="replace"))
+        if not found:  # some filings put the cover page further in
+            found = _REGISTRANT_RE.search(blob.download_as_bytes().decode("utf-8", errors="replace"))
         if found:
             names[ticker] = html.unescape(re.sub(r"<[^>]+>", "", found.group(1))).strip()
     return names
