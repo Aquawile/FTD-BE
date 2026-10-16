@@ -86,11 +86,12 @@ def _load_tracked_symbols(cur) -> set[str]:
 
 # ─── Prices ──────────────────────────────────────────────────────────────────
 
-def sync_prices(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool) -> int:
+def sync_prices(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
+                since_override: date | None = None) -> int:
     with conn.cursor() as cur:
         cur.execute("SELECT MAX(normalized_calendar_date)::date FROM staging_finnhub")
         latest = cur.fetchone()[0] or date(2000, 1, 1)
-    since = latest - timedelta(days=lookback_days)
+    since = since_override or (latest - timedelta(days=lookback_days))
     folders = _list_date_folders(bucket, "prices", since)
     logger.info("prices: latest in PG=%s, reading %d GCS folder(s) since %s", latest, len(folders), since)
 
@@ -167,17 +168,79 @@ def _normalize_text(value) -> str:
     return text.encode("utf-8", errors="replace").decode("utf-8", errors="replace").strip()
 
 
-def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool) -> int:
+# ─── Attribution ─────────────────────────────────────────────────────────────
+# A GNews batch queries ~5 tickers at once ("$MMM" OR "$AOS" ...) and the API
+# matches loosely, so an article in a batch is not necessarily about every
+# ticker in its query. In strict mode an article is kept for a ticker only if
+# it actually mentions it.
+
+_EXCHANGES = r"(?:NYSE(?:\s+American)?|NASDAQ|Nasdaq|AMEX|Cboe)"
+_NAME_SUFFIX_RE = re.compile(
+    r"[,\s]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|n\.?v|s\.?a|ag|holdings?|group|the)\.?$",
+    re.IGNORECASE,
+)
+
+
+def normalize_company_name(name: str) -> str | None:
+    """'NVIDIA CORP' -> 'NVIDIA', 'Apple Inc.' -> 'Apple'; None if too short to match safely."""
+    base = re.sub(r"^the\s+", "", (name or "").strip(), flags=re.IGNORECASE)
+    for _ in range(3):
+        stripped = _NAME_SUFFIX_RE.sub("", base).strip(" ,.")
+        if stripped == base:
+            break
+        base = stripped
+    # Short names only when they can't be an ordinary word ("3M" yes, "Co" no).
+    return base if len(base) >= 3 or (len(base) >= 2 and any(c.isdigit() for c in base)) else None
+
+
+def article_mentions(text: str, ticker: str, names: list[str]) -> str | None:
+    """Which rule ties the article to the ticker: 'dollar', 'exchange', 'paren', 'name', or None.
+
+    A bare upper-case ticker is not enough: tickers collide with acronyms and
+    product names (e.g. "Step AOS" in a phone review was filed under AOS).
+    """
+    t = re.escape(ticker)
+    if re.search(rf"\${t}\b", text, re.IGNORECASE):
+        return "dollar"
+    if re.search(rf"{_EXCHANGES}\s*:\s*{t}\b", text):
+        return "exchange"
+    if re.search(rf"\(\s*{t}\s*\)", text):  # "Apple (AAPL)"
+        return "paren"
+    for name in names:
+        if re.search(rf"(?<![A-Za-z]){re.escape(name)}(?![A-Za-z])", text, re.IGNORECASE):
+            return "name"
+    return None
+
+
+def load_company_names(cur) -> dict[str, list[str]]:
+    """Ticker -> match names from tickers.name (only where it isn't just the symbol)."""
+    cur.execute("SELECT symbol, name FROM tickers WHERE name IS NOT NULL AND name <> symbol")
+    names: dict[str, list[str]] = {}
+    for symbol, name in cur.fetchall():
+        normalized = normalize_company_name(name)
+        if normalized:
+            names.setdefault(symbol.upper(), []).append(normalized)
+    return names
+
+
+def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
+              since_override: date | None = None, strict: bool = False,
+              names: dict[str, list[str]] | None = None) -> int:
     with conn.cursor() as cur:
         cur.execute("SELECT MAX(ingest_date)::date FROM staging_gnews")
         latest = cur.fetchone()[0] or date(2000, 1, 1)
-    since = latest - timedelta(days=lookback_days)
+        # Every existing (ticker, url-or-body, date) key, so re-reading folders never duplicates.
+        cur.execute("SELECT target_ticker, COALESCE(url, LEFT(content_body, 200)), normalized_calendar_date::date FROM staging_gnews")
+        existing = set(cur.fetchall())
+    since = since_override or (latest - timedelta(days=lookback_days))
     folders = _list_date_folders(bucket, "gnews", since)
-    logger.info("gnews: latest ingest in PG=%s, reading %d GCS folder(s) since %s", latest, len(folders), since)
+    logger.info("gnews: latest ingest in PG=%s, reading %d GCS folder(s) since %s%s",
+                latest, len(folders), since, " (strict attribution)" if strict else "")
 
-    # Same shaping as lakehouse/pipelines/gnews_normalizer.py
-    rows: dict[tuple[str, str, date], tuple] = {}
+    inserted = skipped_existing = skipped_unrelated = 0
+    # One day-folder at a time: bounded memory for long backfills, committed as it goes.
     for folder in folders:
+        rows: dict[tuple[str, str, date], tuple] = {}
         for blob in bucket.list_blobs(prefix=f"gnews/{folder}/"):
             if not blob.name.endswith(".json"):
                 continue
@@ -199,37 +262,35 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool)
                 published = datetime.fromisoformat(article["publishedAt"].replace("Z", "+00:00")).date()
                 url = article.get("url") or None
                 for ticker in tickers:
+                    if strict and not article_mentions(content_body, ticker, (names or {}).get(ticker, [])):
+                        skipped_unrelated += 1
+                        continue
                     rows[(ticker, url or content_body[:200], published)] = (
                         ticker, cik_map.get(ticker), "narrative", content_body, published, ingest_date, url,
                     )
 
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT target_ticker, COALESCE(url, LEFT(content_body, 200)), normalized_calendar_date::date "
-            "FROM staging_gnews WHERE normalized_calendar_date >= %s",
-            (min((k[2] for k in rows), default=since),),
-        )
-        existing = set(cur.fetchall())
-    new_rows = [v for k, v in rows.items() if k not in existing]
+        new_keys = [k for k in rows if k not in existing]
+        skipped_existing += len(rows) - len(new_keys)
+        if new_keys and not dry_run:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO staging_gnews
+                        (target_ticker, target_cik, element_type, content_body, normalized_calendar_date, ingest_date, url)
+                    VALUES %s
+                    """,
+                    [rows[k] for k in new_keys],
+                    page_size=1000,
+                )
+            conn.commit()
+        existing.update(new_keys)
+        inserted += len(new_keys)
 
-    if dry_run:
-        logger.info("gnews: would insert %d new rows (%d already present)", len(new_rows), len(rows) - len(new_rows))
-        return len(new_rows)
-
-    with conn.cursor() as cur:
-        psycopg2.extras.execute_values(
-            cur,
-            """
-            INSERT INTO staging_gnews
-                (target_ticker, target_cik, element_type, content_body, normalized_calendar_date, ingest_date, url)
-            VALUES %s
-            """,
-            new_rows,
-            page_size=1000,
-        )
-    conn.commit()
-    logger.info("gnews: inserted %d new rows (%d already present)", len(new_rows), len(rows) - len(new_rows))
-    return len(new_rows)
+    verb = "would insert" if dry_run else "inserted"
+    logger.info("gnews: %s %d new rows (%d already present, %d skipped as unrelated)",
+                verb, inserted, skipped_existing, skipped_unrelated)
+    return inserted
 
 
 # ─── Tickers snapshot ────────────────────────────────────────────────────────
@@ -266,6 +327,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--lookback-days", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--since", type=date.fromisoformat, help="backfill from this date (YYYY-MM-DD) instead of the lookback")
+    parser.add_argument("--skip-prices", action="store_true", help="only sync news")
+    parser.add_argument("--strict-attribution", action="store_true",
+                        help="keep an article for a ticker only if it mentions it (see article_mentions)")
     args = parser.parse_args()
 
     bucket = storage.Client().bucket(RAW_BUCKET)
@@ -275,8 +340,14 @@ def main() -> int:
             symbols = _load_tracked_symbols(cur)
         cik_map = load_gcs_ticker_cik_map(bucket)
         logger.info("Loaded %d tracked symbols; %d have a CIK from GCS filings", len(symbols), len(symbols & cik_map.keys()))
-        sync_prices(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run)
-        sync_news(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run)
+        if not args.skip_prices:
+            sync_prices(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run, args.since)
+        names = None
+        if args.strict_attribution:
+            with conn.cursor() as cur:
+                names = load_company_names(cur)
+        sync_news(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run,
+                  since_override=args.since, strict=args.strict_attribution, names=names)
         refresh_ticker_prices(conn, args.dry_run)
     except Exception:
         conn.rollback()
