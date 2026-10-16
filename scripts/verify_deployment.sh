@@ -147,6 +147,7 @@ fi
 # Initialize tracking arrays
 PASSED_CHECKS=()
 FAILED_CHECKS=()
+SKIPPED_CHECKS=()
 
 log "=== Post-Deployment Verification ==="
 log "Environment: ${ENVIRONMENT}"
@@ -220,35 +221,31 @@ if [[ "${ENVIRONMENT}" == "staging" ]]; then
         "${WEB_VM}"
 fi
 
-# 9. Cross-deployment check: other environment unchanged
-OTHER_EXPECTED_COMMIT=""
-if [[ "${OTHER_ENV}" == "development" ]]; then
-    # For development, we need to get current deployed commit from dev VM
-    OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "python3 -c \"import json, sys; print(json.load(open('/home/isabellabutera/version.json'))['commit_sha'])\"" 2>/dev/null || echo "")
-    if [[ -n "${OTHER_EXPECTED_COMMIT}" ]] && [[ "${OTHER_EXPECTED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
-        log "Cross-deployment check: ${OTHER_ENV} at ${OTHER_EXPECTED_COMMIT} (expected different from ${EXPECTED_COMMIT})"
-        PASSED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} unchanged")
-    else
-        error "FAIL: Cross-deployment check - could not verify ${OTHER_ENV} version"
-        FAILED_CHECKS+=("Cross-deployment check: Could not verify ${OTHER_ENV}")
-    fi
+# 9. Cross-deployment check: other environment unchanged.
+# Skipped (not failed) when the other environment's VM exists but isn't RUNNING
+# (e.g. ftd-test is TERMINATED): there is nothing deployed there to compare.
+OTHER_VM_STATUS=$(gcloud compute instances describe "${OTHER_API_VM}" --zone="${GCE_ZONE}" --project="${GCP_PROJECT}" --format='value(status)' 2>/dev/null || echo "")
+if [[ -n "${OTHER_VM_STATUS}" ]] && [[ "${OTHER_VM_STATUS}" != "RUNNING" ]]; then
+    log "SKIP: Cross-deployment check - ${OTHER_ENV} VM ${OTHER_API_VM} is ${OTHER_VM_STATUS}"
+    SKIPPED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} VM ${OTHER_API_VM} is ${OTHER_VM_STATUS}")
+    add_check_result "Cross-deployment check" "true" "${OTHER_ENV} unchanged" "skipped: ${OTHER_API_VM} ${OTHER_VM_STATUS}"
 else
-    # For staging, check dev VM
     OTHER_EXPECTED_COMMIT=$(ssh_cmd "${OTHER_API_VM}" "python3 -c \"import json, sys; print(json.load(open('/home/isabellabutera/version.json'))['commit_sha'])\"" 2>/dev/null || echo "")
     if [[ -n "${OTHER_EXPECTED_COMMIT}" ]] && [[ "${OTHER_EXPECTED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
         log "Cross-deployment check: ${OTHER_ENV} at ${OTHER_EXPECTED_COMMIT} (expected different from ${EXPECTED_COMMIT})"
         PASSED_CHECKS+=("Cross-deployment check: ${OTHER_ENV} unchanged")
+        add_check_result "Cross-deployment check" "true" "${OTHER_ENV} unchanged" "${OTHER_EXPECTED_COMMIT}"
     else
-        error "FAIL: Cross-deployment check - could not verify ${OTHER_ENV} version"
+        error "FAIL: Cross-deployment check - could not verify ${OTHER_ENV} version (VM status: ${OTHER_VM_STATUS:-unknown})"
         FAILED_CHECKS+=("Cross-deployment check: Could not verify ${OTHER_ENV}")
+        add_check_result "Cross-deployment check" "false" "${OTHER_ENV} unchanged" "${OTHER_EXPECTED_COMMIT}"
     fi
 fi
 
-# 10. Database connectivity from API VM
-run_check "Database connectivity" \
-    PGPASSWORD='temp_password_123' psql -h 10.168.0.3 -U ftd_app -d ftd_lakehouse_staging -c 'SELECT 1' 2>/dev/null || PGPASSWORD='temp_password_123' psql -h 10.168.0.3 -U ftd_app -d ftd_lakehouse_api_test -c 'SELECT 1' 2>/dev/null
-    "1 row" \
-    "${API_VM}"
+# 10. Database connectivity from the API VM, using the ftd-api service's own PG* settings
+# (no credentials in this script).
+DB_CHECK_CMD='while IFS= read -r kv; do case "$kv" in PG*=*) export "$kv" ;; esac; done < <(systemctl show ftd-api.service -p Environment --value | tr " " "\n"); psql -At -c "SELECT '"'"'db_ok'"'"'"'
+run_check "Database connectivity" "${DB_CHECK_CMD}" "db_ok" "${API_VM}"
 
 # =============================================================================
 # SUMMARY
@@ -259,10 +256,17 @@ log "Environment: ${ENVIRONMENT}"
 log "Expected commit: ${EXPECTED_COMMIT}"
 log "Passed: ${#PASSED_CHECKS[@]}"
 log "Failed: ${#FAILED_CHECKS[@]}"
+log "Skipped: ${#SKIPPED_CHECKS[@]}"
 
 if [[ ${#PASSED_CHECKS[@]} -gt 0 ]]; then
     for check in "${PASSED_CHECKS[@]}"; do
         log "  ✓ ${check}"
+    done
+fi
+
+if [[ ${#SKIPPED_CHECKS[@]} -gt 0 ]]; then
+    for check in "${SKIPPED_CHECKS[@]}"; do
+        log "  - skipped: ${check}"
     done
 fi
 
