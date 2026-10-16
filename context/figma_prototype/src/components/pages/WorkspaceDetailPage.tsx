@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, HypeEvidenceBar, Input, Modal, cn } from "../ui";
+import { Badge, Btn, Card, Input, Modal, cn } from "../ui";
 import { ChevronLeft, Minus, Plus, Search, Settings, TrendingDown, TrendingUp } from "lucide-react";
 import { apiRequest, fetchAddTickerToWorkspace, fetchRemoveTickerFromWorkspace } from "../../api";
 import { TrackedTicker, WorkspaceResponse } from "../../types";
@@ -73,12 +73,9 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
         <Btn variant="primary" size="sm" icon={<Plus size={12} />} onClick={() => setShowAdd(true)}>Add Ticker</Btn>
       </div>
 
-      {/* Workspace avg scores */}
+      {/* Workspace stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
-          { label: "Avg Hype Score", value: "82", color: "#F59E0B" },
-          { label: "Avg Evidence Score", value: "66", color: "#10B981" },
-          { label: "Active Alerts", value: "3", color: "#3B88F6" },
           { label: "Tickers Tracked", value: ws.tickers.length.toString() || "0", color: "#8B5CF6" },
         ].map(s => (
           <Card key={s.label} className="p-4">

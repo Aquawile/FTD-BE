@@ -33,9 +33,7 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser }: { 
           <h3 className="font-semibold mb-4">Alert Preferences</h3>
           <div className="space-y-3 text-sm">
             {[
-              { label: "Narrative shift alerts", desc: "Notify when Hype/Evidence delta changes ≥10 points", enabled: true },
               { label: "New SEC filings", desc: "Alert on new 10-K, 10-Q, or 8-K filings", enabled: true },
-              { label: "Reddit hype spikes", desc: "Alert when post volume increases >200% in 4 hours", enabled: false },
             ].map(a => (
               <div key={a.label} className="flex items-start justify-between gap-4">
                 <div>

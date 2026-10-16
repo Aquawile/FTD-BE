@@ -264,6 +264,7 @@ PUBLIC_PATHS = {
 | GET | `/alerts` | `tickers.*` implied | User-specific alerts |
 | GET | `/tickers/search?q=...` | `tickers.search` | Ticker search |
 | GET | `/tickers/{ticker}/prices` | `tickers.prices` | Historical prices |
+| GET | `/tickers/{ticker}/price-timeline?window_days=365` | `tickers.prices` | pandas-built daily series on a fixed 365-day window (`app/services/price_timeline.py`) |
 | GET | `/tickers/{ticker}/news` | `tickers.news` | News articles |
 | GET | `/tickers/{ticker}/timeline` | `tickers.timeline` | Timeline events |
 | GET | `/tickers/{ticker}/filings` | `tickers.filings` | SEC filings list |
@@ -497,9 +498,10 @@ WantedBy=multi-user.target
 |---|---|---|
 | `DashboardPage.tsx` | Dashboard with stats, top movers, recent alerts | Yes (getTrackedTickers, getAlerts) |
 | `AlertsPage.tsx` | Alerts list with filtering | Yes (useAlerts hook → /api/alerts) |
-| `TickerDashboard.tsx` | Single ticker detail page | Yes (getTrackedTickers, apiRequest for prices/news/filings) |
+| `TickerDashboard.tsx` | Single ticker detail page | Yes (getTrackedTickers, apiRequest for prices/news/filings, `PriceTimeline` chart) |
+| `components/PriceTimeline.tsx` | 365-day price chart (Recharts) | Yes (`/tickers/{t}/price-timeline`) |
 | `SearchPage.tsx` | Ticker search + autocomplete | Yes (useTickerSearch hook → /api/tickers/search) |
-| `LegacyLandingPage.tsx` | Landing page for unauthenticated users | Placeholder |
+| `src/archive/` | **Archived 2026-10-16**: pages and sections showing data with no API behind it (hype/evidence scores, Timeline, Filings, Community, Comparison, Chat, Admin, Legacy landing). Not built or routed. See `src/archive/README.md` | No |
 | `WorkspaceDetailPage.tsx` | Workspace detail view | Yes (workspace hooks) |
 
 ### Frontend API Client (`src/api/index.ts`)
@@ -528,6 +530,15 @@ async function fetchWithAuth<T>(endpoint, options?): Promise<T>
 | `useDashboardStats()` | Fetch dashboard stats | `GET /api/dashboard/stats` |
 | `useAuth()` | Firebase auth state management | `/auth/me`, `/auth/login`, `/auth/register` |
 | `useWorkspaces()` | Fetch user workspaces | `GET /api/workspaces` |
+
+### Price Timeline Chart
+
+`GET /tickers/{t}/price-timeline` reindexes the ticker's `staging_finnhub` quotes onto a
+365-day calendar with pandas. While history is under 365 days, the window starts at the first
+quote (2026-07-02) and runs forward, so the chart fills in as each nightly sync adds a day.
+After that it becomes a rolling 365-day window. Days without a quote (weekends, holidays,
+future days) are left empty and never interpolated. The chart bridges weekend gaps visually
+(`connectNulls`) and shows a fill-progress bar.
 
 ### Routing (in `App.tsx`)
 

@@ -43,14 +43,6 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
           <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
             The platform that turns raw financial data into verifiable insight — with AI scoring every claim on an evidence scale.
           </p>
-          <div className="mt-8 flex gap-4">
-            {[{ n: "2.4M+", l: "Articles Analyzed" }, { n: "180K+", l: "Filings Indexed" }, { n: "94%", l: "Mapping Accuracy" }].map(s => (
-              <div key={s.l}>
-                <div className="font-mono font-bold text-lg text-primary">{s.n}</div>
-                <div className="text-xs text-muted-foreground">{s.l}</div>
-              </div>
-            ))}
-          </div>
         </div>
         <div className="text-xs text-muted-foreground">Not investment advice · For research purposes only</div>
       </div>
@@ -105,10 +97,6 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
           <p className="text-center text-sm text-muted-foreground">
             No account yet?{" "}
             <button onClick={() => navigate("register")} className="text-primary hover:underline cursor-pointer">Create one free</button>
-          </p>
-          {/* Admin shortcut */}
-          <p className="text-center text-xs text-muted-foreground/50">
-            <button onClick={() => { navigate("admin"); }} className="hover:text-muted-foreground cursor-pointer">Admin access →</button>
           </p>
         </div>
       </div>

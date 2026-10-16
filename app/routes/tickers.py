@@ -18,7 +18,7 @@ from app.crud import (
     get_tracked_tickers,
     search_tickers,
 )
-from app.models import NewsRow, PriceRow, TimelineEvent, TickerResult, TrackedTicker, FiscalYearEnd
+from app.models import NewsRow, PriceRow, PriceTimeline, TimelineEvent, TickerResult, TrackedTicker, FiscalYearEnd
 
 router = APIRouter(prefix="/tickers", tags=["tickers"])
 
@@ -49,6 +49,18 @@ def route_get_prices(
     permission: str = require_permission("tickers.prices"),
 ) -> list[PriceRow]:
     return get_ticker_prices(ticker, start, end)
+
+
+@router.get("/{ticker}/price-timeline", response_model=PriceTimeline)
+def route_get_price_timeline(
+    ticker: str,
+    window_days: int = Query(365, ge=30, le=365, description="Window length in calendar days"),
+    permission: str = require_permission("tickers.prices"),
+) -> PriceTimeline:
+    """Daily close series on a fixed calendar window, filled only where finnhub data exists."""
+    from app.services.price_timeline import build_price_timeline
+
+    return build_price_timeline(ticker, window_days)
 
 
 @router.get("/{ticker}/news", response_model=list[NewsRow])

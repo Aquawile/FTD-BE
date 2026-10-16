@@ -1,24 +1,11 @@
 import { useState, useEffect } from "react";
 import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, ScorePill, cn, getHypeColor, getEvidenceColor } from "../ui";
-import { AlertTriangle, Bell, Briefcase, CheckCircle, Download, ExternalLink, Flag, Info, Maximize2, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Badge, Btn, Card, cn } from "../ui";
+import PriceTimeline from "../PriceTimeline";
+import { Bell, Briefcase, ExternalLink, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { apiRequest, getTrackedTickers } from "../../api";
 import { TrackedTicker } from "../../types";
-
-interface NewsArticle {
-  id: number;
-  ticker: string;
-  headline: string;
-  source: string;
-  time: string;
-  summary: string;
-  hype: number;
-  evidence: number;
-  claims: string[];
-  evidenceLinks: string[];
-  flagged: boolean;
-}
 
 interface PriceRow {
   normalized_calendar_date: string | null;
@@ -55,10 +42,9 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
   const [tickerData, setTickerData] = useState<TrackedTicker | null>(null);
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [news, setNews] = useState<NewsRow[]>([]);
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [filings, setFilings] = useState<FilingSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const tabs = ["overview", "news", "evidence"];
+  const tabs = ["overview", "news"];
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +73,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
           setTickerData(match || null);
           setPrices(pricesRes || []);
           setNews(newsRes || []);
-          setArticles([]);
           setFilings((filingsRes || []).slice(0, 10));
         }
       } catch {
@@ -104,12 +89,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
     name: ticker,
     sector: "",
     current_price: 0,
-    evidence_score: 50,
-    hype_score: 50,
     change_percent: 0,
   };
-
-  const flagArticle = (id: number) => setArticles(prev => prev.map(a => a.id === id ? { ...a, flagged: !a.flagged } : a));
 
   const formatPrice = (price: number | null | undefined) => {
     if (price == null) return "—";
@@ -143,7 +124,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <h1 className="text-2xl font-bold font-mono text-foreground">{t.symbol}</h1>
-                <Badge variant="neutral">NASDAQ</Badge>
               </div>
               <div className="text-muted-foreground text-sm">{t.name}</div>
               <div className="flex items-center gap-4 mt-2">
@@ -159,11 +139,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
             <div className="flex items-center gap-3">
               <Btn variant="secondary" size="sm" icon={<Bell size={12} />} onClick={() => navigate("alerts")}>Set Alert</Btn>
               <Btn variant="secondary" size="sm" icon={<Briefcase size={12} />} onClick={() => navigate("workspaces")}>Add to Workspace</Btn>
-              <Btn variant="secondary" size="sm" icon={<Maximize2 size={12} />} onClick={() => navigate("ticker-comparison")}>Compare</Btn>
-            </div>
-            <div className="flex items-center gap-6">
-              <ScorePill label="Hype Score" score={t.hype_score} type="hype" />
-              <ScorePill label="Evidence Score" score={t.evidence_score} type="evidence" />
             </div>
           </div>
         </div>
@@ -190,6 +165,9 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main col */}
             <div className="lg:col-span-2 space-y-5">
+              {/* Price timeline - REAL DATA (pandas-built 365-day series from staging_finnhub) */}
+              <PriceTimeline ticker={ticker} firebaseUser={firebaseUser} />
+
               {/* AI Summary - PLACEHOLDER */}
               <Card className="p-5 border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-transparent">
                 <div className="flex items-center gap-2 mb-3">
@@ -318,7 +296,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                 <div className="space-y-1.5">
                   <Btn variant="secondary" size="sm" className="w-full" icon={<Bell size={12} />} onClick={() => navigate("alerts")}>Set Alert</Btn>
                   <Btn variant="secondary" size="sm" className="w-full" icon={<Briefcase size={12} />} onClick={() => navigate("workspaces")}>Add to Workspace</Btn>
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<Download size={12} />} onClick={() => navigate("ticker-comparison")}>Export Report</Btn>
                 </div>
               </Card>
             </div>
@@ -354,84 +331,13 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                   </Card>
                 );
               })
-            ) : (
-              articles.map(a => (
-                <Card key={a.id} className="p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="neutral" className="text-xs">{a.source}</Badge>
-                        <span className="text-xs text-muted-foreground">{a.time}</span>
-                        {a.flagged && <Badge variant="hype" className="text-xs"><Flag size={8} /> Reported</Badge>}
-                      </div>
-                      <h4 className="font-semibold text-sm text-foreground mb-2 leading-snug">{a.headline}</h4>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{a.summary}</p>
-                      {a.claims.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1">
-                          {a.claims.map(c => <Badge key={c} variant="outline" className="text-xs">{c}</Badge>)}
-                        </div>
-                      )}
-                      {a.evidenceLinks.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {a.evidenceLinks.map(l => <Badge key={l} variant="evidence" className="text-xs"><ExternalLink size={8} /> {l}</Badge>)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <div className="text-right space-y-1">
-                        <div className="text-xs text-muted-foreground">Hype</div>
-                        <div className="font-mono text-sm font-bold" style={{ color: getHypeColor(a.hype) }}>{a.hype}</div>
-                      </div>
-                      <div className="text-right space-y-1">
-                        <div className="text-xs text-muted-foreground">Evidence</div>
-                        <div className="font-mono text-sm font-bold" style={{ color: getEvidenceColor(a.evidence) }}>{a.evidence}</div>
-                      </div>
-                      <button
-                        onClick={() => { flagArticle(a.id); onReport(); }}
-                        className={cn("mt-2 p-2 rounded-lg border transition-all cursor-pointer", a.flagged ? "bg-orange-500/15 border-orange-500/30 text-orange-400" : "border-border text-muted-foreground hover:text-orange-400 hover:border-orange-500/30")}
-                      >
-                        <Flag size={13} />
-                      </button>
-                    </div>
-                  </div>
-                </Card>
-              ))
-            )}
-            {news.length === 0 && articles.length === 0 && (
+            ) : null}
+            {news.length === 0 && (
               <p className="text-xs text-muted-foreground">No articles found for {t.symbol}.</p>
             )}
           </div>
         )}
 
-        {tab === "evidence" && (
-          <div className="space-y-5">
-            <Card className="p-5">
-              <h3 className="font-semibold mb-4">Evidence Breakdown Matrix</h3>
-              <div className="space-y-4">
-                {[
-                  { category: "SEC Filings & XBRL Data", score: 94, count: "12 filings", description: "All major financial disclosures verified and parsed. Revenue, margin, and segment data fully corroborated." },
-                  { category: "Analyst Reports", score: 72, count: "28 reports", description: "Sell-side consensus moderately evidenced. Price targets range 20–150% above current price with mixed backing." },
-                  { category: "News Articles", score: 61, count: "847 articles", description: "Mainstream financial news mostly factual with selective embellishment in headlines." },
-                  { category: "Community / Reddit", score: 23, count: "2,341 posts", description: "Heavy speculative content. Most high-engagement posts lack quantitative financial evidence." },
-                ].map(e => (
-                  <div key={e.category} className="p-4 bg-secondary/30 rounded-xl border border-border/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <span className="font-medium text-sm text-foreground">{e.category}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{e.count}</span>
-                      </div>
-                      <span className="font-mono font-bold text-sm" style={{ color: getEvidenceColor(e.score) }}>{e.score}/100</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-secondary overflow-hidden mb-2">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${e.score}%`, background: getEvidenceColor(e.score) }} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">{e.description}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
-        )}
       </div>
     </div>
   );

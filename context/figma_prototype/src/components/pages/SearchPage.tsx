@@ -19,7 +19,7 @@ interface TrackedTicker {
 function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
   const [query, setQuery] = useState("");
   const [filterSector, setFilterSector] = useState("all");
-  const [sortBy, setSortBy] = useState("divergence");
+  const [sortBy, setSortBy] = useState("symbol");
   const [tickers, setTickers] = useState<TrackedTicker[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -60,9 +60,8 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
   });
 
   const sorted = filtered.slice().sort((a, b) => {
-    if (sortBy === "hype") return (b.hype_score ?? 0) - (a.hype_score ?? 0);
-    if (sortBy === "evidence") return (b.evidence_score ?? 0) - (a.evidence_score ?? 0);
-    return (b.hype_score ?? 0) - (a.hype_score ?? 0) - (b.evidence_score ?? 0) + (a.evidence_score ?? 0);
+    if (sortBy === "change") return Math.abs(b.change_percent ?? 0) - Math.abs(a.change_percent ?? 0);
+    return a.symbol.localeCompare(b.symbol);
   });
 
   const formatPrice = (price: number | null) => {
@@ -111,9 +110,8 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Sort by:</span>
           <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-secondary border border-border rounded-lg text-xs px-2 py-1 text-foreground focus:outline-none">
-            <option value="divergence">Hype/Evidence Gap</option>
-            <option value="highest-hype">Highest Hype</option>
-            <option value="highest-evidence">Highest Evidence</option>
+            <option value="symbol">Symbol (A–Z)</option>
+            <option value="change">Biggest daily move</option>
           </select>
         </div>
       </div>

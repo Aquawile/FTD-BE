@@ -105,6 +105,29 @@ class TrackedTicker(BaseModel):
     price_as_of: Optional[str] = None
 
 
+class PriceTimelinePoint(BaseModel):
+    date: date
+    close: Optional[float] = None
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    percent_change: Optional[float] = None
+    has_data: bool = False
+
+
+class PriceTimeline(BaseModel):
+    ticker: str
+    window_days: int
+    window_start: Optional[date] = None
+    window_end: Optional[date] = None
+    first_data_date: Optional[date] = None
+    last_data_date: Optional[date] = None
+    trading_days: int = 0
+    days_covered: int = 0
+    fill_ratio: float = 0.0
+    points: list[PriceTimelinePoint] = Field(default_factory=list)
+
+
 class WorkspaceResponse(BaseModel):
     id: int
     name: str

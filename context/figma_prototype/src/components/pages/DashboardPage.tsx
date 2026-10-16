@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, Sparkline, cn } from "../ui";
+import { Badge, Btn, Card, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { fetchWorkspaces, getTrackedTickers, apiRequest } from "../../api";
 import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
@@ -100,8 +100,12 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     return String(n);
   };
 
-  const topMovers = trackedTickers.slice(0, 5);
-  const spData = [45, 52, 48, 63, 71, 68, 74, 69, 77, 82, 79, 84];
+  // Largest absolute daily moves from the latest finnhub quotes
+  const topMovers = trackedTickers
+    .filter(t => typeof t.change_percent === "number")
+    .slice()
+    .sort((a, b) => Math.abs(b.change_percent ?? 0) - Math.abs(a.change_percent ?? 0))
+    .slice(0, 5);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -110,7 +114,6 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
         <div>
           <h1 className="text-2xl font-bold">Good morning 👋</h1>
         </div>
-        <Btn variant="primary" onClick={() => navigate("chat")} icon={<MessageSquare size={14} />}>Ask AI</Btn>
       </div>
 
       {/* Stats row */}
@@ -151,7 +154,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
         {/* Top Movers */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground">Top Hype/Evidence Divergence</h2>
+            <h2 className="font-semibold text-foreground">Top Movers</h2>
             <button onClick={() => navigate("search")} className="text-xs text-primary hover:underline cursor-pointer">View all →</button>
           </div>
           <Card>
@@ -181,11 +184,6 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                       <span className="font-mono font-semibold text-sm text-foreground">{t.symbol}</span>
                       <span className="text-muted-foreground text-xs truncate">{t.name || t.symbol}</span>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-3">
-                      <div className="text-xs text-muted-foreground">
-                        Evidence: {t.evidence_score ?? "—"} | Hype: {t.hype_score ?? "—"}
-                      </div>
-                    </div>
                   </div>
                   <div className="text-right shrink-0">
                     <div className="font-mono text-sm font-semibold text-foreground">${price.toLocaleString()}</div>
@@ -194,7 +192,6 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                       {changePct > 0 ? "+" : ""}{changePct}%
                     </div>
                   </div>
-                  <Sparkline data={spData.map(v => v + Math.random() * 8 - 4)} color={changePct > 0 ? "#10B981" : "#EF4444"} />
                 </div>
                 );
               })}
@@ -262,19 +259,6 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
         </div>
       </div>
 
-      {/* AI chat preview */}
-      <Card className="p-5 border-primary/20 bg-gradient-to-r from-primary/5 to-accent/5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
-            <Sparkles size={18} className="text-purple-400" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-sm text-foreground">AI Research Assistant</h3>
-            <p className="text-xs text-muted-foreground">Ask complex multi-ticker questions. Sources always cited.</p>
-          </div>
-          <Btn variant="primary" size="sm" onClick={() => navigate("chat")} icon={<MessageSquare size={12} />}>Open Chat</Btn>
-        </div>
-      </Card>
     </div>
   );
 }

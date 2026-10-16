@@ -21,21 +21,11 @@ import {
   DashboardPage,
   SearchPage,
   TickerDashboard,
-  TimelinePage,
-  FilingsPage,
-  CommunityPage,
-  ComparisonPage,
   WorkspacesPage,
   WorkspaceDetailPage,
   WorkspaceSettingsPage,
-  ChatPage,
   AlertsPage,
   ProfilePage,
-  AdminDashboard,
-  AdminMappingPage,
-  AdminUsersPage,
-  AdminSystemPage,
-  LegacyLandingPage,
 } from "../components/pages";
 
 export { firebaseAuth, API_BASE };
@@ -117,20 +107,11 @@ function App() {
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} onReport={() => setShowReport(true)} />;
-      case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-community": return <CommunityPage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-comparison": return <ComparisonPage navigate={navigate} />;
       case "workspaces": return <WorkspacesPage navigate={navigate} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
       case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} refreshWorkspace={refreshWorkspace} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} />;
-      case "chat": return <ChatPage navigate={navigate} />;
       case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} />;
       case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
-      case "admin": return <AdminDashboard navigate={navigate} />;
-      case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
-      case "admin-users": return <AdminUsersPage navigate={navigate} />;
-      case "admin-system": return <AdminSystemPage navigate={navigate} />;
       default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
     }
   };
@@ -150,5 +131,4 @@ function App() {
 }
 
 export { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA };
-export { LegacyLandingPage };
 export default App;
