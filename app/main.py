@@ -65,6 +65,23 @@ app.include_router(dashboard.router)
 app.include_router(admin.router)
 
 
+@app.on_event("startup")
+def _warm_vectorized_count() -> None:
+    """Fill the chunk-count cache in the background so the first
+    /dashboard/stats after a restart doesn't pay the ~13s GCS scan."""
+    import threading
+
+    from app.services.vectorized_gcs import count_vectorized_content
+
+    def _warm() -> None:
+        try:
+            count_vectorized_content()
+        except Exception:
+            logger.warning("Vectorized count warm-up failed", exc_info=True)
+
+    threading.Thread(target=_warm, name="warm-vectorized-count", daemon=True).start()
+
+
 @app.get("/health")
 def health_check() -> dict:
     counters = get_counters()

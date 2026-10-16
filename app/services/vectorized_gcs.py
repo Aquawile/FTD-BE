@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from datetime import date, datetime
 from typing import Iterator
 
@@ -430,6 +431,13 @@ def _resolve_cik_to_ticker_from_blob_names(cik: str) -> str | None:
     return None
 
 
+# Chunk counts per vectorized file, keyed on (blob name, generation). A GCS
+# generation changes whenever an object is rewritten, so a cached count is
+# valid for as long as the blob list still shows that generation.
+_chunk_count_cache: dict[tuple[str, int], int] = {}
+_chunk_count_lock = threading.Lock()
+
+
 def count_vectorized_content() -> int:
     """Count total content elements (chunks) across all vectorized JSON files.
 
@@ -438,7 +446,10 @@ def count_vectorized_content() -> int:
     the chunk counts across all files to report the total number of content
     elements (articles) available for search and retrieval.
 
-    Uses concurrent downloads for performance (700+ files).
+    The blob list is fetched on every call (~0.1s), but each file is downloaded
+    only the first time its (name, generation) is seen; later calls reuse the
+    cached count. New or rewritten files are picked up on the next call, and
+    deleted files drop out because only blobs in the current list are summed.
     """
     import concurrent.futures
 
@@ -451,19 +462,33 @@ def count_vectorized_content() -> int:
             if blob.name.endswith(".json"):
                 all_blobs.append(blob)
 
-    def _count_chunks(blob: storage.Blob) -> int:
+    def _count_chunks(blob: storage.Blob) -> int | None:
         try:
             data = blob.download_as_bytes()
             parsed = json.loads(data.decode("utf-8"))
             return len(parsed.get("chunks", []))
         except Exception:
-            return 0
+            return None
 
-    total = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        for count in executor.map(_count_chunks, all_blobs):
-            total += count
-    return total
+    keys = [(blob.name, blob.generation or 0) for blob in all_blobs]
+
+    # Serialize so concurrent cold requests don't each download every file.
+    with _chunk_count_lock:
+        missing = [(key, blob) for key, blob in zip(keys, all_blobs) if key not in _chunk_count_cache]
+        if missing:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                counts = executor.map(_count_chunks, [blob for _, blob in missing])
+                for (key, _), count in zip(missing, counts):
+                    # Failed downloads count as 0 now (as before) but aren't
+                    # cached, so they're retried on the next call.
+                    if count is not None:
+                        _chunk_count_cache[key] = count
+
+        current = set(keys)
+        for key in [k for k in _chunk_count_cache if k not in current]:
+            del _chunk_count_cache[key]
+
+        return sum(_chunk_count_cache.get(key, 0) for key in keys)
 
 
 def get_filing_content_from_gcs(
