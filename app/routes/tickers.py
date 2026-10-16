@@ -4,27 +4,21 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from datetime import date
 from typing import Annotated, Optional
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Response
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_application_user, require_permission
-from app.auth.models import User
 from app.crud import (
-    get_ticker_filings,
-    get_ticker_fiscal_year_end,
     get_ticker_news,
     get_ticker_prices,
-    get_ticker_timeline,
     get_tracked_tickers,
     search_tickers,
 )
-from app.models import FiscalYearEnd, NewsRow, PriceRow, TimelineEvent, TickerResult, TrackedTicker
+from app.models import NewsRow, PriceRow, PriceTimeline, TimelineEvent, TickerResult, TrackedTicker, FiscalYearEnd
 
 router = APIRouter(prefix="/tickers", tags=["tickers"])
 
@@ -32,7 +26,6 @@ router = APIRouter(prefix="/tickers", tags=["tickers"])
 @router.get("/tracked", response_model=list[TrackedTicker])
 def route_get_tracked_tickers(
     limit: int = Query(500, ge=1, le=500),
-    current_user: dict = Depends(get_current_application_user),
 ) -> list[TrackedTicker]:
     return get_tracked_tickers(limit=limit)
 
@@ -56,6 +49,18 @@ def route_get_prices(
     permission: str = require_permission("tickers.prices"),
 ) -> list[PriceRow]:
     return get_ticker_prices(ticker, start, end)
+
+
+@router.get("/{ticker}/price-timeline", response_model=PriceTimeline)
+def route_get_price_timeline(
+    ticker: str,
+    window_days: int = Query(365, ge=30, le=365, description="Window length in calendar days"),
+    permission: str = require_permission("tickers.prices"),
+) -> PriceTimeline:
+    """Daily close series on a fixed calendar window, filled only where finnhub data exists."""
+    from app.services.price_timeline import build_price_timeline
+
+    return build_price_timeline(ticker, window_days)
 
 
 @router.get("/{ticker}/news", response_model=list[NewsRow])
@@ -87,11 +92,13 @@ def route_get_filings(
     form_type: Annotated[str | None, Query(description="Form type (e.g. 10-K, 8-K)")] = None,
     permission: str = require_permission("tickers.filings"),
 ) -> list[FilingSummaryResponse]:
-    from app.crud import get_ticker_filings as _get_filings
-    results = _get_filings(ticker)
+    from app.services.vectorized_gcs import list_filings_for_ticker
+
+    raw_results = list_filings_for_ticker(ticker)
+
     if start or end or form_type:
         filtered = []
-        for r in results:
+        for r in raw_results:
             if form_type and r.form_type != form_type:
                 continue
             if r.filing_date:
@@ -100,8 +107,9 @@ def route_get_filings(
                 if end and r.filing_date > end:
                     continue
             filtered.append(r)
-        results = filtered
-    return [FilingSummaryResponse(**r.model_dump()) for r in results]
+        raw_results = filtered
+
+    return [FilingSummaryResponse(**r.model_dump()) for r in raw_results]
 
 
 @router.get("/{ticker}/timeline", response_model=list[TimelineEvent])
@@ -117,7 +125,25 @@ def route_get_timeline(
     source_list = None
     if sources:
         source_list = [s.strip() for s in sources.split(",") if s.strip()]
-    return get_ticker_timeline(ticker, start, end, source_list, limit, offset)
+
+    from app.services.vectorized_gcs import get_timeline_from_gcs
+    from app.crud import get_ticker_timeline as _get_ticker_timeline
+
+    timeline_events: list[TimelineEvent] = []
+
+    if source_list and "sec" in source_list:
+        sec_sources = [s for s in source_list if s != "sec"]
+        if sec_sources:
+            timeline_events.extend(_get_ticker_timeline(ticker, start, end, sec_sources, limit, offset))
+        timeline_events.extend(get_timeline_from_gcs(ticker, start, end, limit, offset))
+        timeline_events.sort(key=lambda x: x.normalized_calendar_date or date.min, reverse=True)
+        timeline_events = timeline_events[:limit]
+    else:
+        timeline_events = _get_ticker_timeline(ticker, start, end, source_list, limit, offset)
+        if source_list is None:
+            timeline_events.extend(get_timeline_from_gcs(ticker, start, end, limit, offset))
+
+    return timeline_events
 
 
 @router.get("/{ticker}/fiscal-year-end", response_model=FiscalYearEnd)
@@ -125,9 +151,9 @@ def route_get_fiscal_year_end(
     ticker: str,
     permission: str = require_permission("tickers.fiscal_year_end"),
 ) -> FiscalYearEnd:
-    result = get_ticker_fiscal_year_end(ticker)
+    from app.services.vectorized_gcs import get_fiscal_year_end_from_gcs
+    result = get_fiscal_year_end_from_gcs(ticker)
     if result is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Fiscal year end not found for ticker")
     return result
 
@@ -172,7 +198,10 @@ def _fetch_sec_content(sec_url: str) -> tuple[bytes, str]:
 
 
 def _get_sec_primary_doc(cik: str, accession_number: str) -> str | None:
-    """Use the SEC data API to find the primary document name for a filing."""
+    """Use the SEC data API to find the primary document name for a filing.
+
+    This is a fallback for filings not found in raw-data-strg GCS bucket.
+    """
     import json
     import urllib.request
     import urllib.error
@@ -198,7 +227,7 @@ def _get_sec_primary_doc(cik: str, accession_number: str) -> str | None:
                     return docs[i] if i < len(docs) else None
     except Exception:
         pass
-    return accession_number + ".htm"
+    return None
 
 
 @router.get("/{ticker}/filings/{accession_number:path}/content")
@@ -206,33 +235,82 @@ def route_get_filing_content(
     ticker: str,
     accession_number: str,
     cik: str = Query(..., description="SEC CIK number for the filing"),
-    _permission: str = require_permission("tickers.filings"),
+    request: Request = None,
 ) -> Response:
-    """Proxy SEC filing content so the browser doesn't hit SEC's bot protection.
+    """Serve SEC filing content from raw-data-strg (GCS) with SEC.gov fallback.
 
-    SEC requires requests to include a contact-bearing User-Agent.  Browsers
-    send their own UA which SEC blocks ("Undeclared Automated Tool").  This
-    endpoint fetches the filing server-side with a compliant UA and returns
-    the HTML to the caller.  For large filings (10-K, etc.) the content is
-    fetched server-side so the browser doesn't deal with SEC's block pages.
+    Tries GCS first for speed and to avoid SEC rate limits. Falls back to
+    SEC.gov if the filing is not in GCS.
     """
+    import time as _time
+    _audit_start = _time.time()
+
     if accession_number.endswith(".htm"):
         accession_number = accession_number[:-4]
 
     accession_no_dashes = accession_number.replace("-", "")
+    accession_with_dashes = accession_no_dashes
+    if len(accession_with_dashes) == 18:
+        accession_with_dashes = f"{accession_with_dashes[:10]}-{accession_with_dashes[10:12]}-{accession_with_dashes[12:]}"
     cik_no_dashes = cik.replace("-", "")
     cik_padded = cik_no_dashes.zfill(10)
 
+    from app.services.vectorized_gcs import get_filing_content_from_gcs
+
+    content, content_type, found_in_gcs = get_filing_content_from_gcs(ticker, accession_no_dashes, cik_padded)
+
+    _audit_ms = int((_time.time() - _audit_start) * 1000)
+
+    if found_in_gcs:
+        from app.services.audit import log_sec_content_proxy
+        log_sec_content_proxy(
+            request=request,
+            endpoint=f"/api/tickers/{ticker}/filings/{accession_no_dashes}/content",
+            status=200,
+            duration_ms=_audit_ms,
+            details={
+                "ticker": ticker,
+                "accession_number": accession_no_dashes,
+                "cik": cik_no_dashes,
+                "source": "gcs",
+                "content_length": len(content),
+            },
+        )
+        return HTMLResponse(content=content, headers={
+            "Content-Type": content_type,
+            "Cache-Control": f"max-age={_SEC_CACHE_SECONDS}",
+        })
+
     primary_doc = _get_sec_primary_doc(cik, accession_no_dashes)
 
-    sec_url = (
-        f"https://www.sec.gov/Archives/edgar/data/"
-        f"{cik_no_dashes}/{accession_no_dashes}/{primary_doc}"
-    )
-
-    logger.info("sec_proxy: ticker=%s accession=%s cik=%s doc=%s url=%s", ticker, accession_no_dashes, cik_no_dashes, primary_doc, sec_url)
+    if primary_doc is not None:
+        sec_url = (
+            f"https://www.sec.gov/Archives/edgar/data/"
+            f"{cik_no_dashes}/{accession_no_dashes}/{primary_doc}"
+        )
+    else:
+        sec_url = (
+            f"https://www.sec.gov/cgi-bin/browse-edgar"
+            f"?action=getfile&CIK={cik_padded}&acckey={accession_with_dashes}"
+        )
 
     content, content_type = _fetch_sec_content(sec_url)
+
+    _audit_ms = int((_time.time() - _audit_start) * 1000)
+    from app.services.audit import log_sec_content_proxy
+    log_sec_content_proxy(
+        request=request,
+        endpoint=f"/api/tickers/{ticker}/filings/{accession_no_dashes}/content",
+        status=200,
+        duration_ms=_audit_ms,
+        details={
+            "ticker": ticker,
+            "accession_number": accession_no_dashes,
+            "cik": cik_no_dashes,
+            "source": "secgov",
+            "content_length": len(content),
+        },
+    )
 
     return HTMLResponse(content=content, headers={
         "Content-Type": content_type,

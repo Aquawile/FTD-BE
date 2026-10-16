@@ -13,9 +13,12 @@ from fastapi.responses import JSONResponse
 
 from app.auth.exceptions import AuthenticationError, AuthenticationInternalError
 from app.auth.models import ErrorResponse
-from app.routes import dashboard, filings, search, tickers, users, workspaces, alerts
+from app.routes import dashboard, filings, search, tickers, users, workspaces, alerts, admin
 from app.auth.router import router as auth_router
 from app.auth.middleware import AuthMiddleware
+from app.middleware.audit_middleware import AuditLogMiddleware
+from app.services.db_access_counter import get_counters
+from app.logging_config import setup_logging
 from app.services.exceptions import (
     DataValidationError,
     FilingNotFoundError,
@@ -26,7 +29,7 @@ from app.services.exceptions import (
 )
 
 logger = logging.getLogger("app")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+setup_logging()
 
 app = FastAPI(
     title="FTD Lakehouse API",
@@ -47,6 +50,9 @@ app.add_middleware(
 # Auth middleware — intercepts every request before route handlers
 app.add_middleware(AuthMiddleware)
 
+# Audit logging middleware — wraps AFTER AuthMiddleware so request.state is populated
+app.add_middleware(AuditLogMiddleware)
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(tickers.router)
@@ -56,11 +62,18 @@ app.include_router(users.router)
 app.include_router(workspaces.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")
-def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+def health_check() -> dict:
+    counters = get_counters()
+    has_db_hits = any(v > 0 for v in counters.values())
+    return {
+        "status": "ok",
+        "db_access_counters": counters,
+        "db_access_detected": has_db_hits,
+    }
 
 
 def _load_version_metadata() -> dict[str, str]:

@@ -336,71 +336,70 @@ jobs:
           echo "=== Applying Staging Database Migrations ==="
           echo "Database: ftd_lakehouse_staging on ftd-postgres-vm"
           
-          # Ensure migration tracking table exists
-          gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -c \"CREATE TABLE IF NOT EXISTS schema_migrations (migration_id VARCHAR(10) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), success BOOLEAN NOT NULL DEFAULT TRUE);\"" --quiet
-          
-          # Apply each migration file
-          for migration_file in $(find app/auth/migrations -maxdepth 1 -type f -name "[0-9][0-9][0-9]_*.sql" | sort); do
-            migration_id=$(basename "$migration_file" | cut -d'_' -f1)
-            
-            # Check if already applied (schema-based for initial migrations)
-            case "$migration_id" in
-              "001")
-                if gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -c \"SELECT to_regclass('public.users');\"" --quiet 2>/dev/null | grep -q "users"; then
-                  echo "Migration $migration_id already applied (schema verified), skipping."
-                  continue
-                fi
-                ;;
-              "002")
-                if gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -c \"SELECT to_regclass('public.user_permissions_index');\"" --quiet 2>/dev/null | grep -q "user_permissions_index"; then
-                  echo "Migration $migration_id already applied (schema verified), skipping."
-                  continue
-                fi
-                ;;
-              "003")
-                if gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -c \"SELECT 1 FROM pg_indexes WHERE indexname = 'idx_user_permissions_index_composite';\"" --quiet 2>/dev/null | grep -q "1"; then
-                  echo "Migration $migration_id already applied (schema verified), skipping."
-                  continue
-                fi
-                ;;
-              "004")
-                if gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -c \"SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='firebase_uid';\"" --quiet 2>/dev/null | grep -q "1"; then
-                  echo "Migration $migration_id already applied (schema verified), skipping."
-                  continue
-                fi
-                ;;
-              "005")
-                if gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -c \"SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password_hash' AND is_nullable='YES';\"" --quiet 2>/dev/null | grep -q "1"; then
-                  echo "Migration $migration_id already applied (schema verified), skipping."
-                  continue
-                fi
-                ;;
+          db() { gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --quiet --command="$1"; }
+          PSQL="sudo -u postgres psql -d ftd_lakehouse_staging -v ON_ERROR_STOP=1 -At"
+
+          # The schema_migrations ledger is the source of truth: a migration runs only if its id
+          # is not recorded, and it is recorded in the same transaction that applies it.
+          db "$PSQL -c \"CREATE TABLE IF NOT EXISTS schema_migrations (migration_id VARCHAR(10) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), success BOOLEAN NOT NULL DEFAULT TRUE);\""
+          applied() { db "$PSQL -c \"SELECT migration_id FROM schema_migrations WHERE success\""; }
+          record()  { db "$PSQL -c \"INSERT INTO schema_migrations (migration_id) VALUES ('$1') ON CONFLICT (migration_id) DO NOTHING;\""; }
+          APPLIED=$(applied)
+          echo "Already recorded: $(echo $APPLIED)"
+
+          # Legacy migrations 001-005 predate the ledger: if their schema already exists, record
+          # them instead of re-running.
+          legacy_present() {
+            case "$1" in
+              001) q="SELECT to_regclass('public.users') IS NOT NULL" ;;
+              002) q="SELECT to_regclass('public.user_permissions_index') IS NOT NULL" ;;
+              003) q="SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_user_permissions_index_composite')" ;;
+              004) q="SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='firebase_uid')" ;;
+              005) q="SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password_hash' AND is_nullable='YES')" ;;
+              *) return 1 ;;
             esac
-            
-            echo "Applying migration $migration_id ($migration_file)..."
-            
-            # Copy and execute migration with retry
+            [ "$(db "$PSQL -c \"$q\"")" = "t" ]
+          }
+
+          for migration_file in $(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name "[0-9][0-9][0-9]_*.sql" | sort); do
+            migration_id=$(basename "$migration_file" | cut -d'_' -f1)
             temp_name=$(basename "$migration_file")
+
+            if echo "$APPLIED" | grep -qx "$migration_id"; then
+              echo "Migration $migration_id already recorded, skipping."
+              continue
+            fi
+            if legacy_present "$migration_id"; then
+              echo "Migration $migration_id schema already present; recording in ledger."
+              record "$migration_id"
+              continue
+            fi
+
+            echo "Applying migration $migration_id ($migration_file)..."
             ATTEMPT=1
             MAX_ATTEMPTS=3
             while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-              if gcloud compute scp --tunnel-through-iap "$migration_file" isabellabutera@ftd-postgres-vm:/tmp/$temp_name --zone=us-west2-a --project=ftd2026 --quiet; then
-                if gcloud compute ssh isabellabutera@ftd-postgres-vm --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo -u postgres psql -d ftd_lakehouse_staging -f /tmp/$temp_name" --quiet; then
-                  echo "Migration $migration_id applied successfully."
-                  break
-                fi
+              # A failed SSH call may still have committed; re-check the ledger before retrying.
+              if [ $ATTEMPT -gt 1 ] && applied | grep -qx "$migration_id"; then
+                echo "Migration $migration_id was committed on a previous attempt."
+                break
+              fi
+              if gcloud compute scp --tunnel-through-iap "$migration_file" isabellabutera@ftd-postgres-vm:/tmp/$temp_name --zone=us-west2-a --project=ftd2026 --quiet \
+                 && db "$PSQL --single-transaction -f /tmp/$temp_name -c \"INSERT INTO schema_migrations (migration_id) VALUES ('$migration_id');\""; then
+                echo "Migration $migration_id applied and recorded."
+                break
               fi
               echo "Attempt $ATTEMPT/$MAX_ATTEMPTS failed for $migration_id, retrying in 5s..."
               sleep 5
               ATTEMPT=$((ATTEMPT + 1))
             done
-            
+
             if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
-              echo "ERROR: Migration $migration_id failed after $MAX_ATTEMPTS attempts!"
+              echo "ERROR: Migration $migration_id failed after $MAX_ATTEMPTS attempts (rolled back; not recorded)!"
               exit 1
             fi
           done
-          
+
           echo "=== All Migrations Applied Successfully ==="
 
   deploy-staging-backend:
@@ -491,74 +490,70 @@ jobs:
             exit 1
           fi
           
-          echo "Stopping existing FastAPI process..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="pkill -x uvicorn || true" --quiet
-          
-          echo "Cleaning stale application files..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && rm -rf main.py models.py router.py users.py services tests ._app .pytest_cache" --quiet
-          
-          echo "Deploying startup script..."
-          gcloud compute scp --tunnel-through-iap scripts/start_app.sh isabellabutera@ftd-staging-api:/home/isabellabutera/start_app.sh --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="chmod +x /home/isabellabutera/start_app.sh" --quiet
-          
-          echo "Verifying VM deployment prerequisites..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="test -f /home/isabellabutera/start_app.sh && test -x /home/isabellabutera/start_app.sh || { echo 'ERROR: /home/isabellabutera/start_app.sh is missing or not executable'; exit 1; }" --quiet
-          
-          echo "Syncing backend code..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="rm -rf /home/isabellabutera/app/app && mkdir -p /home/isabellabutera/app/app" --quiet
-          gcloud compute scp --tunnel-through-iap --recurse app/ isabellabutera@ftd-staging-api:/home/isabellabutera/app/app/ --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute scp --tunnel-through-iap requirements.txt isabellabutera@ftd-staging-api:/home/isabellabutera/requirements.txt --zone=us-west2-a --project=ftd2026 --quiet
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="find /home/isabellabutera/app/app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true" --quiet
-          
-          echo "Ensuring Python virtual environment exists..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && python3 -m venv .venv || true" --quiet
-          
-          echo "Installing Python dependencies..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="cd /home/isabellabutera/app && .venv/bin/pip install --break-system-packages -r /home/isabellabutera/requirements.txt" --quiet
-          
-          echo "Writing version metadata..."
-          cat > /tmp/version.json << EOF
-          {
-            "commit_sha": "${{ github.sha }}",
-            "branch": "${{ github.ref_name }}",
-            "commit_message": "$(git log -1 --format=%s)",
-            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "environment": "staging",
-            "workflow_run_id": "${{ github.run_id }}"
-          }
-          EOF
-          gcloud compute scp --tunnel-through-iap /tmp/version.json isabellabutera@ftd-staging-api:/home/isabellabutera/version.json --zone=us-west2-a --project=ftd2026 --quiet
-          
-          echo "Starting FastAPI..."
-          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="HOST=0.0.0.0 PORT=8080 PGPASSWORD='${{ secrets.FTD_STAGING_PG_PASSWORD }}' bash /home/isabellabutera/start_app.sh" --quiet
-          
-          echo "Waiting for FastAPI to become healthy..."
+          api() { gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --quiet --command="$1"; }
+
+          # The VM runs the API as systemd unit ftd-api.service (uvicorn app.main:app on :8080,
+          # WorkingDirectory=/home/isabellabutera/app, Restart=always); nginx on the web VM proxies to :8080.
+          # Code lives in /home/isabellabutera/app/app. Never pkill uvicorn or start a second copy.
+          echo "Packaging release..."
+          tar --exclude='__pycache__' -czf /tmp/ftd-release.tgz app requirements.txt
+          gcloud compute scp --tunnel-through-iap /tmp/ftd-release.tgz isabellabutera@ftd-staging-api:/tmp/ftd-release.tgz --zone=us-west2-a --project=ftd2026 --quiet
+
+          echo "Staging release beside the live code and installing dependencies..."
+          api "set -euo pipefail
+            cd /home/isabellabutera/app
+            rm -rf .release && mkdir .release && tar -xzf /tmp/ftd-release.tgz -C .release
+            test -f .release/app/main.py
+            python3 -m venv .venv 2>/dev/null || true
+            .venv/bin/pip install --quiet -r .release/requirements.txt"
+
+          echo "Swapping in release (previous kept at app.prev) and restarting ftd-api..."
+          api "set -euo pipefail
+            cd /home/isabellabutera/app
+            rm -rf app.prev
+            if [ -d app ]; then mv app app.prev; fi
+            mv .release/app app && rm -rf .release
+            sudo systemctl restart ftd-api.service"
+
+          echo "Waiting for FastAPI on :8080 to become healthy..."
           HEALTHY=false
           for i in $(seq 1 24); do
-            RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/health || echo 'CURL_FAILED'" --quiet)
+            RESPONSE=$(api "curl -s http://127.0.0.1:8080/health || echo CURL_FAILED")
             if echo "$RESPONSE" | grep -q '"status":"ok"'; then
               echo "FastAPI healthy after $i attempt(s)"
               HEALTHY=true
               break
             fi
             echo "Health check attempt $i failed. Response: $RESPONSE"
-            echo "Health check not ready yet, waiting 5s..."
             sleep 5
           done
-          
+
           if [ "$HEALTHY" != "true" ]; then
-            echo "ERROR: FastAPI did not become healthy within 120 seconds"
+            echo "ERROR: FastAPI did not become healthy within 120 seconds; rolling back to app.prev"
+            api "sudo journalctl -u ftd-api.service -n 40 --no-pager || true"
+            api "set -euo pipefail
+              cd /home/isabellabutera/app
+              if [ -d app.prev ]; then rm -rf app && mv app.prev app; fi
+              sudo systemctl restart ftd-api.service"
             exit 1
           fi
-          
+
+          echo "Writing version metadata (only after a healthy deploy)..."
+          jq -n --arg sha "${{ github.sha }}" --arg branch "${{ github.ref_name }}" \
+                --arg msg "$(git log -1 --format=%s)" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                --arg run "${{ github.run_id }}" \
+                '{commit_sha:$sha, branch:$branch, commit_message:$msg, deployed_at:$at, environment:"staging", workflow_run_id:$run}' > /tmp/version.json
+          gcloud compute scp --tunnel-through-iap /tmp/version.json isabellabutera@ftd-staging-api:/home/isabellabutera/version.json --zone=us-west2-a --project=ftd2026 --quiet
+
           echo "Verifying version endpoint..."
-          VERSION_RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8000/version" --quiet)
+          VERSION_RESPONSE=$(api "curl -s http://127.0.0.1:8080/version")
           if echo "$VERSION_RESPONSE" | grep -q "${{ github.sha }}"; then
             echo "Version endpoint verified: $VERSION_RESPONSE"
           else
-            echo "WARNING: Version endpoint does not match deployed commit. Response: $VERSION_RESPONSE"
+            echo "ERROR: /version does not report ${{ github.sha }}. Response: $VERSION_RESPONSE"
+            exit 1
           fi
-          
+
           echo "Backend deployment to staging complete"
 
   deploy-staging-web:
@@ -655,45 +650,53 @@ jobs:
           npm ci --prefix context/figma_prototype
           npm run build --prefix context/figma_prototype
           
+          web() { gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --quiet --command="$1"; }
+
+          # nginx serves root /home/isabellabutera/frontend/dist. Replace that directory as a whole
+          # (copying dist/ into an existing dist/ nests dist/dist and keeps serving the old index.html).
           echo "Deploying React build..."
-          gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="mkdir -p /home/isabellabutera/frontend/dist" --quiet
-          gcloud compute scp --tunnel-through-iap --recurse context/figma_prototype/dist/ isabellabutera@ftd-staging-web:/home/isabellabutera/frontend/dist/ --zone=us-west2-a --project=ftd2026 --quiet
-          
+          tar -czf /tmp/ftd-web.tgz -C context/figma_prototype/dist .
+          gcloud compute scp --tunnel-through-iap /tmp/ftd-web.tgz isabellabutera@ftd-staging-web:/tmp/ftd-web.tgz --zone=us-west2-a --project=ftd2026 --quiet
+          web "set -euo pipefail
+            cd /home/isabellabutera/frontend
+            rm -rf dist.new && mkdir dist.new && tar -xzf /tmp/ftd-web.tgz -C dist.new
+            test -f dist.new/index.html
+            rm -rf dist.prev
+            if [ -d dist ]; then mv dist dist.prev; fi
+            mv dist.new dist"
+
           echo "Verifying nginx configuration..."
-          gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="sudo nginx -t && sudo systemctl reload nginx" --quiet
-          
+          web "sudo nginx -t && sudo systemctl reload nginx"
+
           echo "Waiting for nginx to be ready..."
           WEB_READY=false
           for i in $(seq 1 12); do
-            RESPONSE=$(gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="curl -s http://127.0.0.1:8080/health || echo 'CURL_FAILED'" --quiet)
+            RESPONSE=$(web "curl -s http://127.0.0.1:8080/health || echo CURL_FAILED")
             if echo "$RESPONSE" | grep -q "healthy"; then
               echo "Web server healthy after $i attempt(s)"
               WEB_READY=true
               break
             fi
             echo "Web health check attempt $i failed. Response: $RESPONSE"
-            echo "Waiting 5s..."
             sleep 5
           done
-          
+
           if [ "$WEB_READY" != "true" ]; then
-            echo "ERROR: Web server did not become healthy within 60 seconds"
+            echo "ERROR: Web server did not become healthy within 60 seconds; rolling back to dist.prev"
+            web "set -euo pipefail
+              cd /home/isabellabutera/frontend
+              if [ -d dist.prev ]; then rm -rf dist && mv dist.prev dist; fi
+              sudo systemctl reload nginx"
             exit 1
           fi
       
       - name: Write version metadata to Web VM
         run: |
           echo "Writing version metadata..."
-          cat > /tmp/version.json << EOF
-          {
-            "commit_sha": "${{ github.sha }}",
-            "branch": "${{ github.ref_name }}",
-            "commit_message": "$(git log -1 --format=%s)",
-            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "environment": "staging",
-            "workflow_run_id": "${{ github.run_id }}"
-          }
-          EOF
+          jq -n --arg sha "${{ github.sha }}" --arg branch "${{ github.ref_name }}" \
+                --arg msg "$(git log -1 --format=%s)" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                --arg run "${{ github.run_id }}" \
+                '{commit_sha:$sha, branch:$branch, commit_message:$msg, deployed_at:$at, environment:"staging", workflow_run_id:$run}' > /tmp/version.json
           gcloud compute scp --tunnel-through-iap /tmp/version.json isabellabutera@ftd-staging-web:/home/isabellabutera/version.json --zone=us-west2-a --project=ftd2026 --quiet
           
           echo "Frontend deployment to staging complete"

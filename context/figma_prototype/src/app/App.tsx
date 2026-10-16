@@ -6,7 +6,8 @@ import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
 import { apiRequest, API_BASE } from "../api";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
+import { WorkspaceResponse } from "../types";
 
 import { AppShell } from "../components/Shell";
 import ReportModal from "../components/pages/ReportModal";
@@ -20,21 +21,11 @@ import {
   DashboardPage,
   SearchPage,
   TickerDashboard,
-  TimelinePage,
-  FilingsPage,
-  CommunityPage,
-  ComparisonPage,
   WorkspacesPage,
   WorkspaceDetailPage,
   WorkspaceSettingsPage,
-  ChatPage,
   AlertsPage,
   ProfilePage,
-  AdminDashboard,
-  AdminMappingPage,
-  AdminUsersPage,
-  AdminSystemPage,
-  LegacyLandingPage,
 } from "../components/pages";
 
 export { firebaseAuth, API_BASE };
@@ -42,6 +33,7 @@ export { firebaseAuth, API_BASE };
 function App() {
   const [page, setPage] = useState<Page>("login");
   const [selectedTicker, setSelectedTicker] = useState("NVDA");
+  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceResponse | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -81,6 +73,19 @@ function App() {
 
   const navigate = (p: Page) => setPage(p);
 
+  const refreshWorkspace = async () => {
+    if (!firebaseUser || !selectedWorkspace) return;
+    try {
+      const res = await apiRequest(`/workspaces/${selectedWorkspace.id}/tickers`, firebaseUser);
+      if (res.ok) {
+        const tickers = await res.json();
+        setSelectedWorkspace({ ...selectedWorkspace, tickers });
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const handleSignOut = async () => {
     try { await signOut(firebaseAuth); } catch {}
     navigate("login");
@@ -99,24 +104,15 @@ function App() {
       case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email} />;
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
-      case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
+      case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} onReport={() => setShowReport(true)} />;
-      case "ticker-timeline": return <TimelinePage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-filings": return <FilingsPage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-community": return <CommunityPage navigate={navigate} ticker={selectedTicker} />;
-      case "ticker-comparison": return <ComparisonPage navigate={navigate} />;
-      case "workspaces": return <WorkspacesPage navigate={navigate} />;
-      case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
-      case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} />;
-      case "chat": return <ChatPage navigate={navigate} />;
-      case "alerts": return <AlertsPage navigate={navigate} />;
+      case "workspaces": return <WorkspacesPage navigate={navigate} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
+      case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} refreshWorkspace={refreshWorkspace} />;
+      case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} />;
+      case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} />;
       case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
-      case "admin": return <AdminDashboard navigate={navigate} />;
-      case "admin-mapping": return <AdminMappingPage navigate={navigate} />;
-      case "admin-users": return <AdminUsersPage navigate={navigate} />;
-      case "admin-system": return <AdminSystemPage navigate={navigate} />;
-      default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} />;
+      default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
     }
   };
 
@@ -134,6 +130,5 @@ function App() {
   );
 }
 
-export { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA };
-export { LegacyLandingPage };
+export { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA };
 export default App;

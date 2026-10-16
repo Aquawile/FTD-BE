@@ -55,11 +55,13 @@ def _auth_headers() -> dict[str, str]:
 
 @pytest.fixture(autouse=True)
 def _mock_firebase_auth():
-    """Patch Firebase token validation so the middleware always succeeds."""
+    """Patch Firebase token validation so the middleware always succeeds,
+    and mock DB writes so tests don't need a database connection.
+    """
     with patch(
         "app.auth.middleware.validate_firebase_token_with_reason",
         return_value=({"firebase_uid": "test-firebase-uid", "email": "test@example.com"}, None),
-    ):
+    ), patch("app.db.execute"):
         yield
 
 
@@ -84,7 +86,7 @@ def _mock_permissions():
         return {
             "tickers.search", "tickers.prices", "tickers.news",
             "tickers.filings", "tickers.timeline", "tickers.fiscal_year_end",
-            "filings.read", "search.read", "dashboard.read",
+            "filings.read", "search.read", "dashboard.read", "admin",
         }
     app.dependency_overrides[get_current_user] = _fake_current_user
     app.dependency_overrides[get_current_permissions] = _fake_permissions
@@ -114,44 +116,52 @@ def _mock_no_permissions():
 class TestDashboardEndpoint:
     @pytest.mark.unit
     def test_dashboard_stats_returns_expected_fields(self) -> None:
-        fake_stats = {
-            "articles_count": 15000,
-            "tickers_count": 500,
-            "alerts_count": 42,
-            "evidence_score": 87.5,
-        }
-        with patch("app.routes.dashboard.get_dashboard_stats", return_value=fake_stats):
-            response = client.get("/dashboard/stats")
+        with patch("app.services.vectorized_gcs.count_vectorized_content", return_value=15000):
+            with patch("app.db.query_dict") as mock_qd:
+                mock_qd.side_effect = [
+                    [{"count": 700000}],
+                    [{"count": 500}],
+                    [{"count": 42}],
+                ]
+                response = client.get("/dashboard/stats")
 
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["articles_count"] == 15000
-        assert data["tickers_count"] == 500
-        assert data["alerts_count"] == 42
-        assert data["evidence_score"] == 87.5
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert data["articles_count"] == 700000
+            assert data["tickers_count"] == 500
+            assert data["alerts_count"] == 42
+            assert data["evidence_score"] is None
+            assert data["vectorized_sec_count"] == 15000
 
     @pytest.mark.unit
     def test_dashboard_stats_returns_zeros_on_empty(self) -> None:
-        fake_stats = {
-            "articles_count": 0,
-            "tickers_count": 0,
-            "alerts_count": 0,
-            "evidence_score": None,
-        }
-        with patch("app.routes.dashboard.get_dashboard_stats", return_value=fake_stats):
-            response = client.get("/dashboard/stats")
+        with patch("app.services.vectorized_gcs.count_vectorized_content", return_value=0):
+            with patch("app.db.query_dict") as mock_qd:
+                mock_qd.side_effect = [
+                    [{"count": 0}],
+                    [{"count": 0}],
+                    [{"count": 0}],
+                ]
+                response = client.get("/dashboard/stats")
 
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["articles_count"] == 0
-        assert data["tickers_count"] == 0
-        assert data["alerts_count"] == 0
-        assert data["evidence_score"] is None
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert data["articles_count"] == 0
+            assert data["tickers_count"] == 0
+            assert data["alerts_count"] == 0
+            assert data["evidence_score"] is None
+            assert data["vectorized_sec_count"] == 0
 
     @pytest.mark.unit
     def test_dashboard_stats_no_auth_required(self) -> None:
-        with patch("app.routes.dashboard.get_dashboard_stats", return_value={"articles_count": 0, "tickers_count": 0, "alerts_count": 0, "evidence_score": None}):
-            response = client.get("/dashboard/stats")
+        with patch("app.services.vectorized_gcs.count_vectorized_content", return_value=0):
+            with patch("app.db.query_dict") as mock_qd:
+                mock_qd.side_effect = [
+                    [{"count": 0}],
+                    [{"count": 0}],
+                    [{"count": 0}],
+                ]
+                response = client.get("/dashboard/stats")
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -161,7 +171,7 @@ class TestDashboardEndpoint:
 
 class TestTrackedTickersEndpoint:
     @pytest.mark.unit
-    def test_get_tracked_tickers_returns_list(self, _mock_user) -> None:
+    def test_get_tracked_tickers_returns_list(self) -> None:
         fake = [
             TrackedTicker(
                 symbol="AAPL",
@@ -174,7 +184,7 @@ class TestTrackedTickersEndpoint:
             ),
         ]
         with patch("app.routes.tickers.get_tracked_tickers", return_value=fake):
-            response = client.get("/tickers/tracked", headers=_auth_headers())
+            response = client.get("/tickers/tracked")
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -185,32 +195,33 @@ class TestTrackedTickersEndpoint:
         assert data[0]["sector"] == "Technology"
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_empty_list(self, _mock_user) -> None:
+    def test_get_tracked_tickers_empty_list(self) -> None:
         with patch("app.routes.tickers.get_tracked_tickers", return_value=[]):
-            response = client.get("/tickers/tracked", headers=_auth_headers())
+            response = client.get("/tickers/tracked")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_respects_limit_param(self, _mock_user) -> None:
+    def test_get_tracked_tickers_respects_limit_param(self) -> None:
         with patch("app.routes.tickers.get_tracked_tickers") as mock_fn:
             mock_fn.return_value = []
-            client.get("/tickers/tracked?limit=5", headers=_auth_headers())
+            client.get("/tickers/tracked?limit=5")
             mock_fn.assert_called_once_with(limit=5)
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_limit_rejected_when_too_large(self, _mock_user) -> None:
+    def test_get_tracked_tickers_limit_rejected_when_too_large(self) -> None:
         with patch("app.routes.tickers.get_tracked_tickers") as mock_fn:
             mock_fn.return_value = []
-            response = client.get("/tickers/tracked?limit=99999", headers=_auth_headers())
+            response = client.get("/tickers/tracked?limit=99999")
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
             mock_fn.assert_not_called()
 
     @pytest.mark.unit
-    def test_get_tracked_tickers_requires_auth(self) -> None:
-        response = client.get("/tickers/tracked")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    def test_get_tracked_tickers_is_public(self) -> None:
+        with patch("app.routes.tickers.get_tracked_tickers", return_value=[]):
+            response = client.get("/tickers/tracked")
+        assert response.status_code == status.HTTP_200_OK
 
 
 # ---------------------------------------------------------------------------
@@ -366,9 +377,9 @@ class TestTickerTimelineEndpoint:
                 form_type="10-K",
             ),
         ]
-        with patch("app.routes.tickers.get_ticker_timeline", return_value=fake):
+        with patch("app.services.vectorized_gcs.get_timeline_from_gcs", return_value=fake):
             response = client.get(
-                "/tickers/AAPL/timeline?start=2024-01-01&end=2024-12-31",
+                "/tickers/AAPL/timeline?start=2024-01-01&end=2024-12-31&sources=sec",
                 headers=_auth_headers(),
             )
 
@@ -378,9 +389,28 @@ class TestTickerTimelineEndpoint:
         assert data[0]["source"] == "sec"
 
     @pytest.mark.unit
+    def test_get_timeline_with_non_sec_sources_uses_crud(self, _mock_permissions) -> None:
+        fake = [
+            TimelineEvent(
+                normalized_calendar_date=date(2024, 1, 15),
+                source="gnews",
+                content_body="News article",
+            ),
+        ]
+        with patch("app.crud.get_ticker_timeline", return_value=fake):
+            response = client.get(
+                "/tickers/AAPL/timeline?start=2024-01-01&end=2024-12-31&sources=gnews",
+                headers=_auth_headers(),
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["source"] == "gnews"
+
+    @pytest.mark.unit
     def test_get_timeline_missing_dates_returns_422(self, _mock_permissions) -> None:
-        with patch("app.routes.tickers.get_ticker_timeline", return_value=[]):
-            response = client.get("/tickers/AAPL/timeline", headers=_auth_headers())
+        response = client.get("/tickers/AAPL/timeline", headers=_auth_headers())
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
@@ -401,7 +431,7 @@ class TestTickerFilingsEndpoint:
                 element_count=45,
             ),
         ]
-        with patch("app.crud.get_ticker_filings", return_value=fake):
+        with patch("app.services.vectorized_gcs.list_filings_for_ticker", return_value=fake):
             response = client.get("/tickers/AAPL/filings", headers=_auth_headers())
 
         assert response.status_code == status.HTTP_200_OK
@@ -411,14 +441,15 @@ class TestTickerFilingsEndpoint:
         assert data[0]["element_count"] == 45
 
     @pytest.mark.unit
-    def test_get_filings_nonexistent_ticker_raises_404(self, _mock_permissions) -> None:
-        with patch("app.crud.get_ticker_filings", side_effect=TickerNotFoundError("not found")):
+    def test_get_filings_nonexistent_ticker_returns_empty(self, _mock_permissions) -> None:
+        with patch("app.services.vectorized_gcs.list_filings_for_ticker", return_value=[]):
             response = client.get("/tickers/ZZZZZ/filings", headers=_auth_headers())
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
 
     @pytest.mark.unit
     def test_get_filings_empty_list(self, _mock_permissions) -> None:
-        with patch("app.crud.get_ticker_filings", return_value=[]):
+        with patch("app.services.vectorized_gcs.list_filings_for_ticker", return_value=[]):
             response = client.get("/tickers/AAPL/filings", headers=_auth_headers())
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
@@ -437,7 +468,7 @@ class TestFiscalYearEndEndpoint:
             fiscal_year_end_date=date(2024, 9, 28),
             source_accession="0000320193-24-000011",
         )
-        with patch("app.routes.tickers.get_ticker_fiscal_year_end", return_value=fake):
+        with patch("app.services.vectorized_gcs.get_fiscal_year_end_from_gcs", return_value=fake):
             response = client.get("/tickers/AAPL/fiscal-year-end", headers=_auth_headers())
 
         assert response.status_code == status.HTTP_200_OK
@@ -447,7 +478,7 @@ class TestFiscalYearEndEndpoint:
 
     @pytest.mark.unit
     def test_get_fiscal_year_end_not_found_returns_404(self, _mock_permissions) -> None:
-        with patch("app.routes.tickers.get_ticker_fiscal_year_end", return_value=None):
+        with patch("app.services.vectorized_gcs.get_fiscal_year_end_from_gcs", return_value=None):
             response = client.get("/tickers/ZZZZZ/fiscal-year-end", headers=_auth_headers())
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -469,7 +500,7 @@ class TestFilingElementsEndpoint:
                 content_body="Risk factor content",
             ),
         ]
-        with patch("app.routes.filings.get_filing_elements", return_value=fake):
+        with patch("app.services.vectorized_gcs.get_filing_elements_by_accession", return_value=fake):
             response = client.get(
                 "/filings/0000320193-24-000011/elements",
                 headers=_auth_headers(),
@@ -482,13 +513,14 @@ class TestFilingElementsEndpoint:
         assert data[0]["item_number"] == "1A"
 
     @pytest.mark.unit
-    def test_get_filing_elements_not_found_returns_404(self, _mock_permissions) -> None:
-        with patch("app.routes.filings.get_filing_elements", side_effect=FilingNotFoundError("not found")):
+    def test_get_filing_elements_not_found_returns_empty(self, _mock_permissions) -> None:
+        with patch("app.services.vectorized_gcs.get_filing_elements_by_accession", return_value=[]):
             response = client.get(
                 "/filings/0000000000-00-000000/elements",
                 headers=_auth_headers(),
             )
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
 
 
 # ---------------------------------------------------------------------------
@@ -589,7 +621,7 @@ class TestSearchContentEndpoint:
             ),
         ]
         with patch("app.routes.search.search_content", return_value=fake):
-            response = client.get("/search?q=Apple", headers=_auth_headers())
+            response = client.get("/search?q=Apple&source=gnews", headers=_auth_headers())
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -597,18 +629,140 @@ class TestSearchContentEndpoint:
         assert data[0]["target_ticker"] == "AAPL"
 
     @pytest.mark.unit
+    def test_search_sec_content_uses_gcs(self, _mock_permissions) -> None:
+        fake = [
+            SearchResult(
+                target_ticker="AAPL",
+                normalized_calendar_date=date(2024, 6, 1),
+                source="sec",
+                content_preview="SEC filing content",
+                element_id="elem-2",
+            ),
+        ]
+        with patch("app.services.vectorized_gcs.search_vectorized_content", return_value=fake):
+            response = client.get("/search?q=revenue&source=sec", headers=_auth_headers())
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["source"] == "sec"
+
+    @pytest.mark.unit
+    def test_search_no_source_defaults_to_sec_gcs(self, _mock_permissions) -> None:
+        fake = [
+            SearchResult(
+                target_ticker="AAPL",
+                normalized_calendar_date=date(2024, 6, 1),
+                source="sec",
+                content_preview="SEC filing content",
+                element_id="elem-2",
+            ),
+        ]
+        with patch("app.services.vectorized_gcs.search_vectorized_content", return_value=fake):
+            response = client.get("/search?q=revenue", headers=_auth_headers())
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["source"] == "sec"
+
+    @pytest.mark.unit
     def test_search_content_missing_query_returns_422(self, _mock_permissions) -> None:
-        with patch("app.routes.search.search_content", return_value=[]):
-            response = client.get("/search", headers=_auth_headers())
+        response = client.get("/search", headers=_auth_headers())
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.unit
     def test_search_content_empty_query_returns_422(self, _mock_permissions) -> None:
-        with patch("app.routes.search.search_content", return_value=[]):
-            response = client.get("/search?q=", headers=_auth_headers())
+        response = client.get("/search?q=", headers=_auth_headers())
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.unit
     def test_search_content_requires_permission(self, _mock_no_permissions) -> None:
         response = client.get("/search?q=test", headers=_auth_headers())
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints (Layer 11 — Counter Monitoring)
+# ---------------------------------------------------------------------------
+
+class TestAdminEndpoints:
+    @pytest.mark.unit
+    def test_db_access_counters_returns_empty(self, _mock_permissions) -> None:
+        with patch("app.services.db_access_counter.get_counters", return_value={}):
+            response = client.get("/admin/db-access-counters", headers=_auth_headers())
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["counters"] == {}
+        assert data["total_hits"] == 0
+        assert data["all_clear"] is True
+        assert data["db_access_detected"] is False
+
+    @pytest.mark.unit
+    def test_db_access_counters_shows_hits_when_present(self, _mock_permissions) -> None:
+        from app.services.db_access_counter import increment_counter, reset_counters
+        reset_counters()
+        increment_counter("endpoint:get_ticker_filings")
+
+        response = client.get("/admin/db-access-counters", headers=_auth_headers())
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["counters"]["endpoint:get_ticker_filings"] == 1
+        assert data["db_access_detected"] is True
+        assert data["all_clear"] is False
+
+        reset_counters()
+
+    @pytest.mark.unit
+    def test_db_access_counters_reset(self, _mock_permissions) -> None:
+        from app.services.db_access_counter import increment_counter, reset_counters
+        reset_counters()
+        increment_counter("endpoint:test")
+
+        response = client.post("/admin/db-access-counters/reset", headers=_auth_headers())
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "reset"
+
+    @pytest.mark.unit
+    def test_db_access_counters_requires_admin_permission(self, _mock_no_permissions) -> None:
+        response = client.get("/admin/db-access-counters", headers=_auth_headers())
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.unit
+    def test_migration_status_returns_summary(self, _mock_permissions) -> None:
+        with patch("app.services.db_access_counter.get_counters", return_value={}), \
+             patch("app.services.vectorized_gcs.count_vectorized_content", return_value=707):
+            response = client.get("/admin/migration-status", headers=_auth_headers())
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["migration_complete"] is True
+        assert data["vectorized_content_elements_in_gcs"] == 707
+        assert "sec_endpoints_using_gcs" in data
+
+    @pytest.mark.unit
+    def test_migration_status_requires_admin_permission(self, _mock_no_permissions) -> None:
+        response = client.get("/admin/migration-status", headers=_auth_headers())
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ---------------------------------------------------------------------------
+# Health endpoint validation (Layer 10)
+# ---------------------------------------------------------------------------
+
+class TestHealthEndpoint:
+    @pytest.mark.unit
+    def test_health_returns_db_access_counters(self) -> None:
+        with patch("app.services.db_access_counter.get_counters", return_value={}):
+            response = client.get("/health")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "ok"
+        assert "db_access_counters" in data
+        assert "db_access_detected" in data
+        assert data["db_access_detected"] is False

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, cn } from "../ui";
 import { Radio, RefreshCw, Send, Sparkles, Zap } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
 function ChatPage({ navigate }: { navigate: (p: Page) => void }) {
   const [input, setInput] = useState("");

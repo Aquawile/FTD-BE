@@ -281,6 +281,8 @@ export interface NewsRow {
   content_body: string;
   normalized_calendar_date: string;
   ingest_date: string;
+  source?: string | null;
+  url?: string | null;
 }
 
 export interface PriceRow {
@@ -312,6 +314,7 @@ export interface DashboardStats {
   tickers_count: number;
   alerts_count: number;
   evidence_score: number | null;
+  vectorized_sec_count: number;
 }
 
 export interface TickerResult {
@@ -369,11 +372,11 @@ export interface FilingElement {
 }
 
 export interface WorkspaceResponse {
-  id: string;
+  id: number;
   name: string;
   tickers: string[];
   alerts: number;
-  created_at: string;
+  created_at: string | null;
 }
 
 export interface AlertResponse {
@@ -387,11 +390,11 @@ export interface AlertResponse {
 }
 
 export interface WorkspaceResponse {
-  id: string;
+  id: number;
   name: string;
   tickers: string[];
   alerts: number;
-  created_at: string;
+  created_at: string | null;
 }
 
 export interface AlertResponse {

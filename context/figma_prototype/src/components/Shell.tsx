@@ -16,10 +16,7 @@ export function Sidebar({ page, navigate, collapsed, onCollapse }: {
     { id: "dashboard", label: "Dashboard", icon: Home },
     { id: "search", label: "Research", icon: Search },
     { id: "workspaces", label: "Workspaces", icon: Briefcase },
-    { id: "ticker-timeline", label: "Timeline", icon: Clock },
-    { id: "chat", label: "AI Assistant", icon: MessageSquare },
     { id: "alerts", label: "Alerts", icon: Bell },
-    { id: "admin", label: "Admin", icon: Shield },
   ];
   return (
     <aside className={cn("flex flex-col h-screen sticky top-0 bg-sidebar border-r border-sidebar-border transition-all duration-200 shrink-0", collapsed ? "w-16" : "w-56")}>
@@ -50,7 +47,6 @@ export function Sidebar({ page, navigate, collapsed, onCollapse }: {
             >
               <Icon size={16} className="shrink-0" />
               {!collapsed && <span>{item.label}</span>}
-              {!collapsed && item.id === "alerts" && <span className="ml-auto text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5 font-mono">2</span>}
             </button>
           );
         })}
@@ -67,7 +63,7 @@ export function Sidebar({ page, navigate, collapsed, onCollapse }: {
   );
 }
 
-export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 2, userEmail, userName, onSignOut }: {
+export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 0, userEmail, userName, onSignOut }: {
   navigate: (p: Page) => void; searchQuery: string; setSearchQuery: (v: string) => void; onSearch: () => void; unreadAlerts?: number; userEmail?: string; userName?: string; onSignOut?: () => void;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);

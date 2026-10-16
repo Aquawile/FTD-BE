@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Btn, Card, Input, Modal, cn } from "../ui";
 import { Archive, Briefcase, Check, ChevronLeft } from "lucide-react";
+import { WorkspaceResponse } from "../../types";
 
-function WorkspaceSettingsPage({ navigate }: { navigate: (p: Page) => void }) {
-  const [name, setName] = useState("AI Semiconductor Race");
+function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser }: { navigate: (p: Page) => void; selectedWorkspace: WorkspaceResponse | null; firebaseUser: FirebaseUser | null }) {
+  const [name, setName] = useState(selectedWorkspace?.name || "");
   const [showDelete, setShowDelete] = useState(false);
   return (
     <div className="p-6 max-w-2xl mx-auto">
@@ -31,9 +33,7 @@ function WorkspaceSettingsPage({ navigate }: { navigate: (p: Page) => void }) {
           <h3 className="font-semibold mb-4">Alert Preferences</h3>
           <div className="space-y-3 text-sm">
             {[
-              { label: "Narrative shift alerts", desc: "Notify when Hype/Evidence delta changes ≥10 points", enabled: true },
               { label: "New SEC filings", desc: "Alert on new 10-K, 10-Q, or 8-K filings", enabled: true },
-              { label: "Reddit hype spikes", desc: "Alert when post volume increases >200% in 4 hours", enabled: false },
             ].map(a => (
               <div key={a.label} className="flex items-start justify-between gap-4">
                 <div>

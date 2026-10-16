@@ -30,5 +30,10 @@ def route_search(
     limit: int = Query(50, ge=1, le=200),
     permission: str = require_permission("search.read"),
 ) -> list[SearchResponse]:
-    results = search_content(q, source, limit)
-    return [SearchResponse(**r.model_dump()) for r in results]
+    if source is None or source == "sec":
+        from app.services.vectorized_gcs import search_vectorized_content
+        results = search_vectorized_content(q, limit)
+        return [SearchResponse(**r.model_dump()) for r in results]
+    else:
+        results = search_content(q, source, limit)
+        return [SearchResponse(**r.model_dump()) for r in results]

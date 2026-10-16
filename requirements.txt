@@ -4,3 +4,4 @@ psycopg2-binary>=2.9.0
 PyJWT>=2.8.0
 firebase-admin>=6.0.0
 uvicorn>=0.34.0
+pandas>=2.2

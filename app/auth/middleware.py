@@ -13,7 +13,18 @@ from app.auth.token import verify_token
 logger = logging.getLogger(__name__)
 
 
-PUBLIC_PATHS = {"/health", "/version", "/auth/login", "/auth/register", "/auth/me", "/dashboard/stats"}
+PUBLIC_PATHS = {
+    "/health",
+    "/version",
+    "/auth/login",
+    "/auth/register",
+    "/auth/me",
+    "/dashboard/stats",
+    "/tickers/tracked",
+}
+
+SEC_PROXY_PREFIX = "/tickers/"
+SEC_PROXY_SUFFIX = "/content"
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -22,7 +33,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if path in PUBLIC_PATHS or path.startswith("/docs") or path == "/openapi.json" or path == "/redoc":
+        if (
+            path in PUBLIC_PATHS
+            or path.startswith("/docs")
+            or path == "/openapi.json"
+            or path == "/redoc"
+            or (path.startswith(SEC_PROXY_PREFIX) and path.endswith(SEC_PROXY_SUFFIX))
+        ):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")
@@ -102,11 +119,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user_id = int(user_id)
             request.state.email = email
             request.state.auth_method = "internal"
-            logger.info("authentication_succeeded: method=internal user_id=%s path=%s", user_id, path)
-            return await call_next(request)
-        except Exception as e:
-            logger.error("authentication_internal_error: reason=postgres_lookup_failed path=%s error=%s", path, str(e))
+        except (ValueError, TypeError) as e:
+            logger.warning("authentication_failed: reason=invalid_user_identifier path=%s", path)
             return JSONResponse(
-                status_code=500,
-                content={"detail": "Internal server error"},
+                status_code=401,
+                content={"detail": "Invalid user identifier in token"},
             )
+
+        logger.info("authentication_succeeded: method=internal user_id=%s path=%s", user_id, path)
+        return await call_next(request)

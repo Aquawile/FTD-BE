@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, HypeEvidenceBar, getHypeColor, getEvidenceColor } from "../ui";
 import { ArrowRight, BarChart, Sparkles, TrendingUp } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, WORKSPACES, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
 
 function LegacyLandingPage({ navigate }: { navigate: (p: Page) => void }) {
   return (
@@ -66,11 +66,11 @@ function LegacyLandingPage({ navigate }: { navigate: (p: Page) => void }) {
                   <div className="text-muted-foreground text-sm mt-0.5">NVIDIA Corporation</div>
                 </div>
                 <div className="text-right">
-                  <div className="font-mono font-bold text-lg text-foreground">$873.50</div>
-                  <div className="text-emerald-400 text-sm flex items-center gap-1 justify-end"><TrendingUp size={12} />+4.2%</div>
+                <div className="font-mono font-bold text-lg text-foreground">$873.50</div>
+                <div className="text-emerald-400 text-sm flex items-center gap-1 justify-end"><TrendingUp size={12} />+4.2%</div>
                 </div>
               </div>
-              <HypeEvidenceBar hype={84} evidence={71} />
+                <HypeEvidenceBar hype={84} evidence={71} />
               {NEWS_ARTICLES.slice(0, 2).map(a => (
                 <div key={a.id} className="flex items-start gap-3 p-3 bg-secondary/50 rounded-lg border border-border/50">
                   <div className="flex-1 min-w-0">

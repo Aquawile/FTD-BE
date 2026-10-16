@@ -39,7 +39,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Profile</h1>
       <div className="flex gap-2 mb-6 border-b border-border pb-4">
-        {["profile", "security", "preferences", "api"].map(t => (
+        {["profile", "security", "preferences"].map(t => (
           <button key={t} onClick={() => setActiveTab(t)} className={cn("px-3 py-1.5 rounded-lg text-sm capitalize cursor-pointer transition-all", activeTab === t ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground")}>{t}</button>
         ))}
       </div>
@@ -80,24 +80,11 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
           <Card className="p-5">
             <h3 className="font-semibold mb-4">Change Password</h3>
             <div className="space-y-3">
-              <div className="space-y-1.5"><label className="text-sm font-medium">Current password</label><Input type="password" placeholder="••••••••" icon={<Lock size={14} />} /></div>
+              <div className="space-y-1.5"><label className="text-sm font-medium">Current password</label>              <Input type="password" placeholder="••••••••" icon={<Lock size={14} />} /></div>
               <div className="space-y-1.5"><label className="text-sm font-medium">New password</label><Input type="password" placeholder="New password" icon={<Lock size={14} />} /></div>
               <div className="space-y-1.5"><label className="text-sm font-medium">Confirm new password</label><Input type="password" placeholder="Confirm password" icon={<Lock size={14} />} /></div>
               <Btn variant="primary" size="sm" icon={<Lock size={12} />}>Update Password</Btn>
             </div>
-          </Card>
-          <Card className="p-5">
-            <h3 className="font-semibold mb-2">Active Sessions</h3>
-            <p className="text-xs text-muted-foreground mb-4">Manage devices where you are currently signed in.</p>
-            {[{ device: "MacBook Pro · Chrome", location: "San Francisco, CA", time: "Current session", current: true }, { device: "iPhone 15 · Safari", location: "San Francisco, CA", time: "2 days ago", current: false }].map(s => (
-              <div key={s.device} className="flex items-center justify-between py-3 border-b border-border/50 last:border-0">
-                <div>
-                  <div className="text-sm font-medium text-foreground">{s.device}</div>
-                  <div className="text-xs text-muted-foreground">{s.location} · {s.time}</div>
-                </div>
-                {s.current ? <Badge variant="evidence">Active</Badge> : <Btn variant="ghost" size="sm" className="text-red-400">Revoke</Btn>}
-              </div>
-            ))}
           </Card>
         </div>
       )}
@@ -107,7 +94,6 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
           <div className="space-y-4 text-sm">
             {[
               { label: "Compact card view", desc: "Show more tickers per row", enabled: false },
-              { label: "Show evidence score by default", desc: "Prioritize evidence over hype display", enabled: true },
               { label: "Email digest (weekly)", desc: "Receive a weekly research summary email", enabled: true },
               { label: "Community posts in feed", desc: "Include Reddit content in main feed", enabled: true },
             ].map(p => (
@@ -118,20 +104,6 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
                 </div>
               </div>
             ))}
-          </div>
-        </Card>
-      )}
-      {activeTab === "api" && (
-        <Card className="p-5">
-          <h3 className="font-semibold mb-2">API Access</h3>
-          <p className="text-xs text-muted-foreground mb-4">Use the FTD API to programmatically access research data and scores.</p>
-          <div className="p-3 bg-secondary/50 rounded-lg border border-border font-mono text-xs text-muted-foreground mb-3 flex items-center justify-between">
-            <span>ftd_beta_••••••••••••••••••••</span>
-            <button className="text-primary hover:underline cursor-pointer flex items-center gap-1"><Copy size={10} /> Copy</button>
-          </div>
-          <div className="flex gap-2">
-            <Btn variant="secondary" size="sm" icon={<RefreshCw size={12} />}>Regenerate Key</Btn>
-            <Btn variant="ghost" size="sm" icon={<ExternalLink size={12} />}>API Docs</Btn>
           </div>
         </Card>
       )}
