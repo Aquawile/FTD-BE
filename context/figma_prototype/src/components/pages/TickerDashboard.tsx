@@ -3,6 +3,7 @@ import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import PriceTimeline from "../PriceTimeline";
+import TickerNewsFeed from "../TickerNewsFeed";
 import { Bell, Briefcase, ExternalLink, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { apiRequest, getTrackedTickers } from "../../api";
 import { TrackedTicker } from "../../types";
@@ -61,7 +62,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
             ? apiRequest(`/tickers/${ticker}/prices?start=${dateRange.start}&end=${dateRange.end}`, firebaseUser).then(r => r.ok ? r.json() : [])
             : Promise.resolve([]),
           firebaseUser
-            ? apiRequest(`/tickers/${ticker}/news?start=${dateRange.start}&end=${dateRange.end}&limit=50`, firebaseUser).then(r => r.ok ? r.json() : [])
+            ? apiRequest(`/tickers/${ticker}/news?start=2000-01-01&end=${dateRange.end}&limit=5`, firebaseUser).then(r => r.ok ? r.json() : [])
             : Promise.resolve([]),
           firebaseUser
             ? apiRequest(`/tickers/${ticker}/filings`, firebaseUser).then(r => r.ok ? r.json() : [])
@@ -303,39 +304,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
         )}
 
         {tab === "news" && (
-           <div className="space-y-3">
-             <h3 className="font-semibold">All News for {t.symbol}</h3>
-             {news.length > 0 ? (
-              news.map((a, i) => {
-                const sourceLabel = a.source === "gnews" ? "Google News" : a.source === "finnhub" ? "Finnhub" : a.source === "sec" ? "SEC" : a.source || "News";
-                const headline = (a.content_body.split(". ")[0] + ".") || "Untitled";
-                const summary = a.content_body.substring(headline.length).trim() || a.content_body;
-                return (
-                  <Card key={`api-${i}`} className="p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="neutral" className="text-xs">{sourceLabel}</Badge>
-                          <span className="text-xs text-muted-foreground">{a.normalized_calendar_date || a.ingest_date || "Unknown date"}</span>
-                        </div>
-                        <h4 className="font-semibold text-sm text-foreground mb-2 leading-snug">{headline}</h4>
-                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{summary}</p>
-                        {a.url && (
-                          <a href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-2">
-                            <ExternalLink size={12} />
-                            View article
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })
-            ) : null}
-            {news.length === 0 && (
-              <p className="text-xs text-muted-foreground">No articles found for {t.symbol}.</p>
-            )}
-          </div>
+          // Paged: 20 per page, any date range back to the ticker's earliest article.
+          <TickerNewsFeed ticker={ticker} firebaseUser={firebaseUser} />
         )}
 
       </div>

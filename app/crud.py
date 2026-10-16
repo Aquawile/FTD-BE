@@ -127,7 +127,9 @@ def get_ticker_news(
     start: date,
     end: date,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[NewsRow]:
+    # Fully ordered (ctid breaks ties) so offset paging never repeats or skips rows.
     sql = """
         SELECT
             target_ticker,
@@ -140,11 +142,28 @@ def get_ticker_news(
         WHERE target_ticker = %s
           AND normalized_calendar_date >= %s
           AND normalized_calendar_date <= %s
-        ORDER BY normalized_calendar_date DESC, ingest_date DESC
-        LIMIT %s
+        ORDER BY normalized_calendar_date DESC, ingest_date DESC, ctid DESC
+        LIMIT %s OFFSET %s
     """
-    rows = query_dict(sql, (ticker, start, end, limit))
+    rows = query_dict(sql, (ticker, start, end, limit, offset))
     return [NewsRow(**r) for r in rows]
+
+
+def get_ticker_news_bounds(ticker: str, start: date, end: date) -> tuple[int, date | None]:
+    """(articles in [start, end], earliest article date for the ticker) for paging."""
+    rows = query_dict(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE normalized_calendar_date >= %s AND normalized_calendar_date <= %s) AS total,
+            MIN(normalized_calendar_date)::date AS earliest
+        FROM staging_gnews
+        WHERE target_ticker = %s
+        """,
+        (start, end, ticker),
+    )
+    if not rows:
+        return 0, None
+    return int(rows[0]["total"] or 0), rows[0]["earliest"]
 
 
 def get_ticker_filings(ticker: str) -> list[FilingSummary]:
