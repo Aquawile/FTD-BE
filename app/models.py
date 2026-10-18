@@ -147,6 +147,11 @@ class AlertResponse(BaseModel):
     subscription_id: Optional[int] = None
 
 
+class AlertSummary(BaseModel):
+    unread_count: int = 0
+    newest_unread: Optional[AlertResponse] = None
+
+
 # What a subscription watches. Price types need a threshold; news/filing don't.
 AlertType = Literal["price_above", "price_below", "news", "filing"]
 PRICE_ALERT_TYPES = ("price_above", "price_below")

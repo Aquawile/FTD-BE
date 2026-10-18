@@ -207,7 +207,15 @@ class TestTrackedTickersEndpoint:
         with patch("app.routes.tickers.get_tracked_tickers") as mock_fn:
             mock_fn.return_value = []
             client.get("/tickers/tracked?limit=5")
-            mock_fn.assert_called_once_with(limit=5)
+            mock_fn.assert_called_once_with(limit=5, symbol=None)
+
+    @pytest.mark.unit
+    def test_get_tracked_tickers_single_symbol_is_public_and_normalized(self) -> None:
+        with patch("app.routes.tickers.get_tracked_tickers") as mock_fn:
+            mock_fn.return_value = []
+            response = client.get("/tickers/tracked?symbol=nvda&limit=1")
+            assert response.status_code == 200
+            mock_fn.assert_called_once_with(limit=1, symbol="NVDA")
 
     @pytest.mark.unit
     def test_get_tracked_tickers_limit_rejected_when_too_large(self) -> None:

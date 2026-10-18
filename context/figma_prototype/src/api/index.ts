@@ -7,6 +7,7 @@ import type {
   WorkspaceResponse,
   AlertResponse,
   AlertSubscription,
+  AlertSummary,
   AlertSubscriptionType,
   DashboardStats,
 } from "../types";
@@ -21,7 +22,9 @@ export async function apiRequest(
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (firebaseUser) {
-    const token = await firebaseUser.getIdToken(true);
+    // Cached token; Firebase refreshes it on its own shortly before it expires.
+    // Forcing a refresh here cost a round trip to Google on every API call.
+    const token = await firebaseUser.getIdToken();
     headers["Authorization"] = `Bearer ${token}`;
   }
   return fetch(`${API_BASE}${path}`, { ...options, headers: { ...options?.headers as Record<string, string>, ...headers } });
@@ -73,6 +76,19 @@ export async function searchTickers(
 
 export async function getTrackedTickers(limit = 500): Promise<TrackedTicker[]> {
   return fetchWithAuth<TrackedTicker[]>(`/tickers/tracked?limit=${limit}`);
+}
+
+/** One ticker's name, sector and latest price (same source as the dashboard list). */
+export async function getTrackedTicker(symbol: string): Promise<TrackedTicker | null> {
+  const rows = await fetchWithAuth<TrackedTicker[]>(`/tickers/tracked?symbol=${encodeURIComponent(symbol)}&limit=1`);
+  return rows[0] ?? null;
+}
+
+/** Prices are shown with 2 decimals everywhere so the list, header and financials agree. */
+export function formatPrice(price: number | string | null | undefined): string {
+  if (price == null || price === "") return "—";
+  const n = Number(price);
+  return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
 }
 
 export async function getTickerNews(ticker: string): Promise<NewsArticleResponse[]> {
@@ -209,6 +225,10 @@ export async function markAlertsRead(firebaseUser: FirebaseUser | null, alertIds
     method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ alert_ids: alertIds ?? null }),
   });
   return jsonOrThrow(res);
+}
+
+export async function getAlertSummary(firebaseUser: FirebaseUser | null): Promise<AlertSummary> {
+  return jsonOrThrow(await apiRequest("/alerts/summary", firebaseUser));
 }
 
 export async function getAlertSubscriptions(firebaseUser: FirebaseUser | null): Promise<AlertSubscription[]> {

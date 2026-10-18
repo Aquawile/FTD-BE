@@ -5,7 +5,7 @@ import { Badge, Btn, Card, cn } from "../ui";
 import PriceTimeline from "../PriceTimeline";
 import TickerNewsFeed from "../TickerNewsFeed";
 import { Bell, Briefcase, ExternalLink, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
-import { apiRequest, getTrackedTickers } from "../../api";
+import { apiRequest, formatPrice, getTrackedTicker } from "../../api";
 import { TrackedTicker } from "../../types";
 
 interface PriceRow {
@@ -44,44 +44,32 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [news, setNews] = useState<NewsRow[]>([]);
   const [filings, setFilings] = useState<FilingSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);       // header (name + latest price)
+  const [detailsLoading, setDetailsLoading] = useState(true);
   const tabs = ["overview", "news"];
 
+  // Each section renders as soon as its own request returns, instead of waiting
+  // for the slowest one. The header needs only this ticker, not all 494.
   useEffect(() => {
     let cancelled = false;
-    const loadData = async () => {
-      if (!cancelled) setLoading(true);
-      try {
-        const dateRange = {
-          start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-          end: new Date().toISOString().split("T")[0],
-        };
-        const [trackedRes, pricesRes, newsRes, filingsRes] = await Promise.all([
-          getTrackedTickers(500),
-          firebaseUser
-            ? apiRequest(`/tickers/${ticker}/prices?start=${dateRange.start}&end=${dateRange.end}`, firebaseUser).then(r => r.ok ? r.json() : [])
-            : Promise.resolve([]),
-          firebaseUser
-            ? apiRequest(`/tickers/${ticker}/news?start=2000-01-01&end=${dateRange.end}&limit=5`, firebaseUser).then(r => r.ok ? r.json() : [])
-            : Promise.resolve([]),
-          firebaseUser
-            ? apiRequest(`/tickers/${ticker}/filings`, firebaseUser).then(r => r.ok ? r.json() : [])
-            : Promise.resolve([]),
-        ]);
+    setTickerData(null); setPrices([]); setNews([]); setFilings([]);
+    setLoading(true); setDetailsLoading(true);
+    const end = new Date().toISOString().split("T")[0];
+    const start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const authed = <T,>(path: string, fallback: T): Promise<T> =>
+      firebaseUser ? apiRequest(path, firebaseUser).then(r => (r.ok ? r.json() : fallback)).catch(() => fallback) : Promise.resolve(fallback);
 
-        if (!cancelled) {
-          const match = Array.isArray(trackedRes) ? trackedRes.find((t: TrackedTicker) => t.symbol === ticker) : null;
-          setTickerData(match || null);
-          setPrices(pricesRes || []);
-          setNews(newsRes || []);
-          setFilings((filingsRes || []).slice(0, 10));
-        }
-      } catch {
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    loadData();
+    getTrackedTicker(ticker)
+      .then(row => { if (!cancelled) setTickerData(row); })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    const details = [
+      authed<PriceRow[]>(`/tickers/${ticker}/prices?start=${start}&end=${end}`, []).then(r => { if (!cancelled) setPrices(r || []); }),
+      authed<NewsRow[]>(`/tickers/${ticker}/news?start=2000-01-01&end=${end}&limit=5`, []).then(r => { if (!cancelled) setNews(r || []); }),
+      authed<FilingSummary[]>(`/tickers/${ticker}/filings`, []).then(r => { if (!cancelled) setFilings((r || []).slice(0, 10)); }),
+    ];
+    Promise.all(details).finally(() => { if (!cancelled) setDetailsLoading(false); });
     return () => { cancelled = true; };
   }, [ticker, firebaseUser]);
 
@@ -89,13 +77,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
     symbol: ticker,
     name: ticker,
     sector: "",
-    current_price: 0,
-    change_percent: 0,
-  };
-
-  const formatPrice = (price: number | null | undefined) => {
-    if (price == null) return "—";
-    return price.toLocaleString();
+    current_price: null,
+    change_percent: null,
   };
 
   const getFinancialFromPrices = () => {
@@ -127,13 +110,25 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                 <h1 className="text-2xl font-bold font-mono text-foreground">{t.symbol}</h1>
               </div>
               <div className="text-muted-foreground text-sm">{t.name}</div>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="font-mono font-bold text-xl text-foreground">${formatPrice(t.current_price)}</span>
-                <span className={cn("flex items-center gap-1 text-sm", (t.change_percent || 0) > 0 ? "text-emerald-400" : "text-red-400")}>
-                  {(t.change_percent || 0) > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  {t.change_percent && t.change_percent > 0 ? "+" : ""}{t.change_percent ?? 0}%
-                </span>
-              </div>
+              {loading ? (
+                <div className="flex items-center gap-4 mt-2" aria-label="Loading price">
+                  <div className="h-6 w-24 bg-secondary rounded animate-pulse" />
+                  <div className="h-4 w-14 bg-secondary rounded animate-pulse" />
+                </div>
+              ) : (
+                <div className="flex items-center gap-4 mt-2">
+                  <span className="font-mono font-bold text-xl text-foreground">${formatPrice(t.current_price)}</span>
+                  {t.change_percent != null && (
+                    <span className={cn("flex items-center gap-1 text-sm", t.change_percent > 0 ? "text-emerald-400" : "text-red-400")}>
+                      {t.change_percent > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {t.change_percent > 0 ? "+" : ""}{Number(t.change_percent).toFixed(2)}%
+                    </span>
+                  )}
+                  {tickerData?.price_as_of && (
+                    <span className="text-xs text-muted-foreground">as of {tickerData.price_as_of.slice(0, 10)}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-col items-end gap-3">
@@ -217,7 +212,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                       </Card>
                     );
                   })}
-                  {news.length === 0 && !loading && (
+                  {news.length === 0 && !detailsLoading && (
                     <p className="text-xs text-muted-foreground">No news articles found for {t.symbol}.</p>
                   )}
                 </div>
@@ -249,7 +244,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                       )}
                     </div>
                   ))}
-                  {filings.length === 0 && !loading && (
+                  {filings.length === 0 && !detailsLoading && (
                     <p className="text-xs text-muted-foreground">No SEC filings found for {t.symbol}.</p>
                   )}
                 </div>
@@ -280,7 +275,7 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-muted-foreground">No price data available for {t.symbol}.</p>
+                    <p className="text-xs text-muted-foreground">{detailsLoading ? "Loading prices…" : `No price data available for ${t.symbol}.`}</p>
                   )}
                 </div>
               </Card>

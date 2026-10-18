@@ -125,24 +125,34 @@ def sync_prices(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: boo
             }
 
     if dry_run:
-        logger.info("prices: would upsert %d rows", len(rows))
+        logger.info("prices: would check %d quotes", len(rows))
         return len(rows)
 
+    # Insert-only: a quote already stored (same ticker, day and quote timestamp) is
+    # skipped; nothing is deleted or overwritten. A later quote for the same day
+    # gets its own row, and readers take the newest ingest_date per day.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with conn.cursor() as cur:
-        for r in rows.values():
-            cur.execute(
-                "DELETE FROM staging_finnhub WHERE target_ticker = %s AND normalized_calendar_date = %s",
-                (r["target_ticker"], r["normalized_calendar_date"]),
-            )
-        psycopg2.extras.execute_values(
+        inserted = psycopg2.extras.execute_values(
             cur,
             """
             INSERT INTO staging_finnhub
                 (target_ticker, target_cik, element_type, content_body, normalized_calendar_date,
                  ingest_date, symbol, "timestamp", "current", change, percent_change, high, low,
                  open, previous_close)
-            VALUES %s
+            SELECT v.target_ticker, v.target_cik, v.element_type, v.content_body, v.normalized_calendar_date::date,
+                   v.ingest_date::timestamp, v.symbol, v."timestamp"::timestamp, v."current"::numeric, v.change::numeric,
+                   v.percent_change::numeric, v.high::numeric, v.low::numeric, v.open::numeric, v.previous_close::numeric
+            FROM (VALUES %s) AS v (target_ticker, target_cik, element_type, content_body, normalized_calendar_date,
+                                   ingest_date, symbol, "timestamp", "current", change, percent_change, high, low,
+                                   open, previous_close)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM staging_finnhub f
+                WHERE f.target_ticker = v.target_ticker
+                  AND f.normalized_calendar_date = v.normalized_calendar_date::date
+                  AND f."timestamp" IS NOT DISTINCT FROM v."timestamp"::timestamp
+            )
+            RETURNING 1
             """,
             [
                 (
@@ -153,10 +163,11 @@ def sync_prices(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: boo
                 for r in rows.values()
             ],
             page_size=1000,
+            fetch=True,
         )
     conn.commit()
-    logger.info("prices: upserted %d rows", len(rows))
-    return len(rows)
+    logger.info("prices: inserted %d new rows (%d already present)", len(inserted), len(rows) - len(inserted))
+    return len(inserted)
 
 
 # ─── News ────────────────────────────────────────────────────────────────────

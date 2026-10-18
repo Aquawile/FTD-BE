@@ -108,6 +108,27 @@ class TestSubscriptionRoutes:
     def test_no_delete_route(self):
         assert client.delete("/alerts/subscriptions/8", headers=_H).status_code == 405
 
+    def test_summary_with_unread(self):
+        from app.models import AlertResponse, AlertSummary
+        newest = AlertResponse(id=5, ticker="NVDA", type="price_above", message="NVDA closed above $150.00", read=False)
+        with patch("app.routes.alerts.get_user_alert_summary",
+                   return_value=AlertSummary(unread_count=2, newest_unread=newest)) as m:
+            r = client.get("/alerts/summary", headers=_H)
+        assert r.status_code == 200
+        assert r.json()["unread_count"] == 2 and r.json()["newest_unread"]["id"] == 5
+        m.assert_called_once_with(4)
+
+    def test_summary_when_nothing_unread(self):
+        from app.models import AlertSummary
+        with patch("app.routes.alerts.get_user_alert_summary", return_value=AlertSummary()):
+            r = client.get("/alerts/summary", headers=_H)
+        assert r.json() == {"unread_count": 0, "newest_unread": None}
+
+    def test_summary_requires_auth(self):
+        app.dependency_overrides.pop(get_current_application_user, None)
+        with patch("app.auth.middleware.validate_firebase_token_with_reason", return_value=(None, "missing")):
+            assert client.get("/alerts/summary").status_code == 401
+
     def test_mark_all_read(self):
         with patch("app.routes.alerts.mark_user_alerts_read", return_value=3) as m:
             r = client.post("/alerts/read", headers=_H, json={})

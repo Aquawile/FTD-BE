@@ -9,8 +9,8 @@ import {
 // ────────────────────────────────────────────────
 // Layout Shell
 // ────────────────────────────────────────────────
-export function Sidebar({ page, navigate, collapsed, onCollapse }: {
-  page: Page; navigate: (p: Page) => void; collapsed: boolean; onCollapse: () => void;
+export function Sidebar({ page, navigate, collapsed, onCollapse, unreadAlerts = 0 }: {
+  page: Page; navigate: (p: Page) => void; collapsed: boolean; onCollapse: () => void; unreadAlerts?: number;
 }) {
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
@@ -45,8 +45,16 @@ export function Sidebar({ page, navigate, collapsed, onCollapse }: {
                 active ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
               )}
             >
-              <Icon size={16} className="shrink-0" />
+              <span className="relative shrink-0">
+                <Icon size={16} />
+                {collapsed && item.id === "alerts" && unreadAlerts > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-orange-500 rounded-full" />}
+              </span>
               {!collapsed && <span>{item.label}</span>}
+              {!collapsed && item.id === "alerts" && unreadAlerts > 0 && (
+                <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-orange-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                  {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                </span>
+              )}
             </button>
           );
         })}
@@ -91,7 +99,7 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => navigate("alerts")} className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all cursor-pointer">
           <Bell size={18} />
-          {unreadAlerts > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" />}
+          {unreadAlerts > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" aria-label={`${unreadAlerts} unread alerts`} />}
         </button>
         <div className="relative" ref={profileRef}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
@@ -113,15 +121,15 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
   );
 }
 
-export function AppShell({ page, navigate, children, userEmail, userName, onSignOut }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void }) {
+export function AppShell({ page, navigate, children, userEmail, userName, onSignOut, unreadAlerts = 0 }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void; unreadAlerts?: number }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const handleSearch = () => { if (searchQuery.trim()) navigate("search"); };
   return (
     <div className="flex min-h-screen">
-      <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} />
+      <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} unreadAlerts={unreadAlerts} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} userEmail={userEmail} userName={userName} onSignOut={onSignOut} />
+        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} unreadAlerts={unreadAlerts} userEmail={userEmail} userName={userName} onSignOut={onSignOut} />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
