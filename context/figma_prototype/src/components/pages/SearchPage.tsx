@@ -1,17 +1,15 @@
 import { useState, useEffect } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Btn, Card, cn } from "../ui";
 import { AlertCircle, ChevronRight, Filter, Search, TrendingDown, TrendingUp } from "lucide-react";
-import { apiRequest, API_BASE , formatPrice as formatSharedPrice } from "../../api";
+import { apiRequest, API_BASE, formatPrice as formatSharedPrice, isStaleQuote, newestQuoteDate } from "../../api";
 
 interface TrackedTicker {
   symbol: string;
   name: string;
   sector: string | null;
   current_price: number | null;
-  evidence_score: number | null;
-  hype_score: number | null;
   change_percent: number | null;
   price_as_of: string | null;
 }
@@ -65,6 +63,8 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
   });
 
   const formatPrice = (price: number | null) => (price == null ? "—" : `$${formatSharedPrice(price)}`);
+
+  const newestQuote = newestQuoteDate(tickers);
 
   const formatChange = (change: number | null) => {
     if (change === null) return "—";
@@ -157,6 +157,11 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
               <div className="text-right shrink-0">
                 <div className="font-mono font-bold text-lg text-foreground">{formatPrice(t.current_price)}</div>
                 {formatChange(t.change_percent)}
+                {isStaleQuote(t.price_as_of, newestQuote) && (
+                  <div className="text-xs text-amber-400 mt-0.5" title="Finnhub has not returned a newer quote for this symbol">
+                    as of {t.price_as_of?.slice(0, 10)}
+                  </div>
+                )}
               </div>
               <ChevronRight size={16} className="text-muted-foreground shrink-0" />
             </div>

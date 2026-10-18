@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { apiRequest } from "../api";
 
 export * from "./tickerHooks";

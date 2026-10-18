@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
 import { Btn, Input } from "../ui";
 import { CheckCircle, ChevronLeft, Mail, Send } from "lucide-react";
@@ -6,6 +8,23 @@ import { CheckCircle, ChevronLeft, Mail, Send } from "lucide-react";
 function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Firebase sends the reset email. For privacy it doesn't reveal whether the address
+  // has an account, so "sent" is shown either way unless the request itself fails.
+  const sendReset = async () => {
+    setSending(true); setError(null);
+    try {
+      await sendPasswordResetEmail(firebaseAuth, email.trim());
+      setSent(true);
+    } catch (e: any) {
+      if (e?.code === "auth/user-not-found") setSent(true);
+      else setError(e?.code === "auth/invalid-email" ? "That email address isn't valid." : "Couldn't send the reset email. Try again.");
+    } finally {
+      setSending(false);
+    }
+  };
   return (
     <div className="min-h-screen flex items-center justify-center p-8 bg-background">
       <div className="w-full max-w-sm space-y-6">
@@ -20,8 +39,9 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
               <label htmlFor="forgot-email" className="text-sm font-medium">Email address</label>
               <Input id="forgot-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
             </div>
-            <Btn variant="primary" className="w-full justify-center" onClick={() => setSent(true)} disabled={!email.includes("@")}>
-              <Send size={14} /> Send Reset Link
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            <Btn variant="primary" className="w-full justify-center" onClick={sendReset} disabled={!email.includes("@") || sending}>
+              <Send size={14} /> {sending ? "Sending…" : "Send Reset Link"}
             </Btn>
           </>
         ) : (

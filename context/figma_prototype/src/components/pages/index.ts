@@ -11,5 +11,4 @@ export { default as WorkspaceDetailPage } from "./WorkspaceDetailPage";
 export { default as WorkspaceSettingsPage } from "./WorkspaceSettingsPage";
 export { default as AlertsPage } from "./AlertsPage";
 export { default as ProfilePage } from "./ProfilePage";
-export { default as ReportModal } from "./ReportModal";
 // Archived (hardcoded data, no API): see src/archive/README.md

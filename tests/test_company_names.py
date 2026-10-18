@@ -37,3 +37,18 @@ display_name = _mod.display_name
 ])
 def test_display_name(raw, expected):
     assert display_name(raw) == expected
+
+
+@pytest.mark.parametrize("sec_title,expected", [
+    ("AMPHENOL CORP /DE/", "Amphenol"),
+    ("AUTOZONE INC", "Autozone"),
+    ("Blackstone Inc.", "Blackstone"),
+    ("CONAGRA BRANDS INC.", "Conagra Brands"),
+    ("WELLS FARGO & COMPANY/MN", "Wells Fargo"),
+    ("Deere & Co", "Deere"),
+    ("TE Connectivity plc", "TE Connectivity"),
+    ("NEWS CORP", "News Corp"),          # one short word left: keep the suffix
+    ("Fox Corp", "Fox Corp"),
+])
+def test_sec_title_fallback(sec_title, expected):
+    assert display_name(_mod.strip_corporate_suffix(sec_title)) == expected

@@ -82,8 +82,6 @@ def search_tickers(
     # Determine sort order
     sort_map = {
         "ticker": "t.symbol",
-        "hype": "t.evidence_score DESC",
-        "evidence": "t.evidence_score DESC",
     }
     sort_column = sort_map.get(sort_by, "t.symbol")
 
@@ -95,7 +93,6 @@ def search_tickers(
             {_DISPLAY_NAME} AS name,
             ''::text AS cik,
             t.sector,
-            t.evidence_score,
             NULL::text AS news_snippet
         FROM tickers t
         {_COMPANY_NAMES_JOIN}
@@ -339,7 +336,6 @@ def get_dashboard_stats() -> dict:
         "articles_count": articles_count,
         "tickers_count": tickers_count,
         "alerts_count": alerts_count,
-        "evidence_score": None,
     }
 
 
@@ -353,7 +349,6 @@ def get_tracked_tickers(limit: int = 500, symbol: str | None = None) -> list[Tra
             t.symbol, {_DISPLAY_NAME} AS name, t.sector,
             CASE WHEN p."current" IS NOT NULL AND (t.price_as_of IS NULL OR p.as_of >= t.price_as_of)
                  THEN p."current" ELSE t.current_price END AS current_price,
-            t.evidence_score, t.hype_score,
             CASE WHEN p."current" IS NOT NULL AND (t.price_as_of IS NULL OR p.as_of >= t.price_as_of)
                  THEN p.percent_change ELSE t.change_percent END AS change_percent,
             GREATEST(p.as_of, t.price_as_of) AS price_as_of

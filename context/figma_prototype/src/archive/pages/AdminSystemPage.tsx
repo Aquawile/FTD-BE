@@ -9,7 +9,7 @@ function AdminSystemPage({ navigate }: { navigate: (p: Page) => void }) {
       <div className="flex items-center gap-4 mb-6">
         <button onClick={() => navigate("admin")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer"><ChevronLeft size={14} /> Admin</button>
         <h1 className="text-xl font-bold flex-1">System Monitor</h1>
-        <Badge variant="evidence"><Radio size={9} className="text-emerald-400" /> Live</Badge>
+        <Badge variant="success"><Radio size={9} className="text-emerald-400" /> Live</Badge>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[

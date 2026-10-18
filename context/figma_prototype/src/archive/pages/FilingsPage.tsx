@@ -19,7 +19,7 @@ export function FilingsPage({ navigate, ticker }: { navigate: (p: Page) => void;
           <ChevronLeft size={14} /> {ticker}
         </button>
         <h1 className="text-xl font-bold flex-1">SEC Filings — {ticker}</h1>
-        <Badge variant="evidence"><CheckCircle size={10} /> EDGAR Verified</Badge>
+        <Badge variant="success"><CheckCircle size={10} /> EDGAR Verified</Badge>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-2 space-y-2">
@@ -32,7 +32,7 @@ export function FilingsPage({ navigate, ticker }: { navigate: (p: Page) => void;
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm text-foreground">{f.period}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{f.date} · {f.sections} sections · {f.size}</div>
-                  {f.key && <Badge variant="evidence" className="mt-1 text-xs">Key Filing</Badge>}
+                  {f.key && <Badge variant="success" className="mt-1 text-xs">Key Filing</Badge>}
                 </div>
                 <ChevronRight size={14} className="text-muted-foreground shrink-0" />
               </div>

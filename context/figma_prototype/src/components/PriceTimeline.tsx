@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import * as RechartsPrimitive from "recharts";
 import { ChartContainer } from "../app/components/ui/chart";
 import { apiRequest } from "../api";

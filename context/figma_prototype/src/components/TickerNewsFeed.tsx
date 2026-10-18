@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ExternalLink } from "lucide-react";
 import { apiRequest } from "../api";
 import { Badge, Btn, Card, cn } from "./ui";

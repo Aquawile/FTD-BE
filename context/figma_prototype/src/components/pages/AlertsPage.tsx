@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { Activity, AlertTriangle, ArrowRight, Check, FileText, Plus } from "lucide-react";
@@ -134,7 +134,7 @@ function AlertSubscriptions({ firebaseUser, trackedTickers }: { firebaseUser: Fi
   );
 }
 
-function AlertsPage({ navigate, firebaseUser, onAlertsChanged }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null; onAlertsChanged?: () => void }) {
+function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; onAlertsChanged?: () => void }) {
   const { alerts: ALERTS_DATA, loading, error, refetch } = useAlerts(50, firebaseUser);
   const { tickers: trackedTickers } = useTrackedTickers(500);
   const [filter, setFilter] = useState("all");
@@ -208,14 +208,16 @@ function AlertsPage({ navigate, firebaseUser, onAlertsChanged }: { navigate: (p:
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-mono font-bold text-sm text-foreground">{a.ticker || "—"}</span>
-                  <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.severity}</Badge>
+                  <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "warning" : "neutral"} className="text-xs">{a.severity}</Badge>
                   <Badge variant="neutral" className="text-xs capitalize">{a.type?.replace("_", " ") || "—"}</Badge>
                   {!a.read && <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />}
                 </div>
                 <p className="text-sm text-foreground">{a.message}</p>
                 <p className="text-xs text-muted-foreground mt-1">{a.time}</p>
               </div>
-              <Btn variant="ghost" size="sm" onClick={() => navigate("ticker")} icon={<ArrowRight size={12} />}>View</Btn>
+              {a.ticker && (
+                <Btn variant="ghost" size="sm" onClick={() => { setSelectedTicker(a.ticker); navigate("ticker"); }} icon={<ArrowRight size={12} />}>View</Btn>
+              )}
             </div>
           </Card>
         ))}

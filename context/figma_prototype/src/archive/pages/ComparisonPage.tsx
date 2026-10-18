@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn, getHypeColor, getEvidenceColor } from "../ui";
 import { ChevronLeft, Plus, Sparkles } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
 
 function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
   const tickers = [TICKERS[0], TICKERS[1], TICKERS[4]]; // NVDA, TSLA, AMD
@@ -67,7 +67,7 @@ function ComparisonPage({ navigate }: { navigate: (p: Page) => void }) {
           Across the three analyzed tickers, <strong className="text-foreground">NVDA</strong> maintains the strongest evidence-to-hype ratio (gap: +13). <strong className="text-foreground">TSLA</strong> carries the highest risk premium relative to disclosed evidence (gap: +43), with FSD monetization claims unverified in SEC filings. <strong className="text-foreground">AMD</strong> occupies a middle position with competitive benchmark claims partially corroborated but market share projections speculative. Investors seeking evidence-backed exposure should prioritize NVDA and MSFT (not shown) over TSLA and PLTR.
         </p>
         <div className="mt-3 flex gap-2">
-          <Badge variant="evidence">3 sources retrieved</Badge>
+          <Badge variant="success">3 sources retrieved</Badge>
           <Badge variant="neutral">SEC EDGAR · Analyst Notes · Community</Badge>
         </div>
       </Card>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Input, Modal, cn } from "../ui";
 import { ChevronLeft, Minus, Plus, Search, Settings, TrendingDown, TrendingUp } from "lucide-react";

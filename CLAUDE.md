@@ -87,7 +87,7 @@ gcloud-bucket-data/
 │       ├── package.json          # Vite 6.3.5, React 18.3.1, 30+ shadcn dependencies
 │       ├── vite.config.ts        # Vite config with figma asset resolver
 │       └── dist/                 # Build output (deployed to web VM)
-├── tests/                        # Backend tests (48 tests)
+├── tests/                        # unit (~190) + db_integration (~70, real Postgres in CI)
 │   ├── test_api_endpoints.py     # API endpoint tests (auth, routes, response shapes)
 │   └── test_user_sync.py         # User sync integration tests
 ├── scripts/
@@ -189,6 +189,21 @@ gcloud-bucket-data/
 - **URL**: `https://bunch-length-classic-caring.trycloudflare.com`
 - **Proxy target**: `ftd-staging-web` localhost:8080 (nginx serves both frontend + proxies `/api/` to API VM)
 - **Access**: Public, no IAP required for the tunnel itself
+
+### data-ingest-vm (e2-medium; the expensive one)
+
+Started by Cloud Scheduler, stops itself when its job finishes:
+
+| UTC | Scheduler | Job | Stops via |
+|---|---|---|---|
+| 21:55 | `start-price-vm-scheduler` | cron 22:00 `~/prices/run.sh` (Finnhub → `raw-data-strg/prices/`) | EXIT trap, ~22:09 |
+| 03:30 | `sec-8k-daily-start` | startup-script (`sec/scripts/vm_startup.sh`) runs `/opt/sec-8k-ingestion` `src.main` (8-K delta scan, ~2 min) | `src.main` finally-block, then the script |
+| 04:00 | `lakehouse-daily-pipeline` | **PAUSED** 2026-10-18: lakehouse feeds the paused relational tables | — |
+
+- Safety net: `max-uptime-shutdown.service` powers the VM off 90 min after any boot (`sudo shutdown -c` to cancel while debugging).
+- The startup script only runs SEC on a 03:xx boot (`FORCE_SEC=1` to test); on the 21:55 boot it does nothing so it can't stop the VM before the price fetch.
+- The lakehouse `run.sh` no longer passes `--postgres`: it can never truncate relational tables.
+- Deploy SEC code: tar `sec/` (no `.env`/`.venv`) → `/opt/sec-8k-ingestion`, keep the VM's `.env` (lookback 30 days), `pip install -r requirements.txt`.
 
 ### Service Account
 - `github-actions-deploy@ftd2026.iam.gserviceaccount.com` (used in CI/CD workflows)
@@ -292,18 +307,18 @@ class TrackedTicker(BaseModel):
     symbol: str
     name: str
     sector: Optional[str] = None
-    current_price: Optional[float] = None
-    evidence_score: Optional[float] = None
-    hype_score: Optional[float] = None
+    current_price: Optional[float] = None   # latest staging_finnhub quote (snapshot only if strictly newer)
     change_percent: Optional[float] = None
     price_as_of: Optional[str] = None
+    # name = tickers.name if it is a real name, else ticker_company_names, else the symbol
 
 class DashboardStats(BaseModel):
-    articles_count: int = 0        # From staging_sec_archive table
+    articles_count: int = 0        # news_articles_count + sec_filings_count (live, never frozen)
+    news_articles_count: int = 0   # COUNT(DISTINCT url) on staging_gnews
+    sec_filings_count: int = 0     # distinct accessions: staging_sec_archive UNION vectorized mirror
     tickers_count: int = 0         # COUNT DISTINCT from tickers table
-    alerts_count: int = 0          # COUNT from alerts table
-    evidence_score: Optional[float] = None
     vectorized_sec_count: int = 0  # count_vectorized_content() — COUNT on sec_vectorized_chunks (SEC rows)
+    # hype/evidence scores and the global alerts_count were removed (mock / not per-user)
 
 class AlertResponse(BaseModel):
     id: int
@@ -342,10 +357,11 @@ Frontend Request:
 ```
 GET /api/dashboard/stats
   → dashboard.py: route_dashboard_stats()
-  → count_vectorized_content()  → COUNT(*) on sec_vectorized_chunks WHERE source_object LIKE 'SEC/%' (26,918; ~20 ms)
-  → query_dict("SELECT COUNT(*) FROM staging_sec_archive")  → articles_count (754,219)
+  → count_vectorized_content()  → COUNT(*) on sec_vectorized_chunks WHERE source_object LIKE 'SEC/%' (26,918; ~6 ms)
+  → crud.count_articles()       → news (distinct URLs in staging_gnews, 21,959) +
+                                   filings (archive accessions via index skip scan UNION mirror accessions, 707)
   → query_dict("SELECT COUNT(DISTINCT symbol) FROM tickers")  → tickers_count (494)
-  → query_dict("SELECT COUNT(*) FROM alerts")  → alerts_count (0)
+  (whole endpoint ~0.13 s on the VM; indexes from migration 012)
 ```
 
 ### Ticker Tracked Data Flow
@@ -751,7 +767,10 @@ python -m pytest tests/ -m unit -v
 python -m pytest tests/test_api_endpoints.py -v
 ```
 
-**Test count**: 48 tests (all passing)
+**Test count**: ~190 unit tests + ~70 `db_integration` tests. CI runs the db tests against a throwaway
+`postgres:15` built by `tests/schema/setup_test_db.sh` (staging schema + pending migrations + seed), as
+`ftd_app`, with `REQUIRE_DB=1` (a skipped db test fails CI). Frontend: `npx tsc --noEmit` is clean
+(`src/archive` and `src/legacy` are excluded).
 
 ### Test Files
 
@@ -879,11 +898,12 @@ There is no `latest_price_data` table; latest prices come from `staging_finnhub`
 - **Cause**: `unified_staging` is a view defined `WHERE false`, so every query on it returned nothing (search, timeline finnhub/gnews, non-SEC content search, and step 2 of ticker→CIK resolution).
 - **Fix**: `search_tickers()` reads `tickers`; timeline and content search read `crud._RELATIONAL_UNIFIED` (`staging_finnhub` UNION ALL `staging_gnews`). `crud.get_dashboard_stats()` still references the view but no route calls it.
 
-### 6. Ticker "A" in Tracked Tickers
+### 6. Ticker "A" in Tracked Tickers (RESOLVED 2026-10-18)
 
-- `GET /api/tickers/tracked` returns a ticker with symbol "A" and name "A"
-- This appears to be a placeholder/seed record in the database
-- Should be filtered out or investigated
+- "A" is Agilent Technologies. 484 of 494 `tickers` rows store the symbol as `name`; the API now
+  shows the company name from `ticker_company_names` (migration 013, `scripts/load_company_names.py`:
+  10-K names from `SEC/config/company_names.json`, then SEC's `company_tickers.json` for the rest).
+  `tickers.name` itself is never overwritten.
 
 ### 7. Mock Data Still Referenced in App.tsx
 

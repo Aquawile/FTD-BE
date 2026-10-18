@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Input, cn } from "../ui";
 import { Check, Copy, Edit2, ExternalLink, Lock, Mail, RefreshCw } from "lucide-react";
@@ -10,10 +12,22 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
   const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "??";
   const [firstName, setFirstName] = useState(displayName.split(" ")[0] || "");
   const [lastName, setLastName] = useState(displayName.split(" ").slice(1).join(" ") || "");
-  const [emailVal, setEmailVal] = useState(email || "");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
+  const [resetState, setResetState] = useState<"idle" | "sending" | "sent">("idle");
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const sendReset = async () => {
+    setResetState("sending"); setResetError(null);
+    try {
+      await sendPasswordResetEmail(firebaseAuth, email);
+      setResetState("sent");
+    } catch {
+      setResetState("idle");
+      setResetError("Couldn't send the reset email. Try again.");
+    }
+  };
 
   useEffect(() => {
     try {
@@ -22,7 +36,6 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
         const data = JSON.parse(raw);
         if (data.firstName) setFirstName(data.firstName);
         if (data.lastName) setLastName(data.lastName);
-        if (data.email) setEmailVal(data.email);
         if (data.photoUrl) setPhotoUrl(data.photoUrl);
       }
     } catch {}
@@ -30,7 +43,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
 
   const handleSaveProfile = () => {
     try {
-      localStorage.setItem("ftd_profile", JSON.stringify({ firstName, lastName, email: emailVal, photoUrl }));
+      localStorage.setItem("ftd_profile", JSON.stringify({ firstName, lastName, photoUrl }));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {}
@@ -39,7 +52,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Profile</h1>
       <div className="flex gap-2 mb-6 border-b border-border pb-4">
-        {["profile", "security", "preferences"].map(t => (
+        {["profile", "security"].map(t => (
           <button key={t} onClick={() => setActiveTab(t)} className={cn("px-3 py-1.5 rounded-lg text-sm capitalize cursor-pointer transition-all", activeTab === t ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground")}>{t}</button>
         ))}
       </div>
@@ -68,7 +81,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
                     <div className="space-y-1.5"><label htmlFor="firstName" className="text-sm font-medium">First name</label><Input id="firstName" value={firstName} onChange={setFirstName} placeholder="First name" /></div>
                     <div className="space-y-1.5"><label htmlFor="lastName" className="text-sm font-medium">Last name</label><Input id="lastName" value={lastName} onChange={setLastName} placeholder="Last name" /></div>
                   </div>
-                  <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><Input id="email" type="email" value={emailVal} onChange={setEmailVal} placeholder="you@example.com" icon={<Mail size={14} />} /></div>
+                  <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><div id="email" className="flex items-center gap-2 bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground"><Mail size={14} />{email || "—"}</div><p className="text-xs text-muted-foreground">Your sign-in email (from your account).</p></div>
                   <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile}>{saved ? "Saved" : "Save Profile"}</Btn>
                 </div>
             )}
@@ -78,34 +91,14 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
       {activeTab === "security" && (
         <div className="space-y-5">
           <Card className="p-5">
-            <h3 className="font-semibold mb-4">Change Password</h3>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><label className="text-sm font-medium">Current password</label>              <Input type="password" placeholder="••••••••" icon={<Lock size={14} />} /></div>
-              <div className="space-y-1.5"><label className="text-sm font-medium">New password</label><Input type="password" placeholder="New password" icon={<Lock size={14} />} /></div>
-              <div className="space-y-1.5"><label className="text-sm font-medium">Confirm new password</label><Input type="password" placeholder="Confirm password" icon={<Lock size={14} />} /></div>
-              <Btn variant="primary" size="sm" icon={<Lock size={12} />}>Update Password</Btn>
-            </div>
+            <h3 className="font-semibold mb-1">Password</h3>
+            <p className="text-sm text-muted-foreground mb-4">We'll email a secure link to {email || "your address"} to set a new password.</p>
+            {resetError && <p className="text-xs text-red-400 mb-3">{resetError}</p>}
+            <Btn variant="primary" size="sm" icon={<Lock size={12} />} onClick={sendReset} disabled={!email || resetState === "sending"}>
+              {resetState === "sent" ? "Reset link sent" : resetState === "sending" ? "Sending…" : "Email me a reset link"}
+            </Btn>
           </Card>
         </div>
-      )}
-      {activeTab === "preferences" && (
-        <Card className="p-5">
-          <h3 className="font-semibold mb-4">Display Preferences</h3>
-          <div className="space-y-4 text-sm">
-            {[
-              { label: "Compact card view", desc: "Show more tickers per row", enabled: false },
-              { label: "Email digest (weekly)", desc: "Receive a weekly research summary email", enabled: true },
-              { label: "Community posts in feed", desc: "Include Reddit content in main feed", enabled: true },
-            ].map(p => (
-              <div key={p.label} className="flex items-start justify-between gap-4 py-2 border-b border-border/50 last:border-0">
-                <div><div className="font-medium">{p.label}</div><div className="text-xs text-muted-foreground mt-0.5">{p.desc}</div></div>
-                <div className={cn("relative inline-flex w-10 h-6 rounded-full cursor-pointer shrink-0 mt-0.5", p.enabled ? "bg-primary" : "bg-switch-background")}>
-                  <div className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-transform", p.enabled ? "translate-x-5" : "translate-x-1")} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
       )}
     </div>
   );
