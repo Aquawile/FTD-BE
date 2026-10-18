@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TickerResult(BaseModel):
     ticker: str
+    name: Optional[str] = None
     cik: str
     sector: Optional[str] = None
     news_snippet: Optional[str] = None
@@ -87,7 +88,9 @@ class SearchResult(BaseModel):
 
 
 class DashboardStats(BaseModel):
-    articles_count: int = 0
+    articles_count: int = 0          # news_articles_count + sec_filings_count
+    news_articles_count: int = 0     # distinct news articles (staging_gnews, by URL)
+    sec_filings_count: int = 0       # distinct SEC filings (archive + vectorized mirror)
     tickers_count: int = 0
     alerts_count: int = 0
     evidence_score: Optional[float] = None

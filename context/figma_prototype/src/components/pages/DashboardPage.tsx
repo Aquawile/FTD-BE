@@ -7,7 +7,7 @@ import { fetchWorkspaces, getTrackedTickers, apiRequest, formatPrice } from "../
 import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
 
 function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
-  const [stats, setStats] = useState<{ articles_count: number; tickers_count: number; alerts_count: number; evidence_score: number | null; vectorized_sec_count: number } | null>(null);
+  const [stats, setStats] = useState<{ articles_count: number; news_articles_count?: number; sec_filings_count?: number; tickers_count: number; alerts_count: number; evidence_score: number | null; vectorized_sec_count: number } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
@@ -131,7 +131,9 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                 <div>
                   <div className="text-muted-foreground text-xs mb-1">Articles Analyzed</div>
                   <div className="font-mono font-bold text-2xl text-foreground">{formatCount(stats?.articles_count ?? 0)}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Total in database</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {formatCount(stats?.news_articles_count ?? 0)} news · {formatCount(stats?.sec_filings_count ?? 0)} SEC filings
+                  </div>
                 </div>
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-400"><FileText size={18} /></div>
               </div>

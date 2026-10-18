@@ -310,7 +310,9 @@ export interface FiscalYearEnd {
 }
 
 export interface DashboardStats {
-  articles_count: number;
+  articles_count: number;          // news_articles_count + sec_filings_count
+  news_articles_count?: number;    // distinct news articles (by URL)
+  sec_filings_count?: number;      // distinct SEC filings (archive + vectorized)
   tickers_count: number;
   alerts_count: number;
   evidence_score: number | null;
