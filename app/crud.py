@@ -506,12 +506,23 @@ def count_articles() -> tuple[int, int]:
     number (the 4th path segment of SEC/{form}/{CIK}/{accession}/...), so a filing in
     both is counted once and new filings raise the count as they are vectorized.
     """
+    # The archive has ~700 filings spread over ~750k element rows: walk its
+    # accession index one distinct value at a time (a skip scan, ~25 ms) instead
+    # of sorting every row (~550 ms).
     rows = query_dict(
         """
+        WITH RECURSIVE archive AS (
+            (SELECT accession_number AS acc FROM staging_sec_archive
+             WHERE accession_number IS NOT NULL ORDER BY accession_number LIMIT 1)
+            UNION ALL
+            SELECT (SELECT accession_number FROM staging_sec_archive
+                    WHERE accession_number > archive.acc ORDER BY accession_number LIMIT 1)
+            FROM archive WHERE archive.acc IS NOT NULL
+        )
         SELECT
             (SELECT COUNT(DISTINCT url) FROM staging_gnews WHERE url IS NOT NULL AND url <> '') AS news,
             (SELECT COUNT(*) FROM (
-                SELECT accession_number FROM staging_sec_archive WHERE accession_number IS NOT NULL
+                SELECT acc FROM archive WHERE acc IS NOT NULL
                 UNION
                 SELECT split_part(source_object, '/', 4) FROM sec_vectorized_chunks WHERE source_object LIKE 'SEC/%'
             ) filings) AS filings
