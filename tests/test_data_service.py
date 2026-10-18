@@ -220,6 +220,12 @@ class TestLayer3DataServiceIntegration(unittest.TestCase):
             pass
 
     @pytest.mark.db_integration
+    @pytest.mark.xfail(
+        strict=True,
+        reason="data_service reads SEC filings from the staging_sec view, which migration 008 "
+               "made WHERE FALSE (same as unified_staging). Pending the restore decision; "
+               "strict, so CI flags this the moment filings are readable again.",
+    )
     def test_filing_detail_retrieval_sequence(self) -> None:
         """Verify the sequence: ticker filings → filing elements.
 
@@ -229,12 +235,10 @@ class TestLayer3DataServiceIntegration(unittest.TestCase):
         try:
             filings = get_ticker_filings("AAPL")
         except TickerNotFoundError:
-            self.skipTest("No filings for AAPL in test database")
-            return
+            self.fail("No filings for AAPL in test database")
 
         if not filings:
-            self.skipTest("No filings returned for AAPL")
-            return
+            self.fail("No filings returned for AAPL")
 
         accession = filings[0].accession_number
         self.assertIsNotNone(accession)
