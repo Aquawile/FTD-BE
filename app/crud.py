@@ -483,7 +483,7 @@ def get_workspace_by_id(workspace_id: int, user_id: int):
 
 def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:
     sql = """
-        SELECT id, ticker, type, message, read, severity, created_at
+        SELECT id, ticker, type, message, read, severity, created_at, subscription_id
         FROM alerts
         WHERE user_id = %s
         ORDER BY created_at DESC
@@ -500,8 +500,115 @@ def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:
             read=r["read"],
             severity=r["severity"],
             time=r["created_at"].isoformat() if r["created_at"] else None,
+            subscription_id=r.get("subscription_id"),
         ))
     return results
+
+
+def mark_user_alerts_read(user_id: int, alert_ids: list[int] | None = None) -> int:
+    """Mark the user's alerts read (all unread ones, or just alert_ids). Returns rows updated."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if alert_ids:
+                cur.execute(
+                    "UPDATE alerts SET read = TRUE WHERE user_id = %s AND read IS NOT TRUE AND id = ANY(%s)",
+                    (user_id, alert_ids),
+                )
+            else:
+                cur.execute("UPDATE alerts SET read = TRUE WHERE user_id = %s AND read IS NOT TRUE", (user_id,))
+            updated = cur.rowcount
+        conn.commit()
+    return updated
+
+
+# ─── Alert subscriptions ────────────────────────────────────────────────────
+# Users subscribe to one thing per ticker (price above/below a threshold, new
+# news, new SEC filing). Subscriptions are never deleted: turning one off sets
+# active = FALSE. app/services/alert_evaluator.py checks them after each sync.
+
+_SUBSCRIPTION_COLUMNS = """
+    s.id, s.ticker, s.alert_type, s.threshold, s.active, s.created_at,
+    st.last_observed_label, st.last_evaluated_at, st.last_alerted_at
+"""
+
+
+def _subscription_row(r: dict) -> "AlertSubscriptionResponse":
+    from app.models import AlertSubscriptionResponse
+    iso = lambda v: v.isoformat() if v is not None else None
+    return AlertSubscriptionResponse(
+        id=r["id"], ticker=r["ticker"], alert_type=r["alert_type"],
+        threshold=float(r["threshold"]) if r["threshold"] is not None else None,
+        active=r["active"], created_at=iso(r["created_at"]),
+        last_observed_label=r.get("last_observed_label"),
+        last_evaluated_at=iso(r.get("last_evaluated_at")), last_alerted_at=iso(r.get("last_alerted_at")),
+    )
+
+
+def get_user_subscriptions(user_id: int) -> list["AlertSubscriptionResponse"]:
+    rows = query_dict(
+        f"""
+        SELECT {_SUBSCRIPTION_COLUMNS}
+        FROM alert_subscriptions s
+        LEFT JOIN alert_subscription_state st ON st.subscription_id = s.id
+        WHERE s.user_id = %s
+        ORDER BY s.ticker, s.alert_type
+        """,
+        (user_id,),
+    )
+    return [_subscription_row(r) for r in rows]
+
+
+def get_user_subscription(user_id: int, subscription_id: int) -> "AlertSubscriptionResponse | None":
+    rows = query_dict(
+        f"""
+        SELECT {_SUBSCRIPTION_COLUMNS}
+        FROM alert_subscriptions s
+        LEFT JOIN alert_subscription_state st ON st.subscription_id = s.id
+        WHERE s.user_id = %s AND s.id = %s
+        """,
+        (user_id, subscription_id),
+    )
+    return _subscription_row(rows[0]) if rows else None
+
+
+def ticker_exists(symbol: str) -> bool:
+    return bool(query_dict("SELECT 1 FROM tickers WHERE symbol = %s", (symbol,)))
+
+
+def create_user_subscription(user_id: int, ticker: str, alert_type: str, threshold: float | None) -> int | None:
+    """Insert a subscription; returns its id, or None if the user already has this (ticker, type)."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO alert_subscriptions (user_id, ticker, alert_type, threshold, active)
+                VALUES (%s, %s, %s, %s, TRUE)
+                ON CONFLICT (user_id, ticker, alert_type) DO NOTHING
+                RETURNING id
+                """,
+                (user_id, ticker, alert_type, threshold),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return row[0] if row else None
+
+
+def update_user_subscription(user_id: int, subscription_id: int, active: bool | None, threshold: float | None) -> bool:
+    """Toggle active and/or change threshold on the user's own subscription. False if not found."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE alert_subscriptions
+                SET active = COALESCE(%s, active),
+                    threshold = COALESCE(%s, threshold)
+                WHERE id = %s AND user_id = %s
+                """,
+                (active, threshold, subscription_id, user_id),
+            )
+            found = cur.rowcount == 1
+        conn.commit()
+    return found
 
 
 def get_all_alerts(limit: int = 10) -> list[AlertResponse]:
