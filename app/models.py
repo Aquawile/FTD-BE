@@ -92,8 +92,6 @@ class DashboardStats(BaseModel):
     news_articles_count: int = 0     # distinct news articles (staging_gnews, by URL)
     sec_filings_count: int = 0       # distinct SEC filings (archive + vectorized mirror)
     tickers_count: int = 0
-    alerts_count: int = 0
-    evidence_score: Optional[float] = None
     vectorized_sec_count: int = 0
 
 
@@ -102,8 +100,6 @@ class TrackedTicker(BaseModel):
     name: str
     sector: Optional[str] = None
     current_price: Optional[float] = None
-    evidence_score: Optional[float] = None
-    hype_score: Optional[float] = None
     change_percent: Optional[float] = None
     price_as_of: Optional[str] = None
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Modal, cn, getHypeColor } from "../ui";
 import { Activity, ArrowRight, Bell, BookOpen, ChevronLeft, Download, FileText, Globe, RefreshCw, Users } from "lucide-react";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../../mockData";
+import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
 
 function TimelinePage({ navigate, ticker }: { navigate: (p: Page) => void; ticker: string }) {
   const [showExport, setShowExport] = useState(false);

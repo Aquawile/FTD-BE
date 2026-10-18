@@ -121,7 +121,6 @@ class TestDashboardEndpoint:
             with patch("app.db.query_dict") as mock_qd:
                 mock_qd.side_effect = [
                     [{"count": 500}],
-                    [{"count": 42}],
                 ]
                 response = client.get("/dashboard/stats")
 
@@ -131,8 +130,7 @@ class TestDashboardEndpoint:
             assert data["news_articles_count"] == 21959
             assert data["sec_filings_count"] == 704
             assert data["tickers_count"] == 500
-            assert data["alerts_count"] == 42
-            assert data["evidence_score"] is None
+            assert "alerts_count" not in data and "evidence_score" not in data
             assert data["vectorized_sec_count"] == 15000
 
     @pytest.mark.unit
@@ -142,7 +140,6 @@ class TestDashboardEndpoint:
             with patch("app.db.query_dict") as mock_qd:
                 mock_qd.side_effect = [
                     [{"count": 0}],
-                    [{"count": 0}],
                 ]
                 response = client.get("/dashboard/stats")
 
@@ -150,8 +147,7 @@ class TestDashboardEndpoint:
             data = response.json()
             assert data["articles_count"] == 0
             assert data["tickers_count"] == 0
-            assert data["alerts_count"] == 0
-            assert data["evidence_score"] is None
+            assert "evidence_score" not in data
             assert data["vectorized_sec_count"] == 0
 
     @pytest.mark.unit
@@ -160,7 +156,6 @@ class TestDashboardEndpoint:
              patch("app.crud.count_articles", return_value=(0, 0)):
             with patch("app.db.query_dict") as mock_qd:
                 mock_qd.side_effect = [
-                    [{"count": 0}],
                     [{"count": 0}],
                 ]
                 response = client.get("/dashboard/stats")
@@ -180,8 +175,6 @@ class TestTrackedTickersEndpoint:
                 name="Apple Inc.",
                 sector="Technology",
                 current_price=Decimal("200.50"),
-                evidence_score=85.5,
-                hype_score=70.2,
                 change_percent=Decimal("1.2"),
             ),
         ]

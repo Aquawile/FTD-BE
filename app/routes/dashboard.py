@@ -23,15 +23,10 @@ def route_dashboard_stats() -> DashboardStats:
     )
     tickers_count = tickers_rows[0]["count"] if tickers_rows else 0
 
-    alerts_rows = query_dict("SELECT COUNT(*) AS count FROM alerts")
-    alerts_count = alerts_rows[0]["count"] if alerts_rows else 0
-
     return DashboardStats(
         articles_count=news_count + filings_count,
         news_articles_count=news_count,
         sec_filings_count=filings_count,
         tickers_count=tickers_count,
-        alerts_count=alerts_count,
-        evidence_score=None,
         vectorized_sec_count=sec_count,
     )

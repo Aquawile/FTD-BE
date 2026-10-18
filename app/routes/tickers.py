@@ -37,7 +37,7 @@ def route_search_tickers(
     q: str = Query(..., min_length=1, description="Ticker symbol or partial match"),
     limit: int = Query(20, ge=1, le=100),
     sector: Optional[str] = Query(None, description="Filter by sector (e.g., semiconductors, ai, ev, cloud)"),
-    sort_by: str = Query("ticker", description="Sort by: ticker, evidence, hype"),
+    sort_by: str = Query("ticker", description="Sort by: ticker"),
     permission: str = require_permission("tickers.search"),
 ) -> list[TickerResult]:
     return search_tickers(q, limit, sector, sort_by)

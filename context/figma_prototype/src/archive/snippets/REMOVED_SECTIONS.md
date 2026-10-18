@@ -347,3 +347,62 @@ From `src/components/Shell.tsx` (sidebar nav item)
 ```tsx
               {!collapsed && item.id === "alerts" && <span className="ml-auto text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5 font-mono">2</span>}
 ```
+
+
+## Ticker page placeholders (removed 2026-10-18)
+
+"Not yet available" cards with no data source: AI Research Summary, Key Claims in Circulation, Source Breakdown.
+
+```tsx
+              {/* AI Summary - PLACEHOLDER */}
+              <Card className="p-5 border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-transparent">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles size={14} className="text-purple-400" />
+                  <span className="text-sm font-semibold text-foreground">AI Research Summary</span>
+                  <Badge variant="neutral">PLACEHOLDER</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground italic">AI research summary generation is not yet available. This will be populated with AI-generated insights once the inference engine is deployed.</p>
+              </Card>
+
+              {/* Key claims - PLACEHOLDER */}
+              <div>
+                <h3 className="font-semibold mb-3">Key Claims in Circulation</h3>
+                <Card className="p-4">
+                  <p className="text-sm text-muted-foreground italic">Claims extraction from news and social data is not yet available. This section will display claims extracted from real articles with evidence scoring once the pipeline is processing data for this ticker.</p>
+                </Card>
+              </div>
+
+              {/* Source breakdown - PLACEHOLDER */}
+              <Card className="p-4">
+                <h3 className="font-semibold text-sm mb-3">Source Breakdown</h3>
+                <p className="text-xs text-muted-foreground italic">Source breakdown is not yet available. This will show the count of data points from each source (SEC filings, news, etc.) when the analytics pipeline is active.</p>
+              </Card>
+
+```
+
+
+## Profile "Preferences" tab (removed 2026-10-18)
+
+Three toggles (compact view, weekly email digest, community posts) rendered fixed on/off states and saved nothing.
+
+```tsx
+      {activeTab === "preferences" && (
+        <Card className="p-5">
+          <h3 className="font-semibold mb-4">Display Preferences</h3>
+          <div className="space-y-4 text-sm">
+            {[
+              { label: "Compact card view", desc: "Show more tickers per row", enabled: false },
+              { label: "Email digest (weekly)", desc: "Receive a weekly research summary email", enabled: true },
+              { label: "Community posts in feed", desc: "Include Reddit content in main feed", enabled: true },
+            ].map(p => (
+              <div key={p.label} className="flex items-start justify-between gap-4 py-2 border-b border-border/50 last:border-0">
+                <div><div className="font-medium">{p.label}</div><div className="text-xs text-muted-foreground mt-0.5">{p.desc}</div></div>
+                <div className={cn("relative inline-flex w-10 h-6 rounded-full cursor-pointer shrink-0 mt-0.5", p.enabled ? "bg-primary" : "bg-switch-background")}>
+                  <div className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-transform", p.enabled ? "translate-x-5" : "translate-x-1")} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+```

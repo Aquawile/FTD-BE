@@ -174,7 +174,6 @@ class TestDataServiceIntegration(unittest.TestCase):
         self.assertIn("articles_count", result)
         self.assertIn("tickers_count", result)
         self.assertIn("alerts_count", result)
-        self.assertIn("evidence_score", result)
         self.assertIsInstance(result["articles_count"], int)
         self.assertIsInstance(result["tickers_count"], int)
 

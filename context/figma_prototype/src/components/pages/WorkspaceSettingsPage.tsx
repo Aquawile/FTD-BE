@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Btn, Card, Input, Modal, cn } from "../ui";
 import { Archive, Briefcase, Check, ChevronLeft } from "lucide-react";

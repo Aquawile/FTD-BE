@@ -41,7 +41,7 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
             Not noise.
           </div>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
-            The platform that turns raw financial data into verifiable insight — with AI scoring every claim on an evidence scale.
+            The platform that turns raw financial data (daily prices, news and SEC filings) into research you can trace back to its source.
           </p>
         </div>
         <div className="text-xs text-muted-foreground">Not investment advice · For research purposes only</div>

@@ -1,18 +1,16 @@
 import { useState, useEffect } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 
 import { firebaseAuth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
 import { apiRequest, API_BASE } from "../api";
-import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA } from "../mockData";
 import { WorkspaceResponse } from "../types";
 
 import { AppShell } from "../components/Shell";
 import { Toaster } from "./components/ui/sonner";
 import { useAlertNotifications } from "../hooks/useAlertNotifications";
-import ReportModal from "../components/pages/ReportModal";
 
 import {
   LoginPage,
@@ -36,7 +34,6 @@ function App() {
   const [page, setPage] = useState<Page>("login");
   const [selectedTicker, setSelectedTicker] = useState("NVDA");
   const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceResponse | null>(null);
-  const [showReport, setShowReport] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
@@ -104,16 +101,16 @@ function App() {
     switch (page) {
       case "login": return <LoginPage navigate={navigate} />;
       case "register": return <RegisterPage navigate={navigate} />;
-      case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email} />;
+      case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email ?? undefined} />;
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "onboarding-done": return <OnboardingPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
-      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} onReport={() => setShowReport(true)} />;
+      case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} />;
       case "workspaces": return <WorkspacesPage navigate={navigate} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
       case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} refreshWorkspace={refreshWorkspace} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} />;
-      case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} onAlertsChanged={refreshAlerts} />;
+      case "alerts": return <AlertsPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} onAlertsChanged={refreshAlerts} />;
       case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
       default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
     }
@@ -128,11 +125,9 @@ function App() {
           {renderPage()}
         </AppShell>
       )}
-      {showReport && <ReportModal onClose={() => setShowReport(false)} />}
       <Toaster position="top-right" theme="dark" />
     </>
   );
 }
 
-export { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, ALERTS_DATA };
 export default App;

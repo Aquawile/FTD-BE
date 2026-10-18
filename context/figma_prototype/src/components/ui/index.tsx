@@ -6,7 +6,7 @@ export function cn(...classes: (string | undefined | false | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-export type BadgeVariant = "default" | "evidence" | "hype" | "neutral" | "danger" | "purple" | "outline";
+export type BadgeVariant = "default" | "success" | "warning" | "neutral" | "danger" | "purple" | "outline";
 
 export interface BadgeProps {
   children: React.ReactNode;
@@ -17,8 +17,8 @@ export interface BadgeProps {
 export function Badge({ children, variant = "default", className }: BadgeProps) {
   const styles: Record<BadgeVariant, string> = {
     default: "bg-primary/15 text-primary border-primary/20",
-    evidence: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    hype: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+    success: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    warning: "bg-orange-500/10 text-orange-400 border-orange-500/20",
     neutral: "bg-secondary text-muted-foreground border-border",
     danger: "bg-red-500/10 text-red-400 border-red-500/20",
     purple: "bg-purple-500/10 text-purple-400 border-purple-500/20",

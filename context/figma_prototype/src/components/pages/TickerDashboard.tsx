@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import PriceTimeline from "../PriceTimeline";
 import TickerNewsFeed from "../TickerNewsFeed";
 import { Bell, Briefcase, ExternalLink, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
-import { apiRequest, formatPrice, getTrackedTicker } from "../../api";
+import { apiRequest, formatPrice, getTrackedTicker, isStaleQuote } from "../../api";
 import { TrackedTicker } from "../../types";
 
 interface PriceRow {
@@ -38,7 +38,7 @@ interface FilingSummary {
   url: string | null;
 }
 
-function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null; onReport: () => void }) {
+function TickerDashboard({ navigate, ticker, firebaseUser }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null }) {
   const [tab, setTab] = useState("overview");
   const [tickerData, setTickerData] = useState<TrackedTicker | null>(null);
   const [prices, setPrices] = useState<PriceRow[]>([]);
@@ -125,7 +125,13 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                     </span>
                   )}
                   {tickerData?.price_as_of && (
-                    <span className="text-xs text-muted-foreground">as of {tickerData.price_as_of.slice(0, 10)}</span>
+                    isStaleQuote(tickerData.price_as_of, new Date()) ? (
+                      <span className="text-xs text-amber-400" title="Finnhub has not returned a newer quote for this symbol">
+                        last quote {tickerData.price_as_of.slice(0, 10)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">as of {tickerData.price_as_of.slice(0, 10)}</span>
+                    )
                   )}
                 </div>
               )}
@@ -163,24 +169,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
             <div className="lg:col-span-2 space-y-5">
               {/* Price timeline - REAL DATA (pandas-built 365-day series from staging_finnhub) */}
               <PriceTimeline ticker={ticker} firebaseUser={firebaseUser} />
-
-              {/* AI Summary - PLACEHOLDER */}
-              <Card className="p-5 border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-transparent">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles size={14} className="text-purple-400" />
-                  <span className="text-sm font-semibold text-foreground">AI Research Summary</span>
-                  <Badge variant="neutral">PLACEHOLDER</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground italic">AI research summary generation is not yet available. This will be populated with AI-generated insights once the inference engine is deployed.</p>
-              </Card>
-
-              {/* Key claims - PLACEHOLDER */}
-              <div>
-                <h3 className="font-semibold mb-3">Key Claims in Circulation</h3>
-                <Card className="p-4">
-                  <p className="text-sm text-muted-foreground italic">Claims extraction from news and social data is not yet available. This section will display claims extracted from real articles with evidence scoring once the pipeline is processing data for this ticker.</p>
-                </Card>
-              </div>
 
               {/* Recent news - REAL DATA */}
               <div>
@@ -278,12 +266,6 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onReport }: { navigat
                     <p className="text-xs text-muted-foreground">{detailsLoading ? "Loading prices…" : `No price data available for ${t.symbol}.`}</p>
                   )}
                 </div>
-              </Card>
-
-              {/* Source breakdown - PLACEHOLDER */}
-              <Card className="p-4">
-                <h3 className="font-semibold text-sm mb-3">Source Breakdown</h3>
-                <p className="text-xs text-muted-foreground italic">Source breakdown is not yet available. This will show the count of data points from each source (SEC filings, news, etc.) when the analytics pipeline is active.</p>
               </Card>
 
               {/* Quick actions */}

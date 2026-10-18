@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
-import { fetchWorkspaces, getTrackedTickers, apiRequest, formatPrice } from "../../api";
+import { fetchWorkspaces, getTrackedTickers, apiRequest, formatPrice, isStaleQuote, newestQuoteDate } from "../../api";
 import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
 
 function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
-  const [stats, setStats] = useState<{ articles_count: number; news_articles_count?: number; sec_filings_count?: number; tickers_count: number; alerts_count: number; evidence_score: number | null; vectorized_sec_count: number } | null>(null);
+  const [stats, setStats] = useState<{ articles_count: number; news_articles_count?: number; sec_filings_count?: number; tickers_count: number; vectorized_sec_count: number } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
@@ -100,9 +100,11 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
     return String(n);
   };
 
-  // Largest absolute daily moves from the latest finnhub quotes
+  // Largest absolute daily moves from the latest finnhub quotes. Stale quotes (a symbol
+  // Finnhub stopped updating) are left out so an old move can't sit at the top.
+  const newestQuote = newestQuoteDate(trackedTickers);
   const topMovers = trackedTickers
-    .filter(t => typeof t.change_percent === "number")
+    .filter(t => typeof t.change_percent === "number" && !isStaleQuote(t.price_as_of, newestQuote))
     .slice()
     .sort((a, b) => Math.abs(b.change_percent ?? 0) - Math.abs(a.change_percent ?? 0))
     .slice(0, 5);
@@ -221,7 +223,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1 mb-0.5">
                         <span className="font-mono font-semibold text-xs text-foreground">{a.ticker || "—"}</span>
-                        <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "hype" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
+                        <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "warning" : "neutral"} className="text-xs">{a.type.replace("_", " ")}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">{a.message}</p>
                       <div className="text-xs text-muted-foreground/60 mt-1">{a.time || "—"}</div>
@@ -251,7 +253,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                         <div className="font-medium text-sm text-foreground">{ws.name}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{ws.tickers.join(", ")}</div>
                       </div>
-                      {ws.alerts > 0 && <Badge variant="hype" className="text-xs">{ws.alerts}</Badge>}
+                      {ws.alerts > 0 && <Badge variant="warning" className="text-xs">{ws.alerts}</Badge>}
                     </div>
                   </Card>
                 ))

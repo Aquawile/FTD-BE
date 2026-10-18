@@ -1,9 +1,9 @@
 import type {
   TrackedTicker,
-  NewsArticleResponse,
   TimelineEventResponse,
   FilingSummary,
   PriceRow,
+  NewsRow,
   WorkspaceResponse,
   AlertResponse,
   AlertSubscription,
@@ -11,7 +11,7 @@ import type {
   AlertSubscriptionType,
   DashboardStats,
 } from "../types";
-import { FirebaseUser } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 
 export const API_BASE = "/api";
 
@@ -34,9 +34,9 @@ const API_BASE_FALLBACK = "/api";
 
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("auth_token");
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options?.headers || {}),
+    ...((options?.headers as Record<string, string>) || {}),
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -84,6 +84,22 @@ export async function getTrackedTicker(symbol: string): Promise<TrackedTicker | 
   return rows[0] ?? null;
 }
 
+/** A quote more than STALE_QUOTE_DAYS older than the reference date is treated as stale
+ *  (Finnhub keeps returning an old quote for some symbols). */
+export const STALE_QUOTE_DAYS = 7;
+
+/** Newest price_as_of across a list of tickers: the reference for "stale", so weekends
+ *  or a late sync don't make every ticker look stale. */
+export function newestQuoteDate(rows: { price_as_of?: string | null }[]): string | null {
+  return rows.reduce<string | null>((max, r) => (r.price_as_of && (!max || r.price_as_of > max) ? r.price_as_of : max), null);
+}
+
+export function isStaleQuote(priceAsOf: string | null | undefined, reference: string | Date | null): boolean {
+  if (!priceAsOf || !reference) return false;
+  const ref = typeof reference === "string" ? new Date(reference) : reference;
+  return ref.getTime() - new Date(priceAsOf).getTime() > STALE_QUOTE_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** Prices are shown with 2 decimals everywhere so the list, header and financials agree. */
 export function formatPrice(price: number | string | null | undefined): string {
   if (price == null || price === "") return "—";
@@ -91,8 +107,8 @@ export function formatPrice(price: number | string | null | undefined): string {
   return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
 }
 
-export async function getTickerNews(ticker: string): Promise<NewsArticleResponse[]> {
-  return fetchWithAuth<NewsArticleResponse[]>(`/tickers/${ticker}/news`);
+export async function getTickerNews(ticker: string): Promise<NewsRow[]> {
+  return fetchWithAuth<NewsRow[]>(`/tickers/${ticker}/news`);
 }
 
 export async function getTickerTimeline(ticker: string): Promise<TimelineEventResponse[]> {

@@ -2,197 +2,6 @@
 // TYPES - Shared TypeScript Interfaces
 // ────────────────────────────────────────────────
 
-export interface Ticker {
-  symbol: string;
-  name: string;
-  hype: number;
-  evidence: number;
-  sector: string;
-  change: number;
-  price: number;
-  current_price?: number;
-  change_percent?: number;
-  price_as_of?: string;
-  sector?: string;
-  cik?: string;
-}
-
-export interface NewsArticle {
-  id: number;
-  ticker: string;
-  headline: string;
-  source: string;
-  time: string;
-  hype: number;
-  evidence: number;
-  summary: string;
-  claims: string[];
-  evidenceLinks: string[];
-  flagged: boolean;
-}
-
-export interface TimelineEvent {
-  date: string;
-  type: "filing" | "narrative" | "news" | "social" | "earnings";
-  title: string;
-  description: string;
-  score_delta: number;
-  hype: number;
-  evidence: number;
-}
-
-export interface Workspace {
-  id: string;
-  name: string;
-  tickers: string[];
-  created: string;
-  alerts: number;
-}
-
-export interface MappingQueueItem {
-  id: string;
-  article: string;
-  mapped: string;
-  suggested: string;
-  source: string;
-  confidence: number;
-  reporter: string;
-  time: string;
-  type: string;
-}
-
-export interface ChatMessage {
-  role: "user" | "ai";
-  text: string;
-  time: string;
-  sources?: string[];
-}
-
-export interface Alert {
-  id: string;
-  ticker: string;
-  type: "narrative_shift" | "filing" | "narrative_shift" | "hype_spike" | "hype_spike";
-  message: string;
-  time: string;
-  read: boolean;
-  severity: "high" | "medium" | "low";
-}
-
-export interface Ticker {
-  symbol: string;
-  name: string;
-  hype: number;
-  evidence: number;
-  sector: string;
-  change: number;
-  price: number;
-  current_price?: number;
-  change_percent?: number;
-  price_as_of?: string;
-  sector?: string;
-  cik?: string;
-  hype_score?: number;
-  evidence_score?: number;
-}
-
-export interface NewsArticle {
-  id: number;
-  ticker: string;
-  headline: string;
-  source: string;
-  time: string;
-  hype: number;
-  evidence: number;
-  summary: string;
-  claims: string[];
-  evidenceLinks: string[];
-  flagged: boolean;
-}
-
-export interface TimelineEvent {
-  date: string;
-  type: "filing" | "narrative" | "news" | "social" | "earnings";
-  title: string;
-  description: string;
-  score_delta: number;
-  hype: number;
-  evidence: number;
-}
-
-export interface Workspace {
-  id: string;
-  name: string;
-  tickers: string[];
-  created: string;
-  alerts: number;
-}
-
-export interface MappingQueueItem {
-  id: string;
-  article: string;
-  mapped: string;
-  suggested: string;
-  source: string;
-  confidence: number;
-  reporter: string;
-  time: string;
-  type: string;
-}
-
-export interface ChatMessage {
-  role: "user" | "ai";
-  text: string;
-  time: string;
-  sources?: string[];
-}
-
-export interface Alert {
-  id: string;
-  ticker: string;
-  type: "narrative_shift" | "filing" | "hype_spike";
-  message: string;
-  time: string;
-  read: boolean;
-  severity: "high" | "medium" | "low";
-}
-
-export interface Workspace {
-  id: string;
-  name: string;
-  tickers: string[];
-  created: string;
-  alerts: number;
-}
-
-export interface MappingQueueItem {
-  id: string;
-  article: string;
-  mapped: string;
-  suggested: string;
-  source: string;
-  confidence: number;
-  reporter: string;
-  time: string;
-  type: string;
-}
-
-export interface ChatMessage {
-  role: "user" | "ai";
-  text: string;
-  time: string;
-  sources?: string[];
-}
-
-export interface Alert {
-  id: string;
-  ticker: string;
-  type: "narrative_shift" | "filing" | "hype_spike";
-  message: string;
-  time: string;
-  read: boolean;
-  severity: "high" | "medium" | "low";
-}
-
 // ────────────────────────────────────────────────
 // API Response Types
 // ────────────────────────────────────────────────
@@ -202,8 +11,6 @@ export interface TickerSearchResult {
   cik: string;
   sector?: string;
   current_price?: number;
-  evidence_score?: number;
-  hype_score?: number;
   change_percent?: number;
   price_as_of?: string;
 }
@@ -213,8 +20,6 @@ export interface TrackedTicker {
   name: string;
   sector?: string;
   current_price?: number;
-  evidence_score?: number;
-  hype_score?: number;
   change_percent?: number;
 }
 
@@ -223,34 +28,8 @@ export interface TrackedTicker {
   name: string;
   sector?: string;
   current_price?: number;
-  evidence_score?: number;
-  hype_score?: number;
   change_percent?: number;
   price_as_of?: string;
-}
-
-export interface NewsArticleResponse {
-  id: number;
-  ticker: string;
-  headline: string;
-  source: string;
-  time: string;
-  hype: number;
-  evidence: number;
-  summary: string;
-  claims: string[];
-  evidenceLinks: string[];
-  flagged: boolean;
-}
-
-export interface TimelineEventResponse {
-  date: string;
-  type: "filing" | "narrative" | "news" | "social" | "earnings";
-  title: string;
-  description: string;
-  score_delta: number;
-  hype: number;
-  evidence: number;
 }
 
 export interface FilingResponse {
@@ -314,8 +93,6 @@ export interface DashboardStats {
   news_articles_count?: number;    // distinct news articles (by URL)
   sec_filings_count?: number;      // distinct SEC filings (archive + vectorized)
   tickers_count: number;
-  alerts_count: number;
-  evidence_score: number | null;
   vectorized_sec_count: number;
 }
 
@@ -350,14 +127,17 @@ export interface NewsRow {
   ingest_date: string;
 }
 
+// GET /tickers/{ticker}/timeline (app/models.py TimelineEvent)
 export interface TimelineEventResponse {
-  date: string;
-  type: string;
-  title: string;
-  description: string;
-  score_delta: number;
-  hype: number;
-  evidence: number;
+  normalized_calendar_date: string | null;
+  source: "finnhub" | "gnews" | "sec";
+  element_type: "quantitative" | "narrative" | "";
+  content_body: string;
+  current: number | string | null;
+  change: number | string | null;
+  form_type: string | null;
+  item_number: string | null;
+  date_precision: string | null;
 }
 
 export interface FilingElement {
