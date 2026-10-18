@@ -134,7 +134,7 @@ function AlertSubscriptions({ firebaseUser, trackedTickers }: { firebaseUser: Fi
   );
 }
 
-function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
+function AlertsPage({ navigate, firebaseUser, onAlertsChanged }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null; onAlertsChanged?: () => void }) {
   const { alerts: ALERTS_DATA, loading, error, refetch } = useAlerts(50, firebaseUser);
   const { tickers: trackedTickers } = useTrackedTickers(500);
   const [filter, setFilter] = useState("all");
@@ -143,6 +143,7 @@ function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; f
   const markAllRead = async () => {
     await markAlertsRead(firebaseUser).catch(() => undefined);
     refetch();
+    onAlertsChanged?.();
   };
 
   const filtered = filter === "all"

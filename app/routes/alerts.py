@@ -8,6 +8,7 @@ from app.auth.dependencies import get_current_application_user
 from app.auth.models import User
 from app.crud import (
     create_user_subscription,
+    get_user_alert_summary,
     get_user_alerts,
     get_user_subscription,
     get_user_subscriptions,
@@ -18,6 +19,7 @@ from app.crud import (
 from app.models import (
     PRICE_ALERT_TYPES,
     AlertResponse,
+    AlertSummary,
     AlertSubscriptionCreate,
     AlertSubscriptionResponse,
     AlertSubscriptionUpdate,
@@ -32,6 +34,12 @@ def route_get_alerts(
     current_user: User = Depends(get_current_application_user),
 ) -> list[AlertResponse]:
     return get_user_alerts(user_id=current_user.id, limit=limit)
+
+
+@router.get("/summary", response_model=AlertSummary)
+def route_alert_summary(current_user: User = Depends(get_current_application_user)) -> AlertSummary:
+    """Unread count and newest unread alert (read per request; alerts only change after a sync)."""
+    return get_user_alert_summary(current_user.id)
 
 
 @router.post("/read")

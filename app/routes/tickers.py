@@ -27,8 +27,9 @@ router = APIRouter(prefix="/tickers", tags=["tickers"])
 @router.get("/tracked", response_model=list[TrackedTicker])
 def route_get_tracked_tickers(
     limit: int = Query(500, ge=1, le=500),
+    symbol: str | None = Query(None, min_length=1, max_length=10, description="Return only this ticker"),
 ) -> list[TrackedTicker]:
-    return get_tracked_tickers(limit=limit)
+    return get_tracked_tickers(limit=limit, symbol=symbol.strip().upper() if symbol else None)
 
 
 @router.get("/search", response_model=list[TickerResult])

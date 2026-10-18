@@ -421,3 +421,9 @@ export interface AlertSubscription {
   last_evaluated_at: string | null;
   last_alerted_at: string | null;
 }
+
+// GET /alerts/summary: drives the bell dot, the Alerts nav badge and the new-alert pop-up.
+export interface AlertSummary {
+  unread_count: number;
+  newest_unread: AlertResponse | null;
+}

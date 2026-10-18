@@ -10,6 +10,8 @@ import { TICKERS, NEWS_ARTICLES, TIMELINE_EVENTS, MAPPING_QUEUE, CHAT_HISTORY, A
 import { WorkspaceResponse } from "../types";
 
 import { AppShell } from "../components/Shell";
+import { Toaster } from "./components/ui/sonner";
+import { useAlertNotifications } from "../hooks/useAlertNotifications";
 import ReportModal from "../components/pages/ReportModal";
 
 import {
@@ -72,6 +74,7 @@ function App() {
   }, []);
 
   const navigate = (p: Page) => setPage(p);
+  const { unreadAlerts, refreshAlerts } = useAlertNotifications(firebaseUser, page, () => navigate("alerts"));
 
   const refreshWorkspace = async () => {
     if (!firebaseUser || !selectedWorkspace) return;
@@ -110,7 +113,7 @@ function App() {
       case "workspaces": return <WorkspacesPage navigate={navigate} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
       case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} refreshWorkspace={refreshWorkspace} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} />;
-      case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} />;
+      case "alerts": return <AlertsPage navigate={navigate} firebaseUser={firebaseUser} onAlertsChanged={refreshAlerts} />;
       case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} />;
       default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} />;
     }
@@ -121,11 +124,12 @@ function App() {
       {isPublic ? (
         <div className="min-h-screen bg-background">{renderPage()}</div>
       ) : (
-        <AppShell page={page} navigate={navigate} userEmail={userEmail} userName={userName} onSignOut={handleSignOut}>
+        <AppShell page={page} navigate={navigate} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} unreadAlerts={unreadAlerts}>
           {renderPage()}
         </AppShell>
       )}
       {showReport && <ReportModal onClose={() => setShowReport(false)} />}
+      <Toaster position="top-right" theme="dark" />
     </>
   );
 }

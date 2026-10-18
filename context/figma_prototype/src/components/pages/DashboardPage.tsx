@@ -3,7 +3,7 @@ import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
-import { fetchWorkspaces, getTrackedTickers, apiRequest } from "../../api";
+import { fetchWorkspaces, getTrackedTickers, apiRequest, formatPrice } from "../../api";
 import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
 
 function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
@@ -186,10 +186,10 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="font-mono text-sm font-semibold text-foreground">${price.toLocaleString()}</div>
+                    <div className="font-mono text-sm font-semibold text-foreground">${formatPrice(price)}</div>
                     <div className={cn("text-xs flex items-center gap-0.5 justify-end", changePct > 0 ? "text-emerald-400" : "text-red-400")}>
                       {changePct > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                      {changePct > 0 ? "+" : ""}{changePct}%
+                      {changePct > 0 ? "+" : ""}{changePct.toFixed(2)}%
                     </div>
                   </div>
                 </div>

@@ -252,7 +252,7 @@ PUBLIC_PATHS = {
 | GET | `/health` | Health check + DB access counters | `{"status":"ok","db_access_counters":{},"db_access_detected":false}` |
 | GET | `/version` | Deployment version metadata | `VersionMetadata` |
 | GET | `/dashboard/stats` | Dashboard stats (articles, tickers, alerts, vectorized count) | `DashboardStats` |
-| GET | `/tickers/tracked` | Tracked tickers list | `list[TrackedTicker]` |
+| GET | `/tickers/tracked` | Tracked tickers list (`?symbol=NVDA` for one ticker; used by the ticker page header) | `list[TrackedTicker]` |
 | GET | `/tickers/{ticker}/filings/{accession}/content` | SEC filing content proxy | HTMLResponse |
 
 ### Auth-Required Endpoints
@@ -263,6 +263,10 @@ PUBLIC_PATHS = {
 | POST | `/auth/register` | — | Internal JWT registration |
 | GET | `/auth/me` | — | Current user info |
 | GET | `/alerts` | `tickers.*` implied | User-specific alerts |
+| GET | `/alerts/summary` | — | Unread count + newest unread alert (bell dot, Alerts nav badge, new-alert pop-up) |
+| POST | `/alerts/read` | — | Mark all (or `alert_ids`) read |
+| GET/POST | `/alerts/subscriptions` | — | The user's own subscriptions / create one (price_above, price_below, news, filing) |
+| PATCH | `/alerts/subscriptions/{id}` | — | Pause/resume or change threshold (no delete) |
 | GET | `/tickers/search?q=...` | `tickers.search` | Ticker search |
 | GET | `/tickers/{ticker}/prices` | `tickers.prices` | Historical prices |
 | GET | `/tickers/{ticker}/price-timeline?window_days=365` | `tickers.prices` | pandas-built daily series on a fixed 365-day window (`app/services/price_timeline.py`) |
@@ -404,11 +408,20 @@ Measured on staging 2026-10-16: every data endpoint makes 0 GCS list/download ca
 22:20 (after raw prices land ~22:09) and 00:20 (after GNews lands ~00:00). It takes PG* env from
 the `ftd-api` systemd unit and runs, independently:
 
-1. `scripts/sync_recent_relational.py` (on VM: `~/prices/`): incremental, idempotent. Reads raw
-   date folders since the newest date already in Postgres, upserts prices, inserts new news rows,
-   refreshes the `tickers` price snapshot. A missed run is caught up by the next one.
+1. `scripts/sync_recent_relational.py` (on VM: `~/prices/`): incremental, idempotent, insert-only.
+   Reads raw date folders since the newest date already in Postgres, inserts quotes not already
+   stored (same ticker, day and quote timestamp are skipped; nothing is deleted), inserts new news
+   rows, refreshes the `tickers` price snapshot. A missed run is caught up by the next one.
 2. `scripts/sync_vectorized_to_postgres.py` (on VM: `~/app/scripts/`): mirrors vectorized files
    updated since the newest `vectorized_at` in `sec_vectorized_chunks` (`--full` rescans everything).
+3. `scripts/evaluate_alert_subscriptions.py` (on VM: `~/app/scripts/`): last, because ticker data
+   only changes in steps 1–2. Checks each active `alert_subscriptions` row against
+   `alert_subscription_state` and inserts into `alerts` only when the watched value changed
+   (`app/services/alert_evaluator.py`). The web app shows them via `/alerts/summary`.
+
+The crontab also has `@reboot sleep 120 && ~/prices/sync_all_recent.sh`: the VMs are often
+stopped overnight, and cron does not replay missed runs, so a boot catches up whatever was missed.
+The pipeline does not ship these scripts; copy them to the VM by hand after changing them.
 
 Log: `~/prices/sync_all_recent.log`. API endpoints need no cache busting: nginx doesn't cache
 `/api/`, and the app only caches SEC filing HTML, which never changes once filed.
@@ -496,7 +509,7 @@ WantedBy=multi-user.target
 
 | Component | Purpose | Real Data? |
 |---|---|---|
-| `DashboardPage.tsx` | Dashboard with stats, top movers, recent alerts | Yes (getTrackedTickers, getAlerts) |
+| `DashboardPage.tsx` | Dashboard with stats, top movers, recent alerts. Top Movers = the 5 tracked tickers with the largest absolute `change_percent` (latest Finnhub quote's daily % change) | Yes (getTrackedTickers, getAlerts) |
 | `AlertsPage.tsx` | Alerts list with filtering | Yes (useAlerts hook → /api/alerts) |
 | `TickerDashboard.tsx` | Single ticker detail page | Yes (getTrackedTickers, apiRequest for prices/news/filings, `PriceTimeline` chart) |
 | `components/PriceTimeline.tsx` | 365-day price chart (Recharts) | Yes (`/tickers/{t}/price-timeline`) |

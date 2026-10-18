@@ -3,7 +3,7 @@ import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Btn, Card, cn } from "../ui";
 import { AlertCircle, ChevronRight, Filter, Search, TrendingDown, TrendingUp } from "lucide-react";
-import { apiRequest, API_BASE } from "../../api";
+import { apiRequest, API_BASE , formatPrice as formatSharedPrice } from "../../api";
 
 interface TrackedTicker {
   symbol: string;
@@ -64,10 +64,7 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (
     return a.symbol.localeCompare(b.symbol);
   });
 
-  const formatPrice = (price: number | null) => {
-    if (price === null) return "—";
-    return `$${price.toLocaleString()}`;
-  };
+  const formatPrice = (price: number | null) => (price == null ? "—" : `$${formatSharedPrice(price)}`);
 
   const formatChange = (change: number | null) => {
     if (change === null) return "—";

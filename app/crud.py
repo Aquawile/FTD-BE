@@ -9,6 +9,7 @@ from app.db import query_dict, get_connection
 import psycopg2.extras
 from app.models import (
     AlertResponse,
+    AlertSummary,
     FilingElement,
     FilingSummary,
     FiscalYearEnd,
@@ -102,8 +103,9 @@ def search_tickers(
 def get_ticker_prices(
     ticker: str, start: date, end: date
 ) -> list[PriceRow]:
+    # One row per day: the newest ingest wins if a day was loaded more than once.
     sql = """
-        SELECT
+        SELECT DISTINCT ON (normalized_calendar_date)
             normalized_calendar_date,
             current,
             change,
@@ -116,7 +118,7 @@ def get_ticker_prices(
         WHERE target_ticker = %s
           AND normalized_calendar_date >= %s
           AND normalized_calendar_date <= %s
-        ORDER BY normalized_calendar_date
+        ORDER BY normalized_calendar_date, ingest_date DESC NULLS LAST
     """
     rows = query_dict(sql, (ticker, start, end))
     return [PriceRow(**r) for r in rows]
@@ -333,24 +335,27 @@ def get_dashboard_stats() -> dict:
     }
 
 
-def get_tracked_tickers(limit: int = 500) -> list[TrackedTicker]:
-    # Prefer the latest staging_finnhub quote over the tickers snapshot when it is newer,
-    # so prices are current even if the snapshot columns haven't been refreshed.
+def get_tracked_tickers(limit: int = 500, symbol: str | None = None) -> list[TrackedTicker]:
+    # The latest staging_finnhub quote is the source of truth; the tickers snapshot
+    # (a rounded copy refreshed by the sync) is only used when it is strictly newer
+    # or there is no quote. Same-day ties go to the quote, so every page shows the
+    # same price.
     sql = f"""
         SELECT
             t.symbol, t.name, t.sector,
-            CASE WHEN p.as_of > t.price_as_of OR t.price_as_of IS NULL
-                 THEN COALESCE(p."current", t.current_price) ELSE t.current_price END AS current_price,
+            CASE WHEN p."current" IS NOT NULL AND (t.price_as_of IS NULL OR p.as_of >= t.price_as_of)
+                 THEN p."current" ELSE t.current_price END AS current_price,
             t.evidence_score, t.hype_score,
-            CASE WHEN p.as_of > t.price_as_of OR t.price_as_of IS NULL
-                 THEN COALESCE(p.percent_change, t.change_percent) ELSE t.change_percent END AS change_percent,
+            CASE WHEN p."current" IS NOT NULL AND (t.price_as_of IS NULL OR p.as_of >= t.price_as_of)
+                 THEN p.percent_change ELSE t.change_percent END AS change_percent,
             GREATEST(p.as_of, t.price_as_of) AS price_as_of
         FROM tickers t
         LEFT JOIN ({_LATEST_PRICES}) p ON p.target_ticker = t.symbol
+        {"WHERE t.symbol = %s" if symbol else ""}
         ORDER BY t.updated_at DESC
         LIMIT %s
     """
-    rows = query_dict(sql, (limit,))
+    rows = query_dict(sql, (symbol, limit) if symbol else (limit,))
     results = []
     for r in rows:
         row = dict(r)
@@ -490,19 +495,36 @@ def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:
         LIMIT %s
     """
     rows = query_dict(sql, (user_id, limit))
-    results = []
-    for r in rows:
-        results.append(AlertResponse(
-            id=r["id"],
-            ticker=r["ticker"],
-            type=r["type"],
-            message=r["message"],
-            read=r["read"],
-            severity=r["severity"],
-            time=r["created_at"].isoformat() if r["created_at"] else None,
-            subscription_id=r.get("subscription_id"),
-        ))
-    return results
+    return [_alert_row(r) for r in rows]
+
+
+def _alert_row(r: dict) -> AlertResponse:
+    return AlertResponse(
+        id=r["id"],
+        ticker=r["ticker"],
+        type=r["type"],
+        message=r["message"],
+        read=r["read"],
+        severity=r["severity"],
+        time=r["created_at"].isoformat() if r["created_at"] else None,
+        subscription_id=r.get("subscription_id"),
+    )
+
+
+def get_user_alert_summary(user_id: int) -> AlertSummary:
+    """Unread count and the newest unread alert, for the bell, nav badge and pop-up."""
+    count = query_dict("SELECT COUNT(*) AS n FROM alerts WHERE user_id = %s AND read IS NOT TRUE", (user_id,))
+    newest = query_dict(
+        """
+        SELECT id, ticker, type, message, read, severity, created_at, subscription_id
+        FROM alerts
+        WHERE user_id = %s AND read IS NOT TRUE
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    return AlertSummary(unread_count=int(count[0]["n"]), newest_unread=_alert_row(newest[0]) if newest else None)
 
 
 def mark_user_alerts_read(user_id: int, alert_ids: list[int] | None = None) -> int:
