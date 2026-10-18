@@ -42,6 +42,11 @@ _RELATIONAL_UNIFIED = """
     ) u
 """
 
+# Name shown under a ticker: tickers.name when it is a real name (most rows just
+# repeat the symbol), else the 10-K company name (ticker_company_names), else the symbol.
+_DISPLAY_NAME = "COALESCE(NULLIF(t.name, t.symbol), n.company_name, t.symbol)"
+_COMPANY_NAMES_JOIN = "LEFT JOIN ticker_company_names n ON n.symbol = t.symbol"
+
 # Most recent quote per symbol from staging_finnhub (loaded daily from raw-data-strg/prices).
 _LATEST_PRICES = """
     SELECT DISTINCT ON (target_ticker)
@@ -64,8 +69,9 @@ def search_tickers(
     Returns tickers with sector.
     """
     # Build WHERE clause
-    where_conditions = ["t.symbol ILIKE %s"]
-    params = [f"%{query}%"]
+    # Match the symbol or the company name ("apple" finds AAPL).
+    where_conditions = [f"(t.symbol ILIKE %s OR {_DISPLAY_NAME} ILIKE %s)"]
+    params = [f"%{query}%", f"%{query}%"]
 
     if sector and sector != "all":
         where_conditions.append("t.sector ILIKE %s")
@@ -86,11 +92,13 @@ def search_tickers(
     sql = f"""
         SELECT
             t.symbol AS ticker,
+            {_DISPLAY_NAME} AS name,
             ''::text AS cik,
             t.sector,
             t.evidence_score,
             NULL::text AS news_snippet
         FROM tickers t
+        {_COMPANY_NAMES_JOIN}
         WHERE {where_clause}
         ORDER BY {sort_column}
         LIMIT %s
@@ -342,7 +350,7 @@ def get_tracked_tickers(limit: int = 500, symbol: str | None = None) -> list[Tra
     # same price.
     sql = f"""
         SELECT
-            t.symbol, t.name, t.sector,
+            t.symbol, {_DISPLAY_NAME} AS name, t.sector,
             CASE WHEN p."current" IS NOT NULL AND (t.price_as_of IS NULL OR p.as_of >= t.price_as_of)
                  THEN p."current" ELSE t.current_price END AS current_price,
             t.evidence_score, t.hype_score,
@@ -351,6 +359,7 @@ def get_tracked_tickers(limit: int = 500, symbol: str | None = None) -> list[Tra
             GREATEST(p.as_of, t.price_as_of) AS price_as_of
         FROM tickers t
         LEFT JOIN ({_LATEST_PRICES}) p ON p.target_ticker = t.symbol
+        {_COMPANY_NAMES_JOIN}
         {"WHERE t.symbol = %s" if symbol else ""}
         ORDER BY t.updated_at DESC
         LIMIT %s
@@ -484,6 +493,31 @@ def get_workspace_by_id(workspace_id: int, user_id: int):
         alerts=0,
         created_at=r["created_at"].isoformat() if r["created_at"] else None,
     )
+
+
+def count_articles() -> tuple[int, int]:
+    """Distinct news articles and distinct SEC filings, counted live at request time.
+
+    News: staging_gnews (relational, loaded nightly). One article is stored once per
+    ticker in its GNews batch, so it is counted by URL. The vectorized gnews/ files
+    hold the same articles, so they are not added again.
+    SEC filings: the union of the paused relational archive (staging_sec_archive) and
+    the vectorized mirror (sec_vectorized_chunks), matched on the undashed accession
+    number (the 4th path segment of SEC/{form}/{CIK}/{accession}/...), so a filing in
+    both is counted once and new filings raise the count as they are vectorized.
+    """
+    rows = query_dict(
+        """
+        SELECT
+            (SELECT COUNT(DISTINCT url) FROM staging_gnews WHERE url IS NOT NULL AND url <> '') AS news,
+            (SELECT COUNT(*) FROM (
+                SELECT accession_number FROM staging_sec_archive WHERE accession_number IS NOT NULL
+                UNION
+                SELECT split_part(source_object, '/', 4) FROM sec_vectorized_chunks WHERE source_object LIKE 'SEC/%'
+            ) filings) AS filings
+        """
+    )
+    return int(rows[0]["news"]), int(rows[0]["filings"])
 
 
 def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:

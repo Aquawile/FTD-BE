@@ -83,6 +83,8 @@ class TestGrants:
         ("staging_gnews", ("SELECT", "INSERT")),
         ("sec_vectorized_chunks", ("SELECT",)),
         ("tickers", ("SELECT", "UPDATE")),
+        ("ticker_company_names", ("SELECT", "INSERT")),
+        ("staging_sec_archive", ("SELECT",)),
     ])
     def test_app_role_can_use_table(self, table, privileges):
         for privilege in privileges:
@@ -161,3 +163,59 @@ class TestAlertEvaluator:
             conn.commit()
         [after] = [r for r in alert_evaluator.evaluate_subscriptions() if r["id"] == sub_id]
         assert after["fired"] is True and "1 new news article for AAPL" in after["message"]
+
+
+class TestArticleCount:
+    def test_news_by_url_plus_sec_filings_across_archive_and_mirror(self):
+        news, filings = crud.count_articles()
+        assert news == _count("SELECT COUNT(DISTINCT url) AS n FROM staging_gnews")
+        # Seed: 2 AAPL filings in the mirror; one also in the paused archive (undashed accession).
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""INSERT INTO staging_sec_archive (target_ticker, accession_number, form_type, content_body)
+                               VALUES ('AAPL', '000032019326000101', '10-K', 'archived element'),
+                                      ('AAPL', '000032019326000101', '10-K', 'second element, same filing'),
+                                      ('AAPL', '000032019324000999', '10-K', 'older filing only in the archive')""")
+            conn.commit()
+        assert crud.count_articles()[1] == filings + 1  # only the archive-only filing is new
+
+    def test_new_article_raises_the_count(self):
+        before = crud.count_articles()[0]
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                url = f"https://example.com/{uuid4().hex}"
+                cur.execute("""INSERT INTO staging_gnews (target_ticker, content_body, normalized_calendar_date, ingest_date, url)
+                               VALUES ('AAPL', 'x', '2026-10-21', now(), %s), ('NVDA', 'x', '2026-10-21', now(), %s)""", (url, url))
+            conn.commit()
+        assert crud.count_articles()[0] == before + 1  # one article filed under two tickers counts once
+
+
+class TestCompanyNames:
+    def test_name_falls_back_to_company_name_and_is_searchable(self):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO tickers (symbol, name, sector) VALUES ('MMM', 'MMM', 'Industrials') ON CONFLICT DO NOTHING")
+                cur.execute("INSERT INTO ticker_company_names (symbol, company_name, source) VALUES ('MMM', '3M', 'test') "
+                            "ON CONFLICT DO NOTHING")
+            conn.commit()
+        [mmm] = crud.get_tracked_tickers(limit=1, symbol="MMM")
+        assert mmm.name == "3M"
+        assert [r.ticker for r in crud.search_tickers("3M")] == ["MMM"]
+        assert query_dict("SELECT name FROM tickers WHERE symbol = 'MMM'")[0]["name"] == "MMM"  # source row untouched
+
+    def test_curated_name_wins_over_company_name(self):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO ticker_company_names (symbol, company_name, source) VALUES ('AAPL', 'Apple', 'test') "
+                            "ON CONFLICT DO NOTHING")
+            conn.commit()
+        [aapl] = crud.get_tracked_tickers(limit=1, symbol="AAPL")
+        assert aapl.name == "Apple Inc."
+        assert "AAPL" in [r.ticker for r in crud.search_tickers("apple")]
+
+    def test_symbol_when_no_name_known(self):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO tickers (symbol, name) VALUES ('ZZZQ', 'ZZZQ') ON CONFLICT DO NOTHING")
+            conn.commit()
+        assert crud.get_tracked_tickers(limit=1, symbol="ZZZQ")[0].name == "ZZZQ"
