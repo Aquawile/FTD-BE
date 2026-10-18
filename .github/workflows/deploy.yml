@@ -42,30 +42,20 @@ jobs:
         run: |
           COMMIT_SHA=${{ github.sha }}
           echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          CI_FOUND=false
-          for i in $(seq 1 18); do
-            CI_STATUS=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
-            if [ -z "$CI_STATUS" ]; then
-              echo "CI not started yet, waiting 10s (attempt $i/18)..."
-              sleep 10
-              continue
-            fi
-            CI_FOUND=true
-            if [ "$CI_STATUS" == "success" ]; then
-              echo "CI passed after $i attempt(s)"
-              break
-            elif [ "$CI_STATUS" == "failure" ]; then
-              echo "ERROR: CI failed for commit $COMMIT_SHA"
-              exit 1
-            else
-              echo "CI status: $CI_STATUS, waiting 10s (attempt $i/18)..."
-              sleep 10
-            fi
+          # Wait for the CI run on this commit to *complete* (db_integration tests make it
+          # take a few minutes), and deploy only if it succeeded.
+          for i in $(seq 1 120); do
+            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
+            case "$RUN" in
+              "completed success") echo "CI passed"; exit 0 ;;
+              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
+              "") echo "CI not started yet (check $i/120)" ;;
+              *) echo "CI: $RUN (check $i/120)" ;;
+            esac
+            sleep 10
           done
-          if [ "$CI_FOUND" != "true" ]; then
-            echo "ERROR: CI workflow not found for commit $COMMIT_SHA after 3 minutes"
-            exit 1
-          fi
+          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
+          exit 1
       
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -287,30 +277,20 @@ jobs:
         run: |
           COMMIT_SHA=${{ github.sha }}
           echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          CI_FOUND=false
-          for i in $(seq 1 18); do
-            CI_STATUS=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
-            if [ -z "$CI_STATUS" ]; then
-              echo "CI not started yet, waiting 10s (attempt $i/18)..."
-              sleep 10
-              continue
-            fi
-            CI_FOUND=true
-            if [ "$CI_STATUS" == "success" ]; then
-              echo "CI passed after $i attempt(s)"
-              break
-            elif [ "$CI_STATUS" == "failure" ]; then
-              echo "ERROR: CI failed for commit $COMMIT_SHA"
-              exit 1
-            else
-              echo "CI status: $CI_STATUS, waiting 10s (attempt $i/18)..."
-              sleep 10
-            fi
+          # Wait for the CI run on this commit to *complete* (db_integration tests make it
+          # take a few minutes), and deploy only if it succeeded.
+          for i in $(seq 1 120); do
+            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
+            case "$RUN" in
+              "completed success") echo "CI passed"; exit 0 ;;
+              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
+              "") echo "CI not started yet (check $i/120)" ;;
+              *) echo "CI: $RUN (check $i/120)" ;;
+            esac
+            sleep 10
           done
-          if [ "$CI_FOUND" != "true" ]; then
-            echo "ERROR: CI workflow not found for commit $COMMIT_SHA after 3 minutes"
-            exit 1
-          fi
+          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
+          exit 1
       
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -431,30 +411,20 @@ jobs:
         run: |
           COMMIT_SHA=${{ github.sha }}
           echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          CI_FOUND=false
-          for i in $(seq 1 18); do
-            CI_STATUS=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
-            if [ -z "$CI_STATUS" ]; then
-              echo "CI not started yet, waiting 10s (attempt $i/18)..."
-              sleep 10
-              continue
-            fi
-            CI_FOUND=true
-            if [ "$CI_STATUS" == "success" ]; then
-              echo "CI passed after $i attempt(s)"
-              break
-            elif [ "$CI_STATUS" == "failure" ]; then
-              echo "ERROR: CI failed for commit $COMMIT_SHA"
-              exit 1
-            else
-              echo "CI status: $CI_STATUS, waiting 10s (attempt $i/18)..."
-              sleep 10
-            fi
+          # Wait for the CI run on this commit to *complete* (db_integration tests make it
+          # take a few minutes), and deploy only if it succeeded.
+          for i in $(seq 1 120); do
+            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
+            case "$RUN" in
+              "completed success") echo "CI passed"; exit 0 ;;
+              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
+              "") echo "CI not started yet (check $i/120)" ;;
+              *) echo "CI: $RUN (check $i/120)" ;;
+            esac
+            sleep 10
           done
-          if [ "$CI_FOUND" != "true" ]; then
-            echo "ERROR: CI workflow not found for commit $COMMIT_SHA after 3 minutes"
-            exit 1
-          fi
+          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
+          exit 1
       
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -585,30 +555,20 @@ jobs:
         run: |
           COMMIT_SHA=${{ github.sha }}
           echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          CI_FOUND=false
-          for i in $(seq 1 18); do
-            CI_STATUS=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=conclusion --jq='.[0].conclusion' 2>/dev/null || echo "")
-            if [ -z "$CI_STATUS" ]; then
-              echo "CI not started yet, waiting 10s (attempt $i/18)..."
-              sleep 10
-              continue
-            fi
-            CI_FOUND=true
-            if [ "$CI_STATUS" == "success" ]; then
-              echo "CI passed after $i attempt(s)"
-              break
-            elif [ "$CI_STATUS" == "failure" ]; then
-              echo "ERROR: CI failed for commit $COMMIT_SHA"
-              exit 1
-            else
-              echo "CI status: $CI_STATUS, waiting 10s (attempt $i/18)..."
-              sleep 10
-            fi
+          # Wait for the CI run on this commit to *complete* (db_integration tests make it
+          # take a few minutes), and deploy only if it succeeded.
+          for i in $(seq 1 120); do
+            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
+            case "$RUN" in
+              "completed success") echo "CI passed"; exit 0 ;;
+              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
+              "") echo "CI not started yet (check $i/120)" ;;
+              *) echo "CI: $RUN (check $i/120)" ;;
+            esac
+            sleep 10
           done
-          if [ "$CI_FOUND" != "true" ]; then
-            echo "ERROR: CI workflow not found for commit $COMMIT_SHA after 3 minutes"
-            exit 1
-          fi
+          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
+          exit 1
       
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
