@@ -406,3 +406,18 @@ export interface AlertResponse {
   severity: string;
   time: string;
 }
+export type AlertSubscriptionType = "price_above" | "price_below" | "news" | "filing";
+
+// A subscription the user created (GET /alerts/subscriptions). The last_* fields
+// come from the evaluator that runs at the end of each data sync.
+export interface AlertSubscription {
+  id: number;
+  ticker: string;
+  alert_type: AlertSubscriptionType;
+  threshold: number | null;
+  active: boolean;
+  created_at: string | null;
+  last_observed_label: string | null;
+  last_evaluated_at: string | null;
+  last_alerted_at: string | null;
+}

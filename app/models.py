@@ -144,3 +144,32 @@ class AlertResponse(BaseModel):
     read: bool = False
     severity: str = "medium"
     time: Optional[str] = None
+    subscription_id: Optional[int] = None
+
+
+# What a subscription watches. Price types need a threshold; news/filing don't.
+AlertType = Literal["price_above", "price_below", "news", "filing"]
+PRICE_ALERT_TYPES = ("price_above", "price_below")
+
+
+class AlertSubscriptionCreate(BaseModel):
+    ticker: str = Field(min_length=1, max_length=10)
+    alert_type: AlertType
+    threshold: Optional[float] = Field(default=None, gt=0)
+
+
+class AlertSubscriptionUpdate(BaseModel):
+    active: Optional[bool] = None
+    threshold: Optional[float] = Field(default=None, gt=0)
+
+
+class AlertSubscriptionResponse(BaseModel):
+    id: int
+    ticker: str
+    alert_type: str
+    threshold: Optional[float] = None
+    active: bool
+    created_at: Optional[str] = None
+    last_observed_label: Optional[str] = None
+    last_evaluated_at: Optional[str] = None
+    last_alerted_at: Optional[str] = None

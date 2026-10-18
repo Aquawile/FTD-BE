@@ -1,15 +1,149 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
-import { Activity, AlertTriangle, ArrowRight, Check, FileText } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Check, FileText, Plus } from "lucide-react";
 import { useAlerts } from "../../hooks";
 import { useTrackedTickers } from "../../hooks/tickerHooks";
+import {
+  createAlertSubscription,
+  getAlertSubscriptions,
+  markAlertsRead,
+  updateAlertSubscription,
+} from "../../api";
+import type { AlertSubscription, AlertSubscriptionType, TrackedTicker } from "../../types";
+
+const SUBSCRIPTION_TYPES: { value: AlertSubscriptionType; label: string }[] = [
+  { value: "price_above", label: "Price closes above" },
+  { value: "price_below", label: "Price closes below" },
+  { value: "news", label: "New news articles" },
+  { value: "filing", label: "New SEC filing" },
+];
+const isPriceType = (t: AlertSubscriptionType) => t === "price_above" || t === "price_below";
+
+function describeSubscription(s: AlertSubscription) {
+  const label = SUBSCRIPTION_TYPES.find(t => t.value === s.alert_type)?.label ?? s.alert_type;
+  return isPriceType(s.alert_type) && s.threshold != null ? `${label} $${s.threshold.toLocaleString()}` : label;
+}
+
+// Only the subscriptions the user has actually created are listed and toggleable.
+// They are checked at the end of each data sync, the only time ticker data changes.
+function AlertSubscriptions({ firebaseUser, trackedTickers }: { firebaseUser: FirebaseUser | null; trackedTickers: TrackedTicker[] }) {
+  const [subs, setSubs] = useState<AlertSubscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [ticker, setTicker] = useState("");
+  const [alertType, setAlertType] = useState<AlertSubscriptionType>("price_above");
+  const [threshold, setThreshold] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getAlertSubscriptions(firebaseUser)
+      .then(data => { setSubs(data); setError(null); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [firebaseUser]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async (s: AlertSubscription) => {
+    setSubs(prev => prev.map(x => x.id === s.id ? { ...x, active: !s.active } : x));
+    try {
+      const updated = await updateAlertSubscription(firebaseUser, s.id, { active: !s.active });
+      setSubs(prev => prev.map(x => x.id === s.id ? updated : x));
+    } catch (e: any) {
+      setSubs(prev => prev.map(x => x.id === s.id ? s : x));
+      setError(e.message);
+    }
+  };
+
+  const add = async () => {
+    const value = Number(threshold);
+    if (!ticker || (isPriceType(alertType) && !(value > 0))) return;
+    setSaving(true);
+    try {
+      const created = await createAlertSubscription(firebaseUser, {
+        ticker, alert_type: alertType, threshold: isPriceType(alertType) ? value : null,
+      });
+      setSubs(prev => [...prev, created]);
+      setAdding(false); setTicker(""); setThreshold(""); setError(null);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "bg-secondary border border-border rounded-lg px-2 py-1.5 text-xs text-foreground";
+
+  return (
+    <Card className="mt-6 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold">Alert Subscriptions</h3>
+        {!adding && <Btn variant="secondary" size="sm" icon={<Plus size={12} />} onClick={() => setAdding(true)}>Add</Btn>}
+      </div>
+      {adding && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-border/50">
+          <select className={inputCls} value={ticker} onChange={e => setTicker(e.target.value)}>
+            <option value="">Ticker…</option>
+            {trackedTickers.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>)}
+          </select>
+          <select className={inputCls} value={alertType} onChange={e => setAlertType(e.target.value as AlertSubscriptionType)}>
+            {SUBSCRIPTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          {isPriceType(alertType) && (
+            <input className={cn(inputCls, "w-24")} type="number" min="0" step="0.01" placeholder="$ price"
+              value={threshold} onChange={e => setThreshold(e.target.value)} />
+          )}
+          <Btn size="sm" onClick={add} disabled={saving || !ticker || (isPriceType(alertType) && !(Number(threshold) > 0))}>
+            {saving ? "Saving…" : "Save"}
+          </Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { setAdding(false); setError(null); }}>Cancel</Btn>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+      <div className="space-y-3 text-sm">
+        {subs.map(s => (
+          <div key={s.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold text-xs text-foreground w-12">{s.ticker}</span>
+                <span className="text-xs text-foreground">{describeSubscription(s)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 ml-14">
+                {s.last_evaluated_at ? `Last checked: ${s.last_observed_label}` : "Checked after the next data sync"}
+              </p>
+            </div>
+            <button
+              type="button" role="switch" aria-checked={s.active} aria-label={`${s.active ? "Pause" : "Resume"} ${s.ticker} alert`}
+              onClick={() => toggle(s)}
+              className={cn("relative inline-flex w-8 h-5 rounded-full cursor-pointer transition-colors shrink-0", s.active ? "bg-primary" : "bg-secondary border border-border")}
+            >
+              <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform", s.active ? "translate-x-3.5" : "translate-x-0.5")} />
+            </button>
+          </div>
+        ))}
+        {!loading && subs.length === 0 && !error && (
+          <p className="text-xs text-muted-foreground text-center py-4">No subscriptions yet. Add one to get alerted when a ticker changes.</p>
+        )}
+        {loading && <p className="text-xs text-muted-foreground text-center py-4">Loading subscriptions…</p>}
+      </div>
+    </Card>
+  );
+}
 
 function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; firebaseUser: FirebaseUser | null }) {
-  const { alerts: ALERTS_DATA, loading, error } = useAlerts(50, firebaseUser);
-  const { tickers: trackedTickers } = useTrackedTickers(50);
+  const { alerts: ALERTS_DATA, loading, error, refetch } = useAlerts(50, firebaseUser);
+  const { tickers: trackedTickers } = useTrackedTickers(500);
   const [filter, setFilter] = useState("all");
+  const unreadCount = ALERTS_DATA.filter(a => !a.read).length;
+
+  const markAllRead = async () => {
+    await markAlertsRead(firebaseUser).catch(() => undefined);
+    refetch();
+  };
 
   const filtered = filter === "all"
     ? ALERTS_DATA
@@ -54,9 +188,9 @@ function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; f
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Alerts</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{ALERTS_DATA.filter(a => !a.read).length} unread notifications</p>
+          <p className="text-muted-foreground text-sm mt-0.5">{unreadCount} unread notifications</p>
         </div>
-        <Btn variant="secondary" size="sm" icon={<Check size={12} />}>Mark all read</Btn>
+        <Btn variant="secondary" size="sm" icon={<Check size={12} />} onClick={markAllRead} disabled={unreadCount === 0}>Mark all read</Btn>
       </div>
       <div className="flex gap-2 mb-4 flex-wrap">
         {["all", "unread", "high", "medium", "low"].map(f => (
@@ -89,28 +223,7 @@ function AlertsPage({ navigate, firebaseUser }: { navigate: (p: Page) => void; f
         )}
       </div>
 
-      {/* Subscription settings */}
-      <Card className="mt-6 p-5">
-        <h3 className="font-semibold mb-4">Alert Subscriptions</h3>
-        <div className="space-y-3 text-sm">
-          {trackedTickers.slice(0, 5).map(t => (
-            <div key={t.symbol} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-semibold text-xs text-foreground w-12">{t.symbol}</span>
-                <span className="text-xs text-muted-foreground">{t.name}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={cn("relative inline-flex w-8 h-5 rounded-full cursor-pointer transition-colors shrink-0", "bg-primary")}>
-                  <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform translate-x-3.5" />
-                </div>
-              </div>
-            </div>
-          ))}
-          {trackedTickers.length === 0 && !loading && (
-            <p className="text-xs text-muted-foreground text-center py-4">No tracked tickers.</p>
-          )}
-        </div>
-      </Card>
+      <AlertSubscriptions firebaseUser={firebaseUser} trackedTickers={trackedTickers} />
     </div>
   );
 }

@@ -6,6 +6,8 @@ import type {
   PriceRow,
   WorkspaceResponse,
   AlertResponse,
+  AlertSubscription,
+  AlertSubscriptionType,
   DashboardStats,
 } from "../types";
 import { FirebaseUser } from "firebase/auth";
@@ -190,6 +192,48 @@ export async function deleteWorkspace(id: string): Promise<void> {
 
 export async function getAlerts(limit = 10): Promise<AlertResponse[]> {
   return fetchWithAuth<AlertResponse[]>(`/alerts?limit=${limit}`);
+}
+
+async function jsonOrThrow<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+export async function markAlertsRead(firebaseUser: FirebaseUser | null, alertIds?: number[]): Promise<{ updated: number }> {
+  const res = await apiRequest("/alerts/read", firebaseUser, {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ alert_ids: alertIds ?? null }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function getAlertSubscriptions(firebaseUser: FirebaseUser | null): Promise<AlertSubscription[]> {
+  return jsonOrThrow(await apiRequest("/alerts/subscriptions", firebaseUser));
+}
+
+export async function createAlertSubscription(
+  firebaseUser: FirebaseUser | null,
+  body: { ticker: string; alert_type: AlertSubscriptionType; threshold?: number | null },
+): Promise<AlertSubscription> {
+  const res = await apiRequest("/alerts/subscriptions", firebaseUser, {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function updateAlertSubscription(
+  firebaseUser: FirebaseUser | null,
+  id: number,
+  body: { active?: boolean; threshold?: number },
+): Promise<AlertSubscription> {
+  const res = await apiRequest(`/alerts/subscriptions/${id}`, firebaseUser, {
+    method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body),
+  });
+  return jsonOrThrow(res);
 }
 
 // ────────────────────────────────────────────────
