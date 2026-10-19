@@ -1,0 +1,11 @@
+[Unit]
+Description=Power off data-ingest-vm 90 minutes after boot (cost safety net; cancel with: sudo shutdown -c)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/shutdown -P +90 "data-ingest-vm max uptime (90 min) reached"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

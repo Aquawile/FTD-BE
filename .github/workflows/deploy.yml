@@ -585,6 +585,36 @@ jobs:
           
           echo "Frontend deployment to staging complete"
 
+      # data-ingest-vm (price fetcher + SEC 8-K app) is never started by the deploy:
+      # it installs the latest published release itself at every boot
+      # (sec/scripts/vm_startup.sh). If it happens to be running and idle, the
+      # release is applied right away.
+      - name: Publish data-ingest release
+        run: |
+          set -euo pipefail
+          SHA=${{ github.sha }}
+          R=$(mktemp -d)
+          mkdir -p "$R/sec" "$R/prices" "$R/deploy"
+          tar -C sec --exclude=.venv --exclude=__pycache__ --exclude=.env --exclude='error_log*' -cf - . | tar -C "$R/sec" -xf -
+          cp prices/main.py prices/requirements.txt prices/run.sh "$R/prices/"
+          cp deploy/data-ingest/max-uptime-shutdown.service "$R/deploy/"
+          echo "$SHA" > "$R/SHA"
+          tar -czf /tmp/data-ingest.tgz -C "$R" .
+          gcloud storage cp /tmp/data-ingest.tgz "gs://ftd2026-releases/data-ingest/$SHA.tgz" --quiet
+          gcloud compute instances add-metadata data-ingest-vm --zone=$ZONE --project=$PROJECT \
+            --metadata-from-file startup-script=sec/scripts/vm_startup.sh
+          # Pointer last, so a VM never sees a CURRENT whose bundle isn't uploaded yet.
+          echo "$SHA" | gcloud storage cp - gs://ftd2026-releases/data-ingest/CURRENT --quiet
+          echo "Published data-ingest release $SHA"
+
+          st=$(gcloud compute instances describe data-ingest-vm --zone=$ZONE --project=$PROJECT --format='value(status)')
+          if [ "$st" != "RUNNING" ]; then echo "data-ingest-vm is $st: it installs $SHA at its next boot"; exit 0; fi
+          gcloud compute ssh isabellabutera@data-ingest-vm --zone=$ZONE --project=$PROJECT --tunnel-through-iap --quiet --command='
+            if pgrep -f "src.main|prices/main.py" >/dev/null; then echo "a data-ingest job is running; release applies at next boot"; exit 0; fi
+            curl -sf -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/startup-script \
+              | sudo env UPDATE_ONLY=1 bash' \
+            || echo "WARNING: could not apply now; data-ingest-vm installs $SHA at its next boot"
+
       - name: Run post-deployment verification script
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
