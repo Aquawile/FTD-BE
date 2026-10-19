@@ -16,6 +16,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
@@ -51,7 +55,6 @@ jobs:
 
   db-integration-tests:
     name: Database Integration Tests
-    needs: unit-tests
     runs-on: ubuntu-latest
     # Throwaway Postgres for this job only, shaped like staging by
     # tests/schema/setup_test_db.sh. Never connects to staging; credentials
@@ -73,6 +76,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
@@ -113,13 +120,16 @@ jobs:
 
   api-contract-tests:
     name: API Contract Tests
-    needs: db-integration-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
@@ -137,15 +147,41 @@ jobs:
           retention-days: 7
       - run: python3 scripts/summarize_tests.py api-contract-test-results.xml "API Contract Test Results"
 
+  # Type-checks and builds the web app once. The staging deploy ships this exact
+  # build (artifact "web-dist") instead of rebuilding it.
+  frontend:
+    name: Frontend (type-check + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: context/figma_prototype
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: context/figma_prototype/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit -p .
+      - run: npx vite build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: context/figma_prototype/dist
+          retention-days: 7
+
   ci-complete:
     name: CI Complete
-    needs: [unit-tests, db-integration-tests, api-contract-tests]
+    needs: [unit-tests, db-integration-tests, api-contract-tests, frontend]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI stages passed"
       - if: always()
         run: |
           echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          status="${{ needs.frontend.result }}"
+          echo "| frontend | $([ "$status" = success ] && echo '✅ Passed' || echo "❌ $status") |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
