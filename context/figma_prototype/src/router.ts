@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 export type Page =
-  | "login" | "register" | "verify-email" | "forgot-password" | "onboarding-done"
+  | "login" | "register" | "verify-email" | "forgot-password"
   | "dashboard" | "search" | "ticker" | "ticker-timeline" | "ticker-filings" | "ticker-community" | "ticker-comparison"
   | "workspaces" | "workspace-detail" | "workspace-settings"
   | "chat" | "alerts" | "profile"

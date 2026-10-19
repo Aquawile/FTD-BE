@@ -13,7 +13,9 @@ report and exits 1 if anything is behind:
               (prices are vectorized daily, so this moves every day)
   sync        the last sync_all_recent.sh run finished with status=0 within SYNC_MAX_AGE_HOURS
 
-Usage: python3 scripts/check_data_freshness.py [--log PATH]
+Usage: python3 scripts/check_data_freshness.py [--log PATH] [--skip-sync-log]
+  --skip-sync-log  used when run as the last step *inside* the sync, whose own
+                   "finished" line isn't written yet
 """
 from __future__ import annotations
 
@@ -99,6 +101,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--log", default=DEFAULT_LOG)
+    parser.add_argument("--skip-sync-log", action="store_true")
     args = parser.parse_args()
     now = datetime.now(timezone.utc)
 
@@ -109,19 +112,19 @@ def main() -> int:
         newest_news = cur.fetchone()[0]
         cur.execute("SELECT MAX(vectorized_at) FROM sec_vectorized_chunks")
         newest_vector = cur.fetchone()[0]
-    try:
-        with open(args.log, encoding="utf-8", errors="replace") as fh:
-            log_text = fh.read()[-200_000:]
-    except OSError as exc:
-        log_text = ""
-        print(f"(could not read {args.log}: {exc})", file=sys.stderr)
-
     checks = [
         check_prices(newest_quote, now),
         check_age("news", newest_news, now, NEWS_MAX_AGE_HOURS),
         check_age("vectorized", newest_vector, now, VECTOR_MAX_AGE_HOURS),
-        check_sync_log(log_text, now),
     ]
+    if not args.skip_sync_log:
+        try:
+            with open(args.log, encoding="utf-8", errors="replace") as fh:
+                log_text = fh.read()[-200_000:]
+        except OSError as exc:
+            log_text = ""
+            print(f"(could not read {args.log}: {exc})", file=sys.stderr)
+        checks.append(check_sync_log(log_text, now))
     print(report(checks, now))
     return 0 if all(c.ok for c in checks) else 1
 

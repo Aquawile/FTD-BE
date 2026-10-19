@@ -431,6 +431,12 @@ the `ftd-api` systemd unit and runs, independently:
    `alert_subscription_state` and inserts into `alerts` only when the watched value changed
    (`app/services/alert_evaluator.py`). The web app shows them via `/alerts/summary`.
 
+4. `scripts/check_data_freshness.py` (read-only): prices vs the last trading day, news and vectorized ages;
+   its table is written to the sync log. The same check runs in GitHub Actions on every push to `staging`
+   (`.github/workflows/data-freshness.yml`; opens `incident/data-freshness-<date>` if behind). GitHub only
+   schedules workflows on the default branch (`main` = production, not used), hence the daily run on the VM.
+   Deploys install all these scripts (deploy.yml, after a healthy API deploy).
+
 The crontab also has `@reboot sleep 120 && ~/prices/sync_all_recent.sh`: the VMs are often
 stopped overnight, and cron does not replay missed runs, so a boot catches up whatever was missed.
 The pipeline does not ship these scripts; copy them to the VM by hand after changing them.
