@@ -2,7 +2,6 @@ export { default as LoginPage } from "./LoginPage";
 export { default as RegisterPage } from "./RegisterPage";
 export { default as VerifyEmailPage } from "./VerifyEmailPage";
 export { default as ForgotPasswordPage } from "./ForgotPasswordPage";
-export { default as OnboardingPage } from "./OnboardingPage";
 export { default as DashboardPage } from "./DashboardPage";
 export { default as SearchPage } from "./SearchPage";
 export { default as TickerDashboard } from "./TickerDashboard";

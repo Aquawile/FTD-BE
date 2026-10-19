@@ -17,7 +17,6 @@ import {
   RegisterPage,
   VerifyEmailPage,
   ForgotPasswordPage,
-  OnboardingPage,
   DashboardPage,
   SearchPage,
   TickerDashboard,
@@ -105,7 +104,7 @@ function App() {
     navigate("login");
   };
 
-  const publicPages: Page[] = ["login", "register", "verify-email", "forgot-password", "onboarding-done"];
+  const publicPages: Page[] = ["login", "register", "verify-email", "forgot-password"];
   const isPublic = publicPages.includes(page);
 
   const userEmail = firebaseUser?.email || userProfile?.email || "";
@@ -117,7 +116,6 @@ function App() {
       case "register": return <RegisterPage navigate={navigate} />;
       case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email ?? undefined} />;
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
-      case "onboarding-done": return <OnboardingPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} initialQuery={searchText} />;
       case "ticker": return <TickerDashboard navigate={navigate} ticker={selectedTicker} firebaseUser={firebaseUser} onSetAlert={t => { setAlertPrefill(t); navigate("alerts"); }} />;

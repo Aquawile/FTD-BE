@@ -4,6 +4,7 @@
 #   2. sync_vectorized_to_postgres.py ftd-vectorized-data        -> sec_vectorized_chunks (incremental)
 #   3. load_company_names.py          company_names.json           -> ticker_company_names (new tickers only)
 #   4. evaluate_alert_subscriptions.py alert_subscriptions        -> alerts (only when a watched value changed)
+#   5. check_data_freshness.py         (read-only)                 -> report in this log
 # SEC endpoints read ftd-vectorized-data directly, so they need no sync step.
 #
 # Cron has no PG* variables, so take them from the ftd-api systemd unit (the
@@ -28,6 +29,9 @@ status=0
   "$PY" /home/isabellabutera/app/scripts/load_company_names.py || { echo "company names load FAILED"; status=1; }
   # Last: the ticker data only changes here, so alert subscriptions are checked once, after the fetch.
   "$PY" /home/isabellabutera/app/scripts/evaluate_alert_subscriptions.py || { echo "alert evaluation FAILED"; status=1; }
+  # Daily freshness check (read-only), after everything above has loaded. Report goes to this log.
+  "$PY" /home/isabellabutera/app/scripts/check_data_freshness.py --skip-sync-log \
+    || echo "DATA FRESHNESS: behind (see table above)"
   echo "=== finished at $(date -u) (status=$status) ==="
 } >> "$LOG_FILE" 2>&1
 exit $status

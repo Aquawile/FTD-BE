@@ -37,3 +37,8 @@ Workspace settings: hype toggles. Sidebar: hardcoded "2" alerts badge. Search: h
 1. `git mv src/archive/pages/X.tsx src/components/pages/X.tsx`
 2. Re-export it in `components/pages/index.ts` and re-add its `case` in `app/App.tsx` (and sidebar item in `components/Shell.tsx`)
 3. If it uses score components, import them from `../../archive/ui/scores` or move them back to `components/ui`
+
+
+## Onboarding page (archived 2026-10-19)
+
+`archive/pages/OnboardingPage.tsx`: 3-step welcome → "pick sectors you're interested in" → done, from the Figma prototype. Nothing linked to it (route `onboarding-done` removed) and the chosen sectors were never saved. Restore it if sign-up should collect interests and something uses them.

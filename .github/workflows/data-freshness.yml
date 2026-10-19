@@ -1,14 +1,17 @@
 name: Data Freshness
 
-# Daily read-only check that prices, news and the vectorized mirror are current
+# Read-only check that prices, news and the vectorized mirror are current
 # (scripts/check_data_freshness.py on ftd-staging-api). If something is behind,
-# the run fails and opens incident/data-freshness-<date> with the report, so it
-# can be inspected in GitHub. If the VMs are stopped, the check is skipped: the
-# sync catches up by itself at the next boot (@reboot cron).
+# the run fails and opens incident/data-freshness-<date> with the report.
+#
+# Runs on every push to staging (i.e. after each deploy). GitHub only runs
+# scheduled / manually-dispatched workflows from the default branch (main, which
+# is production and left alone), so the *daily* check runs on the VM instead, as
+# the last step of the nightly sync (scripts/sync_all_recent.sh).
+# If the API VM is stopped the check is skipped: the sync catches up at next boot.
 on:
-  schedule:
-    - cron: "0 1 * * *"   # 01:00 UTC, after the 00:20 sync
-  workflow_dispatch:
+  push:
+    branches: [staging]
 
 permissions:
   contents: write
