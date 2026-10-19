@@ -249,61 +249,118 @@ jobs:
           
           echo "Application deployment to development complete"
 
-  deploy-staging-migrations:
-    name: Apply Staging Database Migrations
+  # Staging: one job, one Cloud SDK setup, one wait for CI. It deploys the exact web
+  # build CI produced (artifact "web-dist"), starts whichever VMs are off (Postgres
+  # included), and stops those again at the end so the VMs end in the state they
+  # started in. Backend goes live before the web app. No data or tables are touched
+  # beyond the migration ledger.
+  deploy-staging:
+    name: Deploy Staging
     if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'staging')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
       actions: read
     environment: staging
+    env:
+      ZONE: us-west2-a
+      PROJECT: ftd2026
+      STAGING_VMS: ftd-postgres-vm ftd-staging-api ftd-staging-web
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      
-      - name: Record deployed revision
-        run: |
-          echo "Deploying revision: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit message: $(git log -1 --format=%s)"
-      
-      - name: Verify CI passed
-        if: github.event_name == 'push'
+          fetch-depth: 1
+
+      - name: Wait for CI on this commit
+        id: ci
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           COMMIT_SHA=${{ github.sha }}
-          echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          # Wait for the CI run on this commit to *complete* (db_integration tests make it
-          # take a few minutes), and deploy only if it succeeded.
+          echo "Deploying $COMMIT_SHA: $(git log -1 --format=%s)"
+          if [ "${{ github.event_name }}" != "push" ]; then echo "manual run: CI wait skipped"; exit 0; fi
           for i in $(seq 1 120); do
-            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
-            case "$RUN" in
-              "completed success") echo "CI passed"; exit 0 ;;
-              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
-              "") echo "CI not started yet (check $i/120)" ;;
-              *) echo "CI: $RUN (check $i/120)" ;;
+            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=databaseId,status,conclusion \
+                  --jq='.[0] | "\(.databaseId) \(.status) \(.conclusion)"' 2>/dev/null || echo "")
+            set -- $RUN
+            case "$2 $3" in
+              "completed success") echo "CI passed (run $1)"; echo "run_id=$1" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              completed*) echo "ERROR: CI finished as '$3' for $COMMIT_SHA"; exit 1 ;;
             esac
+            echo "CI: ${RUN:-not started} (check $i/120)"
             sleep 10
           done
-          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
-          exit 1
-      
+          echo "ERROR: CI did not complete within 20 minutes"; exit 1
+
+      # Build once, deploy that build: reuse the web app CI already type-checked and built.
+      - name: Download web build from CI
+        id: webdist
+        if: steps.ci.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: context/figma_prototype/dist
+          run-id: ${{ steps.ci.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only for manual runs (or if the artifact is missing): build with a cached npm.
+      - name: Set up Node (fallback build)
+        if: steps.webdist.outcome != 'success'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: context/figma_prototype/package-lock.json
+      - name: Build web app (fallback)
+        if: steps.webdist.outcome != 'success'
+        working-directory: context/figma_prototype
+        run: npm ci --no-audit --no-fund && npx vite build
+
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
           service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
-      
+
+      # The runner image already ships the Cloud SDK; reuse it instead of downloading
+      # a fresh copy (that alone took 40-60 s per job before).
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ftd2026
-          install_components: beta
-      
+          skip_install: true
+
+      - name: Start staging VMs that are off
+        id: vms
+        run: |
+          stopped=""
+          for vm in $STAGING_VMS; do
+            st=$(gcloud compute instances describe $vm --zone=$ZONE --project=$PROJECT --format='value(status)')
+            echo "$vm: $st"
+            [ "$st" = "RUNNING" ] || stopped="$stopped $vm"
+          done
+          echo "stopped=$stopped" >> "$GITHUB_OUTPUT"
+          if [ -n "$stopped" ]; then
+            echo "Starting:$stopped"
+            gcloud compute instances start $stopped --zone=$ZONE --project=$PROJECT --quiet
+          fi
+          for vm in $STAGING_VMS; do
+            for i in $(seq 1 30); do
+              if gcloud compute ssh isabellabutera@$vm --zone=$ZONE --project=$PROJECT --tunnel-through-iap --quiet --command=true 2>/dev/null; then
+                echo "$vm SSH ready"; continue 2
+              fi
+              sleep 6
+            done
+            echo "ERROR: $vm not SSH-ready within 3 minutes"; exit 1
+          done
+
       - name: Apply Staging Database Migrations
         env:
           GCP_PROJECT: ftd2026
@@ -382,84 +439,8 @@ jobs:
 
           echo "=== All Migrations Applied Successfully ==="
 
-  deploy-staging-backend:
-    name: Deploy Staging Backend (ftd-staging-api)
-    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'staging')
-    needs: deploy-staging-migrations
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      actions: read
-    environment: staging
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Record deployed revision
+      - name: Deploy backend to ftd-staging-api
         run: |
-          echo "Deploying revision: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit message: $(git log -1 --format=%s)"
-      
-      - name: Verify CI passed
-        if: github.event_name == 'push'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          COMMIT_SHA=${{ github.sha }}
-          echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          # Wait for the CI run on this commit to *complete* (db_integration tests make it
-          # take a few minutes), and deploy only if it succeeded.
-          for i in $(seq 1 120); do
-            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
-            case "$RUN" in
-              "completed success") echo "CI passed"; exit 0 ;;
-              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
-              "") echo "CI not started yet (check $i/120)" ;;
-              *) echo "CI: $RUN (check $i/120)" ;;
-            esac
-            sleep 10
-          done
-          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
-          exit 1
-      
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
-          service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ftd2026
-          install_components: beta
-      
-      - name: Deploy Backend to ftd-staging-api
-        run: |
-          echo "Starting backend deployment to ftd-staging-api..."
-          
-          gcloud compute instances start ftd-staging-api --zone=us-west2-a --project=ftd2026 --quiet
-
-          READY=false
-          for i in $(seq 1 18); do
-            if gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="echo 'ftd-staging-api SSH ready'" --quiet; then
-              echo "SSH ready after $i attempt(s)"
-              READY=true
-              break
-            fi
-            echo "SSH not ready yet, waiting 10s (attempt $i/18)..."
-            sleep 10
-          done
-
-          if [ "$READY" != "true" ]; then
-            echo "ERROR: ftd-staging-api did not become SSH-ready within 3 minutes"
-            exit 1
-          fi
-          
           api() { gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --quiet --command="$1"; }
 
           # The VM runs the API as systemd unit ftd-api.service (uvicorn app.main:app on :8080,
@@ -550,90 +531,9 @@ jobs:
 
           echo "Backend deployment to staging complete"
 
-  deploy-staging-web:
-    name: Deploy Staging Web (ftd-staging-web)
-    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'staging')
-    needs: deploy-staging-backend
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      actions: read
-    environment: staging
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Record deployed revision
+      - name: Deploy web app to ftd-staging-web
         run: |
-          echo "Deploying revision: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit message: $(git log -1 --format=%s)"
-      
-      - name: Verify CI passed
-        if: github.event_name == 'push'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          COMMIT_SHA=${{ github.sha }}
-          echo "Waiting for CI to complete for commit $COMMIT_SHA..."
-          # Wait for the CI run on this commit to *complete* (db_integration tests make it
-          # take a few minutes), and deploy only if it succeeded.
-          for i in $(seq 1 120); do
-            RUN=$(gh run list --workflow="CI" --commit="$COMMIT_SHA" --limit=1 --json=status,conclusion --jq='.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || echo "")
-            case "$RUN" in
-              "completed success") echo "CI passed"; exit 0 ;;
-              completed*) echo "ERROR: CI finished as '${RUN#completed }' for commit $COMMIT_SHA"; exit 1 ;;
-              "") echo "CI not started yet (check $i/120)" ;;
-              *) echo "CI: $RUN (check $i/120)" ;;
-            esac
-            sleep 10
-          done
-          echo "ERROR: CI did not complete for commit $COMMIT_SHA within 20 minutes"
-          exit 1
-      
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
-          service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ftd2026
-          install_components: beta
-      
-      - name: Start Web VM and verify SSH
-        run: |
-          echo "Starting frontend deployment to ftd-staging-web..."
-          
-          gcloud compute instances start ftd-staging-web --zone=us-west2-a --project=ftd2026 --quiet
-
-          READY=false
-          for i in $(seq 1 18); do
-            if gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --command="echo 'ftd-staging-web SSH ready'" --quiet; then
-              echo "SSH ready after $i attempt(s)"
-              READY=true
-              break
-            fi
-            echo "SSH not ready yet, waiting 10s (attempt $i/18)..."
-            sleep 10
-          done
-
-          if [ "$READY" != "true" ]; then
-            echo "ERROR: ftd-staging-web did not become SSH-ready within 3 minutes"
-            exit 1
-          fi
-      
-      - name: Build and deploy React frontend
-        run: |
-          echo "Building React frontend..."
-          npm ci --prefix context/figma_prototype
-          npm run build --prefix context/figma_prototype
-          
+          test -f context/figma_prototype/dist/index.html
           web() { gcloud compute ssh isabellabutera@ftd-staging-web --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --quiet --command="$1"; }
 
           # nginx serves root /home/isabellabutera/frontend/dist. Replace that directory as a whole
@@ -673,7 +573,7 @@ jobs:
               sudo systemctl reload nginx"
             exit 1
           fi
-      
+
       - name: Write version metadata to Web VM
         run: |
           echo "Writing version metadata..."
@@ -685,34 +585,6 @@ jobs:
           
           echo "Frontend deployment to staging complete"
 
-  deploy-staging-verify:
-    name: Verify Staging End-to-End
-    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'staging')
-    needs: [deploy-staging-backend, deploy-staging-web]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      actions: read
-    environment: staging
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
-          service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ftd2026
-          install_components: beta
-      
       - name: Run post-deployment verification script
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
@@ -728,3 +600,9 @@ jobs:
           name: staging-verification-results
           path: verification-results.json
           retention-days: 30
+
+      - name: Stop VMs that were off before this deploy
+        if: always() && steps.vms.outputs.stopped != ''
+        run: |
+          echo "Restoring stopped state:${{ steps.vms.outputs.stopped }}"
+          gcloud compute instances stop ${{ steps.vms.outputs.stopped }} --zone=$ZONE --project=$PROJECT --quiet
