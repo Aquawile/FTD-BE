@@ -35,6 +35,10 @@ app = FastAPI(
     title="FTD Lakehouse API",
     description="Read-only API for financial research data: prices, news, SEC filings, timeline.",
     version="0.1.0",
+    # Research web app only; the API is not offered publicly, so no interactive docs.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 

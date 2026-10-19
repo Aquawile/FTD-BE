@@ -35,7 +35,7 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
             <span className="font-bold text-xl tracking-tight" style={{ fontFamily: "'Outfit', sans-serif" }}>FTD</span>
           </div>
           <h1 className="text-2xl font-bold mb-1">Create your account</h1>
-          <p className="text-muted-foreground text-sm">Free during beta · No credit card needed</p>
+          <p className="text-muted-foreground text-sm">For research purposes only · Not investment advice</p>
         </div>
         {error && (
           <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">

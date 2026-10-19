@@ -369,27 +369,41 @@ def get_tracked_tickers(limit: int = 500, symbol: str | None = None) -> list[Tra
     return results
 
 
+_WORKSPACE_SELECT = """
+    SELECT w.id, w.name, w.created_at, w.description, w.alert_on_filings,
+           COALESCE(ARRAY_AGG(wt.ticker_symbol ORDER BY wt.ticker_symbol)
+                    FILTER (WHERE wt.ticker_symbol IS NOT NULL), '{}') AS tickers,
+           (SELECT COUNT(*) FROM alerts a
+             WHERE a.user_id = w.user_id AND a.read IS NOT TRUE
+               AND a.ticker IN (SELECT ticker_symbol FROM workspace_tickers WHERE workspace_id = w.id)) AS unread_alerts
+    FROM workspaces w
+    LEFT JOIN workspace_tickers wt ON wt.workspace_id = w.id
+"""
+
+
+def _workspace_row(r: dict) -> WorkspaceResponse:
+    return WorkspaceResponse(
+        id=r["id"],
+        name=r["name"],
+        tickers=r["tickers"] or [],
+        alerts=int(r.get("unread_alerts") or 0),
+        created_at=r["created_at"].isoformat() if r["created_at"] else None,
+        description=r.get("description"),
+        alert_on_filings=bool(r.get("alert_on_filings")),
+    )
+
+
 def get_user_workspaces(user_id: int) -> list[WorkspaceResponse]:
-    sql = """
-        SELECT w.id, w.name, w.created_at,
-               COALESCE(ARRAY_AGG(wt.ticker_symbol) FILTER (WHERE wt.ticker_symbol IS NOT NULL), '{}') AS tickers
-        FROM workspaces w
-        LEFT JOIN workspace_tickers wt ON wt.workspace_id = w.id
-        WHERE w.user_id = %s
-        GROUP BY w.id, w.name, w.created_at
+    """The user's workspaces, newest first. Archived workspaces are hidden, not deleted."""
+    rows = query_dict(
+        _WORKSPACE_SELECT + """
+        WHERE w.user_id = %s AND w.archived_at IS NULL
+        GROUP BY w.id
         ORDER BY w.created_at DESC
-    """
-    rows = query_dict(sql, (user_id,))
-    results = []
-    for r in rows:
-        results.append(WorkspaceResponse(
-            id=r["id"],
-            name=r["name"],
-            tickers=r["tickers"] or [],
-            alerts=0,
-            created_at=r["created_at"].isoformat() if r["created_at"] else None,
-        ))
-    return results
+        """,
+        (user_id,),
+    )
+    return [_workspace_row(r) for r in rows]
 
 
 def create_workspace(user_id: int, name: str, ticker_symbols: list[str] | None = None) -> WorkspaceResponse:
@@ -423,16 +437,73 @@ def create_workspace(user_id: int, name: str, ticker_symbols: list[str] | None =
     )
 
 
-def delete_workspace(user_id: int, workspace_id: int) -> None:
+def archive_workspace(user_id: int, workspace_id: int) -> None:
+    """Hide a workspace from the user's list. The row and its tickers are kept."""
     from app.db import execute
-    sql = """
-        DELETE FROM workspaces
-        WHERE id = %s AND user_id = %s
+    execute(
+        "UPDATE workspaces SET archived_at = NOW() WHERE id = %s AND user_id = %s AND archived_at IS NULL",
+        (workspace_id, user_id),
+    )
+    _sync_filing_alerts(user_id)
+
+
+def update_workspace(user_id: int, workspace_id: int, name: str | None, description: str | None,
+                     alert_on_filings: bool | None) -> None:
+    from app.db import execute
+    execute(
+        """
+        UPDATE workspaces
+        SET name = COALESCE(%s, name),
+            description = COALESCE(%s, description),
+            alert_on_filings = COALESCE(%s, alert_on_filings)
+        WHERE id = %s AND user_id = %s AND archived_at IS NULL
+        """,
+        (name, description, alert_on_filings, workspace_id, user_id),
+    )
+    if alert_on_filings is not None:
+        _sync_filing_alerts(user_id)
+
+
+def _sync_filing_alerts(user_id: int) -> None:
+    """Keep "new SEC filing" subscriptions in line with workspaces that have alert_on_filings on.
+
+    Every ticker in such a workspace gets an active filing subscription (created if
+    missing). A filing subscription for a ticker no such workspace covers any more is
+    paused, never deleted. Subscriptions the user manages on the Alerts page for
+    tickers outside these workspaces are left alone.
     """
-    execute(sql, (workspace_id, user_id))
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH wanted AS (
+                    SELECT DISTINCT wt.ticker_symbol AS ticker
+                    FROM workspaces w JOIN workspace_tickers wt ON wt.workspace_id = w.id
+                    WHERE w.user_id = %(u)s AND w.alert_on_filings AND w.archived_at IS NULL
+                )
+                INSERT INTO alert_subscriptions (user_id, ticker, alert_type, threshold, active)
+                SELECT %(u)s, ticker, 'filing', NULL, TRUE FROM wanted
+                ON CONFLICT (user_id, ticker, alert_type) DO UPDATE SET active = TRUE
+                """,
+                {"u": user_id},
+            )
+            cur.execute(
+                """
+                UPDATE alert_subscriptions s SET active = FALSE
+                WHERE s.user_id = %(u)s AND s.alert_type = 'filing' AND s.active
+                  AND s.ticker IN (SELECT wt.ticker_symbol FROM workspaces w
+                                   JOIN workspace_tickers wt ON wt.workspace_id = w.id
+                                   WHERE w.user_id = %(u)s)
+                  AND s.ticker NOT IN (SELECT wt.ticker_symbol FROM workspaces w
+                                       JOIN workspace_tickers wt ON wt.workspace_id = w.id
+                                       WHERE w.user_id = %(u)s AND w.alert_on_filings AND w.archived_at IS NULL)
+                """,
+                {"u": user_id},
+            )
+        conn.commit()
 
 
-def add_ticker_to_workspace(workspace_id: int, ticker_symbol: str) -> None:
+def add_ticker_to_workspace(workspace_id: int, ticker_symbol: str, user_id: int | None = None) -> None:
     from app.db import execute
     sql = """
         INSERT INTO workspace_tickers (workspace_id, ticker_symbol)
@@ -440,15 +511,19 @@ def add_ticker_to_workspace(workspace_id: int, ticker_symbol: str) -> None:
         ON CONFLICT DO NOTHING
     """
     execute(sql, (workspace_id, ticker_symbol))
+    if user_id is not None:
+        _sync_filing_alerts(user_id)
 
 
-def remove_ticker_from_workspace(workspace_id: int, ticker_symbol: str) -> None:
+def remove_ticker_from_workspace(workspace_id: int, ticker_symbol: str, user_id: int | None = None) -> None:
     from app.db import execute
     sql = """
         DELETE FROM workspace_tickers
         WHERE workspace_id = %s AND ticker_symbol = %s
     """
     execute(sql, (workspace_id, ticker_symbol))
+    if user_id is not None:
+        _sync_filing_alerts(user_id)
 
 
 def get_workspace_tickers(workspace_id: int) -> list[str]:
@@ -463,31 +538,20 @@ def get_workspace_tickers(workspace_id: int) -> list[str]:
 
 
 def workspace_exists(workspace_id: int, user_id: int) -> bool:
-    sql = "SELECT 1 FROM workspaces WHERE id = %s AND user_id = %s"
+    sql = "SELECT 1 FROM workspaces WHERE id = %s AND user_id = %s AND archived_at IS NULL"
     rows = query_dict(sql, (workspace_id, user_id))
     return len(rows) > 0
 
 
-def get_workspace_by_id(workspace_id: int, user_id: int):
-    sql = """
-        SELECT w.id, w.name, w.created_at,
-               COALESCE(ARRAY_AGG(wt.ticker_symbol) FILTER (WHERE wt.ticker_symbol IS NOT NULL), '{}') AS tickers
-        FROM workspaces w
-        LEFT JOIN workspace_tickers wt ON wt.workspace_id = w.id
-        WHERE w.id = %s AND w.user_id = %s
-        GROUP BY w.id, w.name, w.created_at
-    """
-    rows = query_dict(sql, (workspace_id, user_id))
-    if not rows:
-        return None
-    r = rows[0]
-    return WorkspaceResponse(
-        id=r["id"],
-        name=r["name"],
-        tickers=r["tickers"] or [],
-        alerts=0,
-        created_at=r["created_at"].isoformat() if r["created_at"] else None,
+def get_workspace_by_id(workspace_id: int, user_id: int) -> WorkspaceResponse | None:
+    rows = query_dict(
+        _WORKSPACE_SELECT + """
+        WHERE w.id = %s AND w.user_id = %s AND w.archived_at IS NULL
+        GROUP BY w.id
+        """,
+        (workspace_id, user_id),
     )
+    return _workspace_row(rows[0]) if rows else None
 
 
 def count_articles() -> tuple[int, int]:

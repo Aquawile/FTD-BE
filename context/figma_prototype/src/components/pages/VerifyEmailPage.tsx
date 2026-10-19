@@ -3,9 +3,28 @@ import { Page } from "../../app/types";
 import { Btn } from "../ui";
 import { AlertCircle, Check, CheckCircle, ChevronLeft, Info, Mail } from "lucide-react";
 import { firebaseAuth } from "../../app/firebase";
+import { sendEmailVerification } from "firebase/auth";
 
 function VerifyEmailPage({ navigate, userEmail }: { navigate: (p: Page) => void; userEmail?: string }) {
   const [resent, setResent] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
+
+  const resend = async () => {
+    const user = firebaseAuth.currentUser;
+    if (!user) { setResendError("Sign in again to resend the email."); return; }
+    setResendError(null);
+    try {
+      await sendEmailVerification(user);
+      setResent(true);
+    } catch (e: any) {
+      setResendError(e?.code === "auth/too-many-requests" ? "Too many requests. Wait a few minutes and try again." : "Couldn't resend the email. Try again.");
+    }
+  };
+
+  const continueToApp = async () => {
+    try { await firebaseAuth.currentUser?.reload(); } catch { /* offline: continue anyway */ }
+    navigate("dashboard");
+  };
   const displayEmail = userEmail || firebaseAuth.currentUser?.email || "your email";
   return (
     <div className="min-h-screen flex items-center justify-center p-8 bg-background">
@@ -21,19 +40,19 @@ function VerifyEmailPage({ navigate, userEmail }: { navigate: (p: Page) => void;
         </div>
         <div className="p-4 bg-secondary/50 rounded-xl border border-border text-left text-sm space-y-2">
           <div className="flex items-center gap-2"><CheckCircle size={14} className="text-emerald-400" /><span>Email sent successfully</span></div>
-          <div className="flex items-center gap-2"><Info size={14} className="text-blue-400" /><span>Link expires in 24 hours</span></div>
           <div className="flex items-center gap-2"><AlertCircle size={14} className="text-orange-400" /><span>Check your spam folder if not received</span></div>
         </div>
-        <Btn variant="primary" className="w-full justify-center" onClick={() => navigate("profile")}>
+        <Btn variant="primary" className="w-full justify-center" onClick={continueToApp}>
           <Check size={14} /> I verified my email
         </Btn>
         <button
-          onClick={() => setResent(true)}
+          onClick={resend}
           className="text-sm text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           disabled={resent}
         >
           {resent ? <span className="text-emerald-400 flex items-center gap-1 justify-center"><Check size={12} /> Email resent!</span> : "Resend verification email"}
         </button>
+        {resendError && <p className="text-xs text-red-400">{resendError}</p>}
         <button onClick={() => navigate("login")} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1 justify-center">
           <ChevronLeft size={14} /> Back to sign in
         </button>

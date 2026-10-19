@@ -157,8 +157,10 @@ export interface WorkspaceResponse {
   id: number;
   name: string;
   tickers: string[];
-  alerts: number;
+  alerts: number;                 // unread alerts for this workspace's tickers
   created_at: string | null;
+  description?: string | null;
+  alert_on_filings?: boolean;     // keeps a "new SEC filing" alert on for each ticker
 }
 
 export interface AlertResponse {
@@ -175,8 +177,10 @@ export interface WorkspaceResponse {
   id: number;
   name: string;
   tickers: string[];
-  alerts: number;
+  alerts: number;                 // unread alerts for this workspace's tickers
   created_at: string | null;
+  description?: string | null;
+  alert_on_filings?: boolean;     // keeps a "new SEC filing" alert on for each ticker
 }
 
 export interface AlertResponse {

@@ -1,20 +1,45 @@
 import { useState, useEffect, useRef } from "react";
-import { sendPasswordResetEmail } from "firebase/auth";
+import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, Input, cn } from "../ui";
-import { Check, Copy, Edit2, ExternalLink, Lock, Mail, RefreshCw } from "lucide-react";
+import { Btn, Card, Input, cn } from "../ui";
+import { Check, Edit2, Lock, Mail } from "lucide-react";
 
-function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean }) {
+const photoKey = (uid: string) => `ftd.profilePhoto.${uid}`;
+
+// Shrink an uploaded image to a small JPEG data URL so it can be kept on this device.
+function shrinkImage(file: File, size = 160): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, size / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, onProfileUpdated }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean; onProfileUpdated?: () => void }) {
   const [activeTab, setActiveTab] = useState("profile");
-  const displayName = userName || "";
+  const user = firebaseAuth.currentUser;
   const email = userEmail || "";
+  // The name lives on the Firebase account (displayName), so it follows you to any device.
+  const accountName = user?.displayName || "";
+  const [firstName, setFirstName] = useState(accountName.split(" ")[0] || "");
+  const [lastName, setLastName] = useState(accountName.split(" ").slice(1).join(" ") || "");
+  const displayName = [firstName, lastName].filter(Boolean).join(" ") || userName || "";
   const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "??";
-  const [firstName, setFirstName] = useState(displayName.split(" ")[0] || "");
-  const [lastName, setLastName] = useState(displayName.split(" ").slice(1).join(" ") || "");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "sending" | "sent">("idle");
   const [resetError, setResetError] = useState<string | null>(null);
 
@@ -29,24 +54,37 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
     }
   };
 
+  // Photo: kept on this device (there is no file storage for profile photos).
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("ftd_profile");
-      if (raw) {
-        const data = JSON.parse(raw);
-        if (data.firstName) setFirstName(data.firstName);
-        if (data.lastName) setLastName(data.lastName);
-        if (data.photoUrl) setPhotoUrl(data.photoUrl);
-      }
-    } catch {}
-  }, []);
+    if (!user) return;
+    try { setPhotoUrl(localStorage.getItem(photoKey(user.uid))); } catch { /* storage unavailable */ }
+  }, [user?.uid]);
 
-  const handleSaveProfile = () => {
+  const handlePhoto = async (file: File | undefined) => {
+    if (!file || !user) return;
     try {
-      localStorage.setItem("ftd_profile", JSON.stringify({ firstName, lastName, photoUrl }));
+      const dataUrl = await shrinkImage(file);
+      setPhotoUrl(dataUrl);
+      try { localStorage.setItem(photoKey(user.uid), dataUrl); } catch { /* storage full or blocked */ }
+    } catch {
+      setProfileError("Couldn't read that image.");
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    setSaving(true); setProfileError(null);
+    try {
+      await updateProfile(user, { displayName: [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") || null });
+      await user.reload();
+      onProfileUpdated?.();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch {}
+    } catch {
+      setProfileError("Couldn't save your name. Try again.");
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -65,11 +103,10 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
               </div>
               <div>
                 <div className="font-semibold text-lg">{displayName || "User"}</div>
-                <div className="text-muted-foreground text-sm">{email || "user@example.com"}</div>
-                <Badge variant="purple" className="mt-1">Beta User</Badge>
+                <div className="text-muted-foreground text-sm">{email || "—"}</div>
               </div>
               <Btn variant="secondary" size="sm" className="ml-auto" icon={<Edit2 size={12} />} onClick={() => fileInputRef.current?.click()}>Edit Photo</Btn>
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { const url = URL.createObjectURL(f); setPhotoUrl(url); } }} />
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handlePhoto(e.target.files?.[0])} />
             </div>
             {loading ? (
               <div className="flex items-center justify-center py-4">
@@ -82,7 +119,8 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading }
                     <div className="space-y-1.5"><label htmlFor="lastName" className="text-sm font-medium">Last name</label><Input id="lastName" value={lastName} onChange={setLastName} placeholder="Last name" /></div>
                   </div>
                   <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><div id="email" className="flex items-center gap-2 bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground"><Mail size={14} />{email || "—"}</div><p className="text-xs text-muted-foreground">Your sign-in email (from your account).</p></div>
-                  <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile}>{saved ? "Saved" : "Save Profile"}</Btn>
+                  {profileError && <p className="text-xs text-red-400">{profileError}</p>}
+                  <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile} disabled={saving}>{saved ? "Saved" : saving ? "Saving…" : "Save Profile"}</Btn>
                 </div>
             )}
           </Card>

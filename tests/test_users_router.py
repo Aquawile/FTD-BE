@@ -343,11 +343,19 @@ class TestUsersRouterPostgres(unittest.TestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_malformed_request_body_returns_422(self) -> None:
-        response = client.post(
-            "/auth/login",
-            json={"invalid": "payload"},
-            headers={"Authorization": "Bearer valid-token"},
-        )
+        user = _make_user()
+        with patch(
+            "app.auth.middleware.validate_firebase_token_with_reason",
+            return_value=({"firebase_uid": user.firebase_uid, "email": user.email}, None),
+        ), patch(
+            "app.auth.dependencies.get_authenticated_user",
+            return_value=user,
+        ):
+            response = client.post(
+                "/alerts/subscriptions",
+                json={"invalid": "payload"},
+                headers={"Authorization": "Bearer valid-token"},
+            )
         self.assertEqual(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
     def test_nonexistent_user_returns_404(self) -> None:
@@ -366,7 +374,7 @@ class TestUsersRouterPostgres(unittest.TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_duplicate_user_creation_returns_409(self) -> None:
+    def test_duplicate_creation_returns_409(self) -> None:
         user = _make_user()
         with patch(
             "app.auth.middleware.validate_firebase_token_with_reason",
@@ -375,12 +383,13 @@ class TestUsersRouterPostgres(unittest.TestCase):
             "app.auth.dependencies.get_authenticated_user",
             return_value=user,
         ), patch(
-            "app.auth.router.create_user",
-            side_effect=UserAlreadyExistsError("User with this email or Firebase identity already exists"),
+            "app.routes.alerts.ticker_exists", return_value=True,
+        ), patch(
+            "app.routes.alerts.create_user_subscription", return_value=None,
         ):
             response = client.post(
-                "/auth/users",
-                json={"email": user.email, "password": "securepassword123"},
+                "/alerts/subscriptions",
+                json={"ticker": "AAPL", "alert_type": "news"},
                 headers={"Authorization": "Bearer valid-token"},
             )
 

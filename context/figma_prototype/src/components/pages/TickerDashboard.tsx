@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, cn } from "../ui";
+import { Badge, Btn, Card, Modal, cn } from "../ui";
 import PriceTimeline from "../PriceTimeline";
 import TickerNewsFeed from "../TickerNewsFeed";
 import { Bell, Briefcase, ExternalLink, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
-import { apiRequest, formatPrice, getTrackedTicker, isStaleQuote } from "../../api";
-import { TrackedTicker } from "../../types";
+import { apiRequest, fetchAddTickerToWorkspace, fetchWorkspaces, formatPrice, getTrackedTicker, isStaleQuote } from "../../api";
+import { TrackedTicker, WorkspaceResponse } from "../../types";
 
 interface PriceRow {
   normalized_calendar_date: string | null;
@@ -38,13 +38,32 @@ interface FilingSummary {
   url: string | null;
 }
 
-function TickerDashboard({ navigate, ticker, firebaseUser }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null }) {
+function TickerDashboard({ navigate, ticker, firebaseUser, onSetAlert }: { navigate: (p: Page) => void; ticker: string; firebaseUser: FirebaseUser | null; onSetAlert: (ticker: string) => void }) {
   const [tab, setTab] = useState("overview");
   const [tickerData, setTickerData] = useState<TrackedTicker | null>(null);
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [news, setNews] = useState<NewsRow[]>([]);
   const [filings, setFilings] = useState<FilingSummary[]>([]);
   const [loading, setLoading] = useState(true);       // header (name + latest price)
+  const [pickWorkspace, setPickWorkspace] = useState(false);
+  const [workspaces, setWorkspaces] = useState<WorkspaceResponse[] | null>(null);
+  const [wsMessage, setWsMessage] = useState<string | null>(null);
+
+  const openWorkspacePicker = async () => {
+    setPickWorkspace(true); setWsMessage(null); setWorkspaces(null);
+    try { setWorkspaces(await fetchWorkspaces(firebaseUser)); } catch { setWorkspaces([]); setWsMessage("Couldn't load your workspaces."); }
+  };
+
+  const addToWorkspace = async (ws: WorkspaceResponse) => {
+    if (ws.tickers.includes(ticker)) { setWsMessage(`${ticker} is already in ${ws.name}.`); return; }
+    try {
+      await fetchAddTickerToWorkspace(ws.id, ticker, firebaseUser);
+      setWorkspaces(prev => (prev || []).map(w => (w.id === ws.id ? { ...w, tickers: [...w.tickers, ticker] } : w)));
+      setWsMessage(`Added ${ticker} to ${ws.name}.`);
+    } catch {
+      setWsMessage(`Couldn't add ${ticker} to ${ws.name}.`);
+    }
+  };
   const [detailsLoading, setDetailsLoading] = useState(true);
   const tabs = ["overview", "news"];
 
@@ -139,8 +158,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser }: { navigate: (p: Pag
           </div>
           <div className="flex flex-col items-end gap-3">
             <div className="flex items-center gap-3">
-              <Btn variant="secondary" size="sm" icon={<Bell size={12} />} onClick={() => navigate("alerts")}>Set Alert</Btn>
-              <Btn variant="secondary" size="sm" icon={<Briefcase size={12} />} onClick={() => navigate("workspaces")}>Add to Workspace</Btn>
+              <Btn variant="secondary" size="sm" icon={<Bell size={12} />} onClick={() => onSetAlert(ticker)}>Set Alert</Btn>
+              <Btn variant="secondary" size="sm" icon={<Briefcase size={12} />} onClick={openWorkspacePicker}>Add to Workspace</Btn>
             </div>
           </div>
         </div>
@@ -272,8 +291,8 @@ function TickerDashboard({ navigate, ticker, firebaseUser }: { navigate: (p: Pag
               <Card className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Quick Actions</h3>
                 <div className="space-y-1.5">
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<Bell size={12} />} onClick={() => navigate("alerts")}>Set Alert</Btn>
-                  <Btn variant="secondary" size="sm" className="w-full" icon={<Briefcase size={12} />} onClick={() => navigate("workspaces")}>Add to Workspace</Btn>
+                  <Btn variant="secondary" size="sm" className="w-full" icon={<Bell size={12} />} onClick={() => onSetAlert(ticker)}>Set Alert</Btn>
+                  <Btn variant="secondary" size="sm" className="w-full" icon={<Briefcase size={12} />} onClick={openWorkspacePicker}>Add to Workspace</Btn>
                 </div>
               </Card>
             </div>
@@ -286,6 +305,29 @@ function TickerDashboard({ navigate, ticker, firebaseUser }: { navigate: (p: Pag
         )}
 
       </div>
+      {pickWorkspace && (
+        <Modal title={`Add ${ticker} to a workspace`} onClose={() => setPickWorkspace(false)}>
+          {workspaces === null ? (
+            <p className="text-sm text-muted-foreground">Loading workspaces…</p>
+          ) : workspaces.length === 0 ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">You don't have any workspaces yet.</p>
+              <Btn variant="primary" size="sm" onClick={() => { setPickWorkspace(false); navigate("workspaces"); }}>Create a workspace</Btn>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {workspaces.map(ws => (
+                <button key={ws.id} onClick={() => addToWorkspace(ws)}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-border hover:border-primary/40 hover:bg-secondary/40 text-left cursor-pointer">
+                  <span className="text-sm text-foreground">{ws.name}</span>
+                  <span className="text-xs text-muted-foreground">{ws.tickers.includes(ticker) ? "Added" : `${ws.tickers.length} tickers`}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {wsMessage && <p className="text-xs text-muted-foreground mt-3">{wsMessage}</p>}
+        </Modal>
+      )}
     </div>
   );
 }

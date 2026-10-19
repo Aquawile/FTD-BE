@@ -5,47 +5,18 @@ from typing import Annotated
 import logging
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
 from starlette.requests import Request
 
 from app.auth.models import User
 from app.auth.permissions import ALL_PERMISSIONS
 from app.auth.user_sync import synchronize_user
 from app.services.exceptions import UserNotFoundError
-from app.services.user_service import get_authenticated_user, get_authenticated_user_by_id
+from app.services.user_service import get_authenticated_user
 
 logger = logging.getLogger(__name__)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    if token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-    from app.auth.token import verify_token
-
-    payload = verify_token(token)
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-    user_id = payload.get("sub")
-    email = payload.get("email")
-    if user_id is None or email is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token missing required claims",
-        )
-    return {"user_id": int(user_id), "email": email}
-
-
 async def get_current_application_user(request: Request) -> User:
     firebase_uid = getattr(request.state, "firebase_uid", None)
-    user_id = getattr(request.state, "user_id", None)
     if firebase_uid is not None:
         try:
             user = get_authenticated_user(firebase_uid)
@@ -61,22 +32,6 @@ async def get_current_application_user(request: Request) -> User:
                 )
         except Exception:
             logger.error("authentication_internal_error: reason=postgres_lookup_failed firebase_uid=%s", firebase_uid, exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error",
-            )
-        return user
-    if user_id is not None:
-        try:
-            user = get_authenticated_user_by_id(user_id)
-        except UserNotFoundError:
-            logger.warning("authentication_failed: reason=postgres_user_not_found user_id=%s", user_id)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authenticated token has no associated application user",
-            )
-        except Exception:
-            logger.error("authentication_internal_error: reason=postgres_lookup_failed user_id=%s", user_id, exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error",

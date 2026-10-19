@@ -39,7 +39,6 @@ gcloud-bucket-data/
 │   │   ├── middleware.py         # AuthMiddleware — PUBLIC_PATHS, JWT/Firebase auth
 │   │   ├── dependencies.py       # get_current_user, get_current_application_user, require_permission
 │   │   ├── firebase_auth.py      # Firebase token validation
-│   │   ├── token.py              # Internal JWT generation/verification
 │   │   ├── user_sync.py          # Firebase-to-PostgreSQL user synchronization
 │   │   ├── permissions.py        # Permission constants
 │   │   ├── models.py             # User model, normalize_email
@@ -150,7 +149,7 @@ gcloud-bucket-data/
 1. **Client sees relational data; operations run on vectorized data; nothing leaves GCS + Postgres.** SEC filings are vectorized JSON in GCS (`ftd-vectorized-data`), mirrored chunk-for-chunk into Postgres `sec_vectorized_chunks` by the sync cron. SEC lookups, filing lists, elements and search query that mirror per request. Article and ticker counts come from the relational tables (`staging_sec_archive`, which is paused, and `tickers`).
    **Rules:** fetch only what the request needs, at request time, most recent first. No precomputed summary tables, no in-process or external caches, and no request may list or download the whole bucket.
 
-2. **Dual auth**: Firebase ID tokens OR internal JWT. The AuthMiddleware tries Firebase first, falls back to internal JWT verification.
+2. **Firebase-only auth**: Firebase ID tokens only (project `ftd-2026`); see section 4.
 
 3. **Public endpoints**: Certain endpoints bypass auth entirely (health, version, dashboard stats, tracked tickers, SEC file proxy) for unauthenticated access.
 
@@ -212,24 +211,21 @@ Started by Cloud Scheduler, stops itself when its job finishes:
 
 ## 4. Authentication Flow
 
-### Two Auth Methods (tested in order by AuthMiddleware)
+### Firebase only (project `ftd-2026`)
 
-#### Method 1: Firebase Auth (primary)
-1. User authenticates with Firebase (email/password)
-2. Frontend gets Firebase ID token via `firebaseUser.getIdToken()`
-3. `apiRequest()` sends `Authorization: Bearer <firebase_token>` header
-4. AuthMiddleware calls `validate_firebase_token_with_reason(token)`
-5. If valid: token contains `firebase_uid` and `email`
-6. `get_current_application_user` looks up or creates user in PostgreSQL `users` table
-7. Sets `request.state.firebase_uid`, `request.state.email`, `request.state.auth_method = "firebase"`
+Accounts, passwords, email verification, password resets and sessions all live in Firebase.
+The API never issues its own tokens (the internal-JWT login/register API was removed 2026-10-19).
 
-#### Method 2: Internal JWT (fallback)
-1. User logs in via `/auth/login`
-2. Backend generates JWT with `JWT_SECRET_KEY`
-3. JWT contains `{"sub": user_id, "email": email}`
-4. `fetchWithAuth()` reads token from `localStorage["auth_token"]`
-5. AuthMiddleware tries Firebase first, fails, then calls `verify_token(token)`
-6. Sets `request.state.user_id`, `request.state.email`, `request.state.auth_method = "internal"`
+1. User signs in with Firebase (email/password). "Remember me" picks Firebase persistence:
+   checked = `browserLocalPersistence` (stays signed in on that browser until sign-out),
+   unchecked = `browserSessionPersistence` (signed out when the browser closes).
+2. Firebase refreshes the 1-hour ID token automatically; the frontend sends it on every call
+   (`apiRequest()` and `fetchWithAuth()` both use `getIdToken()`, cached).
+3. AuthMiddleware calls `validate_firebase_token_with_reason(token)`; anything Firebase rejects → 401.
+4. `get_current_application_user` looks up (or on first sign-in creates, with the 9 default
+   permissions) the PostgreSQL `users` row for that `firebase_uid`.
+5. On load the app waits for Firebase to restore the session, so a signed-in user lands on the
+   Dashboard instead of the login page.
 
 ### Auth Components
 
@@ -237,7 +233,6 @@ Started by Cloud Scheduler, stops itself when its job finishes:
 |---|---|
 | `app/auth/middleware.py` | `AuthMiddleware` — intercepts every request, checks PUBLIC_PATHS, validates tokens |
 | `app/auth/firebase_auth.py` | `validate_firebase_token_with_reason()` — verifies Firebase ID token |
-| `app/auth/token.py` | `verify_token()`, `create_token()` — internal JWT functions |
 | `app/auth/dependencies.py` | `get_current_application_user()` — resolves user from request state |
 | `app/auth/user_sync.py` | `synchronize_user()` — creates/updates user in PostgreSQL from Firebase identity |
 
@@ -247,14 +242,15 @@ Started by Cloud Scheduler, stops itself when its job finishes:
 PUBLIC_PATHS = {
     "/health",
     "/version",
-    "/auth/login",
-    "/auth/register",
     "/auth/me",
     "/dashboard/stats",
     "/tickers/tracked",
 }
 # Plus SEC proxy pattern: /tickers/*/content (SEC_PROXY_PREFIX/SUFFIX)
 ```
+
+No interactive API docs: `/docs`, `/redoc` and `/openapi.json` are disabled (research web app only,
+the API is not offered publicly).
 
 ---
 
@@ -274,9 +270,8 @@ PUBLIC_PATHS = {
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| POST | `/auth/login` | — | Internal JWT login |
-| POST | `/auth/register` | — | Internal JWT registration |
-| GET | `/auth/me` | — | Current user info |
+| GET | `/auth/me` | — | Firebase identity claims |
+| GET | `/auth/me/user` | — | Application user (created on first sign-in) |
 | GET | `/alerts` | `tickers.*` implied | User-specific alerts |
 | GET | `/alerts/summary` | — | Unread count + newest unread alert (bell dot, Alerts nav badge, new-alert pop-up) |
 | POST | `/alerts/read` | — | Mark all (or `alert_ids`) read |
@@ -293,8 +288,9 @@ PUBLIC_PATHS = {
 | GET | `/filings/{accession}/elements` | `filings.read` | Filing elements |
 | GET | `/workspaces` | — | User workspaces |
 | POST | `/workspaces` | — | Create workspace |
-| GET | `/workspaces/{id}` | — | Workspace details |
-| DELETE | `/workspaces/{id}` | — | Delete workspace |
+| GET | `/workspaces/{id}` | — | Workspace details (name, description, tickers, unread alerts, alert_on_filings) |
+| PATCH | `/workspaces/{id}` | — | Rename, description, `alert_on_filings` (keeps a filing subscription on for each ticker) |
+| DELETE | `/workspaces/{id}` | — | **Archive** (sets `archived_at`; hidden, never deleted) |
 | POST | `/workspaces/{id}/tickers` | — | Add ticker to workspace |
 | DELETE | `/workspaces/{id}/tickers/{symbol}` | — | Remove ticker from workspace |
 | GET | `/users/me` | — | User profile |
@@ -470,8 +466,7 @@ Set in `/etc/systemd/system/ftd-api.service` (the only way staging runs the API;
 | `PGPASSWORD` | `5Ou+BkyuQT3izP72219jMLy2AobRdI3f` | Database password |
 | `FIREBASE_PROJECT_ID` | `ftd-2026` | Firebase project |
 | `FIREBASE_AUTH_ENABLED` | `true` | Enable Firebase auth |
-| `JWT_SECRET_KEY` | *(secret)* | Internal JWT signing key |
-| `JWT_EXPIRATION_MINUTES` | `10080` | 7 days (10080 minutes) |
+| `JWT_SECRET_KEY` / `JWT_EXPIRATION_MINUTES` | — | **Unused** since 2026-10-19 (internal JWT removed); can be dropped from the unit |
 | `PYTHONPATH` | `/home/isabellabutera/app` | Python module path |
 | `VECTORIZED_OUTPUT_BUCKET` | `ftd-vectorized-data` | GCS bucket for SEC data |
 
@@ -540,9 +535,9 @@ WantedBy=multi-user.target
 export async function apiRequest(path, firebaseUser, options?): Promise<Response>
   → Gets Firebase ID token, adds Authorization: Bearer header
 
-// LocalStorage token fetch (for internal JWT-authenticated endpoints)
+// Same, for helpers that don't receive firebaseUser
 async function fetchWithAuth<T>(endpoint, options?): Promise<T>
-  → Reads localStorage["auth_token"], adds Bearer header if present
+  → firebaseAuth.currentUser.getIdToken() (cached), adds Bearer header when signed in
 ```
 
 ### Frontend Hooks (`src/hooks/index.ts`, `src/hooks/tickerHooks.ts`)

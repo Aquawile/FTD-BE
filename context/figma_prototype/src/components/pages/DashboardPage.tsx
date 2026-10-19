@@ -6,7 +6,7 @@ import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } f
 import { fetchWorkspaces, getTrackedTickers, apiRequest, formatPrice, isStaleQuote, newestQuoteDate } from "../../api";
 import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
 
-function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
+function DashboardPage({ navigate, setSelectedTicker, firebaseUser, setSelectedWorkspace }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; setSelectedWorkspace: (ws: WorkspaceResponse) => void }) {
   const [stats, setStats] = useState<{ articles_count: number; news_articles_count?: number; sec_filings_count?: number; tickers_count: number; vectorized_sec_count: number } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
@@ -247,7 +247,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser }: { navigate
                 <div className="text-center py-4 text-muted-foreground text-xs">No workspaces yet. Create one to get started.</div>
               ) : (
                 workspaces.slice(0, 3).map(ws => (
-                  <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate("workspace-detail")}>
+                  <Card key={ws.id} className="p-3 cursor-pointer hover:border-primary/30 transition-all" onClick={() => { setSelectedWorkspace(ws); navigate("workspace-detail"); }}>
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium text-sm text-foreground">{ws.name}</div>

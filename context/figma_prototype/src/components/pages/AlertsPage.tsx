@@ -28,12 +28,13 @@ function describeSubscription(s: AlertSubscription) {
 
 // Only the subscriptions the user has actually created are listed and toggleable.
 // They are checked at the end of each data sync, the only time ticker data changes.
-function AlertSubscriptions({ firebaseUser, trackedTickers }: { firebaseUser: FirebaseUser | null; trackedTickers: TrackedTicker[] }) {
+function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPrefillUsed }: { firebaseUser: FirebaseUser | null; trackedTickers: TrackedTicker[]; prefillTicker?: string | null; onPrefillUsed?: () => void }) {
   const [subs, setSubs] = useState<AlertSubscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [ticker, setTicker] = useState("");
+  const [adding, setAdding] = useState(!!prefillTicker);
+  const [ticker, setTicker] = useState(prefillTicker || "");
+  useEffect(() => { if (prefillTicker) onPrefillUsed?.(); }, []);  // one-shot hand-off from the ticker page
   const [alertType, setAlertType] = useState<AlertSubscriptionType>("price_above");
   const [threshold, setThreshold] = useState("");
   const [saving, setSaving] = useState(false);
@@ -134,7 +135,7 @@ function AlertSubscriptions({ firebaseUser, trackedTickers }: { firebaseUser: Fi
   );
 }
 
-function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; onAlertsChanged?: () => void }) {
+function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged, prefillTicker, onPrefillUsed }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; onAlertsChanged?: () => void; prefillTicker?: string | null; onPrefillUsed?: () => void }) {
   const { alerts: ALERTS_DATA, loading, error, refetch } = useAlerts(50, firebaseUser);
   const { tickers: trackedTickers } = useTrackedTickers(500);
   const [filter, setFilter] = useState("all");
@@ -226,7 +227,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
         )}
       </div>
 
-      <AlertSubscriptions firebaseUser={firebaseUser} trackedTickers={trackedTickers} />
+      <AlertSubscriptions firebaseUser={firebaseUser} trackedTickers={trackedTickers} prefillTicker={prefillTicker} onPrefillUsed={onPrefillUsed} />
     </div>
   );
 }

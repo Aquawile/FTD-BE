@@ -1,7 +1,6 @@
 """Unit tests for FastAPI route endpoints.
 
-These tests mock authentication (Firebase token validation, internal JWT
-verification) and CRUD layer functions so they can run without a database.
+These tests mock authentication (Firebase token validation) and CRUD layer functions so they can run without a database.
 They verify HTTP-level concerns: status codes, response shapes, query parameter
 validation, and auth/permission enforcement.
 """
@@ -18,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.auth.models import User
-from app.auth.dependencies import get_current_application_user, get_current_user, get_current_permissions
+from app.auth.dependencies import get_current_application_user, get_current_permissions
 from app.models import (
     TrackedTicker,
     WorkspaceResponse,
@@ -80,32 +79,32 @@ def _mock_user():
 @pytest.fixture
 def _mock_permissions():
     """Override auth dependencies for routes using require_permission."""
-    async def _fake_current_user() -> dict:
-        return {"user_id": 4, "email": "test@example.com"}
+    async def _fake_current_user(request=None) -> User:
+        return _FAKE_USER
     async def _fake_permissions() -> set[str]:
         return {
             "tickers.search", "tickers.prices", "tickers.news",
             "tickers.filings", "tickers.timeline", "tickers.fiscal_year_end",
             "filings.read", "search.read", "dashboard.read", "admin",
         }
-    app.dependency_overrides[get_current_user] = _fake_current_user
+    app.dependency_overrides[get_current_application_user] = _fake_current_user
     app.dependency_overrides[get_current_permissions] = _fake_permissions
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_current_application_user, None)
     app.dependency_overrides.pop(get_current_permissions, None)
 
 
 @pytest.fixture
 def _mock_no_permissions():
     """Override auth dependencies so no permissions are granted (403 tests)."""
-    async def _fake_current_user() -> dict:
-        return {"user_id": 4, "email": "test@example.com"}
+    async def _fake_current_user(request=None) -> User:
+        return _FAKE_USER
     async def _fake_permissions() -> set[str]:
         return set()
-    app.dependency_overrides[get_current_user] = _fake_current_user
+    app.dependency_overrides[get_current_application_user] = _fake_current_user
     app.dependency_overrides[get_current_permissions] = _fake_permissions
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_current_application_user, None)
     app.dependency_overrides.pop(get_current_permissions, None)
 
 
