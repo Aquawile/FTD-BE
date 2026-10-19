@@ -121,10 +121,16 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
   );
 }
 
-export function AppShell({ page, navigate, children, userEmail, userName, onSignOut, unreadAlerts = 0 }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void; unreadAlerts?: number }) {
+export function AppShell({ page, navigate, children, userEmail, userName, onSignOut, unreadAlerts = 0, onSearch }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void; unreadAlerts?: number; onSearch?: (query: string) => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const handleSearch = () => { if (searchQuery.trim()) navigate("search"); };
+  const handleSearch = () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    onSearch?.(q);
+    navigate("search");
+    setSearchQuery("");
+  };
   return (
     <div className="flex min-h-screen">
       <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} unreadAlerts={unreadAlerts} />

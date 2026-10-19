@@ -8,7 +8,6 @@ from starlette.responses import JSONResponse
 
 from app.auth.exceptions import AuthenticationError, AuthenticationInternalError
 from app.auth.firebase_auth import validate_firebase_token_with_reason
-from app.auth.token import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +15,6 @@ logger = logging.getLogger(__name__)
 PUBLIC_PATHS = {
     "/health",
     "/version",
-    "/auth/login",
-    "/auth/register",
     "/auth/me",
     "/dashboard/stats",
     "/tickers/tracked",
@@ -35,9 +32,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if (
             path in PUBLIC_PATHS
-            or path.startswith("/docs")
-            or path == "/openapi.json"
-            or path == "/redoc"
             or (path.startswith(SEC_PROXY_PREFIX) and path.endswith(SEC_PROXY_SUFFIX))
         ):
             return await call_next(request)
@@ -80,51 +74,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.info("authentication_succeeded: method=firebase firebase_uid=%s path=%s", firebase_uid, path)
             return await call_next(request)
 
-        # Firebase failed — log the reason and fall through to internal JWT
+        # Firebase is the only sign-in method (project ftd-2026).
         if firebase_reason == "expired":
             logger.warning("authentication_failed: reason=firebase_token_expired path=%s", path)
         elif firebase_reason == "invalid":
             logger.warning("authentication_failed: reason=firebase_token_invalid path=%s", path)
         else:
             logger.warning("authentication_failed: reason=firebase_token_unknown path=%s", path)
-
-        # Firebase failed, try internal JWT
-        payload = verify_token(token)
-        if payload is None:
-            logger.warning("authentication_failed: reason=invalid_or_expired_token path=%s", path)
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid or expired token"},
-            )
-
-        user_id = payload.get("sub")
-        email = payload.get("email")
-        if user_id is None or email is None:
-            logger.warning("authentication_failed: reason=token_missing_claims path=%s", path)
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Token missing required claims"},
-            )
-
-        try:
-            resolved_user_id = int(user_id)
-        except (ValueError, TypeError):
-            logger.warning("authentication_failed: reason=invalid_user_identifier path=%s", path)
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid user identifier in token"},
-            )
-        
-        try:
-            request.state.user_id = int(user_id)
-            request.state.email = email
-            request.state.auth_method = "internal"
-        except (ValueError, TypeError) as e:
-            logger.warning("authentication_failed: reason=invalid_user_identifier path=%s", path)
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid user identifier in token"},
-            )
-
-        logger.info("authentication_succeeded: method=internal user_id=%s path=%s", user_id, path)
-        return await call_next(request)
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or expired token"},
+        )

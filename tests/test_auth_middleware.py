@@ -39,7 +39,6 @@ def test_invalid_authorization_header_format_returns_401(caplog) -> None:
 @pytest.mark.unit
 def test_invalid_token_returns_401(monkeypatch, caplog) -> None:
     monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "invalid"))
-    monkeypatch.setattr("app.auth.middleware.verify_token", lambda token: None)
 
     with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
         response = client.get("/auth/me/user", headers=_bearer("invalid-token"))
@@ -156,28 +155,37 @@ def test_database_failure_during_firebase_user_lookup_returns_500(monkeypatch, c
 
 
 @pytest.mark.unit
-def test_database_failure_during_internal_user_lookup_returns_500(monkeypatch, caplog) -> None:
+def test_non_firebase_token_is_rejected(monkeypatch) -> None:
+    """Firebase is the only sign-in method: a token Firebase rejects gets 401 (no internal-JWT fallback)."""
     monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "invalid"))
-    monkeypatch.setattr(
-        "app.auth.middleware.verify_token",
-        lambda token: {"sub": "99", "email": "user@example.com"},
-    )
-    monkeypatch.setattr(
-        "app.auth.dependencies.get_authenticated_user_by_id",
-        lambda uid: (_ for _ in ()).throw(RuntimeError("database connection lost")),
-    )
+    response = client.get("/auth/me/user", headers=_bearer("eyJhbGciOiJIUzI1NiJ9.old-internal-jwt.sig"))
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid or expired token"}
 
-    with caplog.at_level(logging.ERROR, logger="app.auth.dependencies"):
-        response = client.get("/auth/me/user", headers=_bearer("valid-token"))
-    assert response.status_code == 500
-    assert response.json() == {"detail": "Internal server error"}
-    assert any("authentication_internal_error" in r.message and "reason=postgres_lookup_failed" in r.message for r in caplog.records)
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method,path", [
+    ("post", "/auth/login"), ("post", "/auth/register"), ("post", "/auth/users"),
+    ("get", "/auth/users/1"), ("patch", "/auth/me/user"), ("delete", "/auth/me/user"),
+])
+def test_password_api_endpoints_are_gone(monkeypatch, method, path) -> None:
+    monkeypatch.setattr(
+        "app.auth.middleware.validate_firebase_token_with_reason",
+        lambda token: ({"firebase_uid": "uid", "email": "user@example.com"}, None),
+    )
+    response = getattr(client, method)(path, headers=_bearer("t"), **({"json": {}} if method in ("post", "patch") else {}))
+    assert response.status_code in (404, 405)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_api_docs_are_not_served(path) -> None:
+    assert client.get(path).status_code in (401, 404)
 
 
 @pytest.mark.unit
 def test_expired_firebase_token_returns_401(monkeypatch, caplog) -> None:
     monkeypatch.setattr("app.auth.middleware.validate_firebase_token_with_reason", lambda token: (None, "expired"))
-    monkeypatch.setattr("app.auth.middleware.verify_token", lambda token: None)
 
     with caplog.at_level(logging.WARNING, logger="app.auth.middleware"):
         response = client.get("/auth/me/user", headers=_bearer("expired-token"))

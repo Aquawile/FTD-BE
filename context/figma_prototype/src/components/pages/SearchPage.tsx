@@ -14,8 +14,9 @@ interface TrackedTicker {
   price_as_of: string | null;
 }
 
-function SearchPage({ navigate, setSelectedTicker, firebaseUser }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null }) {
-  const [query, setQuery] = useState("");
+function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = "" }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery);
+  useEffect(() => { setQuery(initialQuery); }, [initialQuery]);
   const [filterSector, setFilterSector] = useState("all");
   const [sortBy, setSortBy] = useState("symbol");
   const [tickers, setTickers] = useState<TrackedTicker[]>([]);

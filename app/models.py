@@ -131,8 +131,16 @@ class WorkspaceResponse(BaseModel):
     id: int
     name: str
     tickers: list[str] = []
-    alerts: int = 0
+    alerts: int = 0                      # the user's unread alerts for this workspace's tickers
     created_at: Optional[str] = None
+    description: Optional[str] = None
+    alert_on_filings: bool = False       # keeps a "new SEC filing" subscription on for each ticker
+
+
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    alert_on_filings: Optional[bool] = None
 
 
 class AlertResponse(BaseModel):

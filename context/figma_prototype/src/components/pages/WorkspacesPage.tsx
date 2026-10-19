@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, Input, Modal } from "../ui";
-import { Briefcase, MoreVertical, Plus, Trash2 } from "lucide-react";
+import { Archive, Briefcase, MoreVertical, Plus } from "lucide-react";
 import { fetchWorkspaces, fetchCreateWorkspace, fetchDeleteWorkspace } from "../../api";
 import { WorkspaceResponse } from "../../types";
 
@@ -11,6 +11,7 @@ function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navi
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [wsName, setWsName] = useState("");
+  const [toArchive, setToArchive] = useState<WorkspaceResponse | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,13 +47,16 @@ function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navi
     setWsName("");
   };
 
-  const handleDelete = async (id: number) => {
+  // Archive (hidden from the list, kept in the database), after a confirmation.
+  const handleArchive = async (id: number) => {
     if (!firebaseUser) return;
     try {
       await fetchDeleteWorkspace(id, firebaseUser);
-      setWorkspaces(workspaces.filter(ws => ws.id !== id));
+      setWorkspaces(prev => prev.filter(ws => ws.id !== id));
     } catch {
-      // error handling
+      // keep the workspace in the list if the request failed
+    } finally {
+      setToArchive(null);
     }
   };
 
@@ -79,11 +83,12 @@ function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navi
                 <div className="flex items-center gap-1">
                   <button
                     className="p-1 text-muted-foreground hover:text-red-400 cursor-pointer"
-                    onClick={e => { e.stopPropagation(); handleDelete(ws.id); }}
+                    aria-label={`Archive ${ws.name}`} title="Archive"
+                    onClick={e => { e.stopPropagation(); setToArchive(ws); }}
                   >
-                    <Trash2 size={14} />
+                    <Archive size={14} />
                   </button>
-                  <button className="p-1 text-muted-foreground hover:text-foreground cursor-pointer" onClick={e => { e.stopPropagation(); navigate("workspace-settings"); }}><MoreVertical size={14} /></button>
+                  <button className="p-1 text-muted-foreground hover:text-foreground cursor-pointer" aria-label={`${ws.name} settings`} title="Settings" onClick={e => { e.stopPropagation(); setSelectedWorkspace(ws); navigate("workspace-settings"); }}><MoreVertical size={14} /></button>
                 </div>
               </div>
               <h3 className="font-semibold text-foreground mb-1">{ws.name}</h3>
@@ -108,6 +113,16 @@ function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navi
           <p className="text-muted-foreground mb-4">No workspaces yet. Create one to get started.</p>
           <Btn variant="primary" icon={<Plus size={14} />} onClick={() => setShowCreate(true)}>Create Your First Workspace</Btn>
         </div>
+      )}
+
+      {toArchive && (
+        <Modal title="Archive workspace?" onClose={() => setToArchive(null)}>
+          <p className="text-sm text-muted-foreground mb-4">"{toArchive.name}" will be hidden from your workspaces. Nothing is deleted.</p>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" onClick={() => setToArchive(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={() => handleArchive(toArchive.id)} icon={<Archive size={12} />}>Archive</Btn>
+          </div>
+        </Modal>
       )}
 
       {showCreate && (

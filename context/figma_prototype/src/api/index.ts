@@ -12,6 +12,7 @@ import type {
   DashboardStats,
 } from "../types";
 import type { User as FirebaseUser } from "firebase/auth";
+import { firebaseAuth } from "../app/firebase";
 
 export const API_BASE = "/api";
 
@@ -32,8 +33,9 @@ export async function apiRequest(
 
 const API_BASE_FALLBACK = "/api";
 
+// Sends the signed-in user's Firebase ID token (cached; Firebase refreshes it before it expires).
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("auth_token");
+  const token = firebaseAuth.currentUser ? await firebaseAuth.currentUser.getIdToken() : null;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...((options?.headers as Record<string, string>) || {}),
@@ -151,8 +153,22 @@ export async function fetchDeleteWorkspace(
   id: string | number,
   firebaseUser: FirebaseUser | null,
 ): Promise<void> {
+  // Archives the workspace (hidden from the list, kept in the database).
   const res = await apiRequest(`/workspaces/${id}`, firebaseUser, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete workspace");
+  if (!res.ok) throw new Error("Failed to archive workspace");
+}
+
+export async function fetchUpdateWorkspace(
+  id: number,
+  change: { name?: string; description?: string; alert_on_filings?: boolean },
+  firebaseUser: FirebaseUser | null,
+): Promise<WorkspaceResponse> {
+  const res = await apiRequest(`/workspaces/${id}`, firebaseUser, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
+  });
+  return jsonOrThrow(res);
 }
 
 export async function fetchWorkspaceTickers(
@@ -278,27 +294,4 @@ export async function updateAlertSubscription(
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   return fetchWithAuth<DashboardStats>("/dashboard/stats");
-}
-
-// ────────────────────────────────────────────────
-// Auth Endpoints
-// ────────────────────────────────────────────────
-
-export async function login(email: string, password: string): Promise<{ access_token: string; token_type: string }> {
-  return fetchWithAuth<{ access_token: string; token_type: string }>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
-export async function register(email: string, password: string): Promise<{ access_token: string; token_type: string }> {
-  return fetchWithAuth<{ access_token: string; token_type: string }>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
-export async function logout(): Promise<void> {
-  localStorage.removeItem("auth_token");
-  window.location.href = "/login";
 }

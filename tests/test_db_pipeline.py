@@ -219,3 +219,47 @@ class TestCompanyNames:
                 cur.execute("INSERT INTO tickers (symbol, name) VALUES ('ZZZQ', 'ZZZQ') ON CONFLICT DO NOTHING")
             conn.commit()
         assert crud.get_tracked_tickers(limit=1, symbol="ZZZQ")[0].name == "ZZZQ"
+
+
+class TestWorkspaceSettings:
+    def _workspace(self, user_id, tickers):
+        ws = crud.create_workspace(user_id, "Test WS", tickers)
+        return ws.id
+
+    def test_archive_hides_but_keeps_the_row(self):
+        user_id = _make_user()
+        ws_id = self._workspace(user_id, ["AAPL"])
+        crud.archive_workspace(user_id, ws_id)
+        assert ws_id not in [w.id for w in crud.get_user_workspaces(user_id)]
+        assert _count("SELECT COUNT(*) AS n FROM workspaces WHERE id = %s AND archived_at IS NOT NULL", (ws_id,)) == 1
+        assert _count("SELECT COUNT(*) AS n FROM workspace_tickers WHERE workspace_id = %s", (ws_id,)) == 1
+
+    def test_rename_and_description_persist(self):
+        user_id = _make_user()
+        ws_id = self._workspace(user_id, [])
+        crud.update_workspace(user_id, ws_id, "Renamed", "my notes", None)
+        ws = crud.get_workspace_by_id(ws_id, user_id)
+        assert (ws.name, ws.description) == ("Renamed", "my notes")
+
+    def test_filing_alerts_follow_the_workspace_switch(self):
+        user_id = _make_user()
+        ws_id = self._workspace(user_id, ["AAPL", "NVDA"])
+        active = lambda: {r["ticker"]: r["active"] for r in query_dict(
+            "SELECT ticker, active FROM alert_subscriptions WHERE user_id = %s AND alert_type = 'filing'", (user_id,))}
+        crud.update_workspace(user_id, ws_id, None, None, True)
+        assert active() == {"AAPL": True, "NVDA": True}
+        crud.add_ticker_to_workspace(ws_id, "MSFT", user_id=user_id)
+        assert active()["MSFT"] is True
+        crud.update_workspace(user_id, ws_id, None, None, False)
+        assert set(active().values()) == {False}                        # paused, not deleted
+        assert crud.get_workspace_by_id(ws_id, user_id).alert_on_filings is False
+
+    def test_unread_alert_count_on_workspace(self):
+        user_id = _make_user()
+        ws_id = self._workspace(user_id, ["NVDA"])
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO alerts (user_id, ticker, type, message) VALUES (%s, 'NVDA', 'news', 'm'), (%s, 'AAPL', 'news', 'm')",
+                            (user_id, user_id))
+            conn.commit()
+        assert crud.get_workspace_by_id(ws_id, user_id).alerts == 1
