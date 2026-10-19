@@ -1,0 +1,67 @@
+name: Data Freshness
+
+# Daily read-only check that prices, news and the vectorized mirror are current
+# (scripts/check_data_freshness.py on ftd-staging-api). If something is behind,
+# the run fails and opens incident/data-freshness-<date> with the report, so it
+# can be inspected in GitHub. If the VMs are stopped, the check is skipped: the
+# sync catches up by itself at the next boot (@reboot cron).
+on:
+  schedule:
+    - cron: "0 1 * * *"   # 01:00 UTC, after the 00:20 sync
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  freshness:
+    name: Check data freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/767713105/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
+          service_account: 'github-actions-deploy@ftd2026.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ftd2026
+
+      - name: Run freshness check on ftd-staging-api
+        id: check
+        run: |
+          set +e
+          status=$(gcloud compute instances describe ftd-staging-api --zone=us-west2-a --project=ftd2026 --format='value(status)')
+          if [ "$status" != "RUNNING" ]; then
+            echo "ftd-staging-api is $status; skipping (the sync catches up at next boot)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gcloud compute ssh isabellabutera@ftd-staging-api --zone=us-west2-a --project=ftd2026 --tunnel-through-iap --quiet \
+            --command='set -a; eval "$(systemctl show ftd-api -p Environment --value | tr " " "\n" | grep ^PG)"; set +a; /home/isabellabutera/app/.venv/bin/python /home/isabellabutera/app/scripts/check_data_freshness.py' \
+            > report.md 2> check.err
+          code=$?
+          cat report.md | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -v "NumPy\|iap/docs\|^$\|WARNING" check.err || true
+          if [ $code -eq 0 ]; then echo "result=current" >> "$GITHUB_OUTPUT"; else echo "result=behind" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Open incident branch
+        if: steps.check.outputs.result == 'behind'
+        run: |
+          day=$(date -u +%Y-%m-%d)
+          branch="incident/data-freshness-$day"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          mkdir -p reports/data-freshness
+          cp report.md "reports/data-freshness/$day.md"
+          git add "reports/data-freshness/$day.md"
+          git commit -m "incident: data freshness check failed on $day"
+          git push --force-with-lease origin "$branch"
+          echo "Opened $branch" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
