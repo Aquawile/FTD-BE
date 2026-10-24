@@ -579,7 +579,9 @@ def count_articles() -> tuple[int, int]:
             FROM archive WHERE archive.acc IS NOT NULL
         )
         SELECT
-            (SELECT COUNT(DISTINCT url) FROM staging_gnews WHERE url IS NOT NULL AND url <> '') AS news,
+            -- SELECT DISTINCT in a subquery lets Postgres walk the url index (~0.1 s on 400k rows);
+            -- COUNT(DISTINCT url) sorts every row (~0.8 s)
+            (SELECT COUNT(*) FROM (SELECT DISTINCT url FROM staging_gnews WHERE url IS NOT NULL AND url <> '') u) AS news,
             (SELECT COUNT(*) FROM (
                 SELECT acc FROM archive WHERE acc IS NOT NULL
                 UNION
