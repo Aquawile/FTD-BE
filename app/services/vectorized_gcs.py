@@ -265,7 +265,8 @@ def get_fiscal_year_end_from_gcs(ticker: str) -> FiscalYearEnd | None:
     Resolution flow:
       1. Resolve ticker → CIK (via _resolve_ticker_to_cik, one query on the
          vectorized mirror)
-      2. Query fiscal_parameters by CIK
+      2. Query the latest fiscal_parameters row for the CIK (rows are added by
+         scripts/update_fiscal_parameters.py when a newer 10-K changes the date)
       3. Construct FiscalYearEnd response
 
     Note: the old deprecated function ``crud.get_ticker_fiscal_year_end``
@@ -287,6 +288,7 @@ def get_fiscal_year_end_from_gcs(ticker: str) -> FiscalYearEnd | None:
             source_accession
         FROM fiscal_parameters
         WHERE target_cik = %s
+        ORDER BY extracted_at DESC NULLS LAST, fiscal_year_end_date DESC
         LIMIT 1
         """,
         (ticker.upper(), cik, cik_clean),

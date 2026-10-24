@@ -289,3 +289,55 @@ class TestWorkspaceSettings:
                             (user_id, user_id))
             conn.commit()
         assert crud.get_workspace_by_id(ws_id, user_id).alerts == 1
+
+
+def _load_fiscal_module():
+    spec = importlib.util.spec_from_file_location(
+        "update_fiscal_parameters", _ROOT / "scripts" / "update_fiscal_parameters.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+
+
+def _cover_page(period_text: str) -> str:
+    """Inline XBRL header as the raw 10-K carries it (dei:DocumentPeriodEndDate)."""
+    return ('<ix:header><ix:hidden><ix:nonNumeric contextRef="c-1" name="dei:DocumentPeriodEndDate" '
+            f'format="ixt:date-monthname-day-year-en">{period_text}</ix:nonNumeric></ix:hidden></ix:header>')
+
+
+class TestFiscalParametersInsertOnly:
+    """The seed's AAPL 10-K is aapl-20260622.htm; the raw filing is stubbed, so no GCS is touched."""
+
+    def test_dry_run_writes_nothing(self):
+        fiscal = _load_fiscal_module()
+        before = _count("SELECT COUNT(*) AS n FROM fiscal_parameters")
+        with get_connection() as conn:
+            fiscal.run(conn, dry_run=True, fetch=lambda source: _cover_page("June 22, 2026"))
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters") == before
+
+    def test_disagreeing_cover_page_inserts_nothing(self):
+        fiscal = _load_fiscal_module()
+        before = _count("SELECT COUNT(*) AS n FROM fiscal_parameters")
+        with get_connection() as conn:
+            result = fiscal.run(conn, fetch=lambda source: _cover_page("June 23, 2026"))
+        assert "0000320193" in [cik for cik, *_ in result["disagree"]]
+        assert result["insert"] == []
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters") == before
+
+    def test_agreeing_cover_page_adds_one_row_and_endpoint_returns_it(self):
+        from app.services.vectorized_gcs import get_fiscal_year_end_from_gcs
+
+        fiscal = _load_fiscal_module()
+        agree = lambda source: _cover_page("June 22, 2026")  # noqa: E731
+        before = _count("SELECT COUNT(*) AS n FROM fiscal_parameters WHERE target_cik = '0000320193'")
+        with get_connection() as conn:
+            added = fiscal.run(conn, fetch=agree)["insert"]
+            again = fiscal.run(conn, fetch=agree)["insert"]
+        assert len(added) <= 1 and again == []           # second run finds nothing new
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters WHERE target_cik = '0000320193'") == before + len(added)
+        # The seeded row is still there, untouched; the newest row wins for the endpoint.
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters WHERE target_cik = '0000320193' "
+                      "AND fiscal_year_end_date = '2025-09-27' AND source_accession = '0000320193-26-000101'") == 1
+        assert get_fiscal_year_end_from_gcs("AAPL").fiscal_year_end_date == date(2026, 6, 22)
