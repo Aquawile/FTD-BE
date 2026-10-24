@@ -494,7 +494,7 @@ jobs:
           echo "Installing cron scripts..."
           tar -czf /tmp/ftd-scripts.tgz scripts/sync_all_recent.sh scripts/sync_recent_relational.py \
             scripts/sync_vectorized_to_postgres.py scripts/evaluate_alert_subscriptions.py scripts/load_company_names.py \
-            scripts/check_data_freshness.py
+            scripts/check_data_freshness.py scripts/update_fiscal_parameters.py
           gcloud compute scp --tunnel-through-iap /tmp/ftd-scripts.tgz isabellabutera@ftd-staging-api:/tmp/ftd-scripts.tgz --zone=us-west2-a --project=ftd2026 --quiet
           api "set -euo pipefail
             rm -rf /tmp/ftd-scripts && mkdir /tmp/ftd-scripts && tar -xzf /tmp/ftd-scripts.tgz -C /tmp/ftd-scripts
@@ -507,7 +507,7 @@ jobs:
             mkdir -p /home/isabellabutera/prices /home/isabellabutera/app/scripts
             install -m 755 sync_all_recent.sh /home/isabellabutera/prices/
             install -m 644 sync_recent_relational.py /home/isabellabutera/prices/
-            install -m 755 sync_vectorized_to_postgres.py evaluate_alert_subscriptions.py load_company_names.py check_data_freshness.py /home/isabellabutera/app/scripts/
+            install -m 755 sync_vectorized_to_postgres.py evaluate_alert_subscriptions.py load_company_names.py check_data_freshness.py update_fiscal_parameters.py /home/isabellabutera/app/scripts/
             crontab -l | grep -q '^20 22 \* \* \* /home/isabellabutera/prices/sync_all_recent.sh' || { echo 'MISSING cron: 20 22 sync_all_recent.sh'; exit 1; }
             crontab -l | grep -q '^20 0 \* \* \* /home/isabellabutera/prices/sync_all_recent.sh' || { echo 'MISSING cron: 20 0 sync_all_recent.sh'; exit 1; }
             crontab -l | grep -q '^@reboot .*sync_all_recent.sh' || { echo 'MISSING cron: @reboot sync_all_recent.sh'; exit 1; }

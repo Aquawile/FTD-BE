@@ -263,3 +263,36 @@ class TestWorkspaceSettings:
                             (user_id, user_id))
             conn.commit()
         assert crud.get_workspace_by_id(ws_id, user_id).alerts == 1
+
+
+def _load_fiscal_module():
+    spec = importlib.util.spec_from_file_location(
+        "update_fiscal_parameters", _ROOT / "scripts" / "update_fiscal_parameters.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+
+class TestFiscalParametersInsertOnly:
+    def test_dry_run_writes_nothing(self):
+        fiscal = _load_fiscal_module()
+        before = _count("SELECT COUNT(*) AS n FROM fiscal_parameters")
+        with get_connection() as conn:
+            fiscal.run(conn, dry_run=True)
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters") == before
+
+    def test_newest_10k_adds_a_row_once_and_endpoint_returns_it(self):
+        from app.services.vectorized_gcs import get_fiscal_year_end_from_gcs
+
+        fiscal = _load_fiscal_module()
+        before = _count("SELECT COUNT(*) AS n FROM fiscal_parameters WHERE target_cik = '0000320193'")
+        with get_connection() as conn:
+            added = fiscal.run(conn)
+            again = fiscal.run(conn)
+        assert len(added) <= 1 and again == []           # second run finds nothing new
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters WHERE target_cik = '0000320193'") == before + len(added)
+        # The seeded row is still there, untouched; the newest row wins for the endpoint.
+        assert _count("SELECT COUNT(*) AS n FROM fiscal_parameters WHERE target_cik = '0000320193' "
+                      "AND fiscal_year_end_date = '2025-09-27' AND source_accession = '0000320193-26-000101'") == 1
+        assert get_fiscal_year_end_from_gcs("AAPL").fiscal_year_end_date == date(2026, 6, 22)
