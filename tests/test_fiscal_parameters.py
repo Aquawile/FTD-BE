@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+from datetime import date
 
 import pytest
 
@@ -15,6 +16,15 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 period_end = _mod.period_end
 plan_updates = _mod.plan_updates
+plausible = _mod.plausible
+verify_period = _mod.verify_period
+xbrl_period_end = _mod.xbrl_period_end
+
+
+def _header(period_text: str) -> str:
+    """A minimal inline XBRL header carrying dei:DocumentPeriodEndDate."""
+    return ('<ix:header><ix:hidden><ix:nonNumeric contextRef="c-1" name="dei:DocumentPeriodEndDate" '
+            f'format="ixt:date-monthname-day-year-en">{period_text}</ix:nonNumeric></ix:hidden></ix:header>')
 
 
 @pytest.mark.parametrize("source_object,expected", [
@@ -57,3 +67,62 @@ def test_cik_without_a_10k_is_left_alone():
 def test_plan_is_sorted_by_cik():
     newest = {"0000002": ("A-1", "2025-01-01"), "0000001": ("B-1", "2025-02-02")}
     assert [cik for cik, _, _ in plan_updates(newest, {})] == ["0000001", "0000002"]
+
+
+@pytest.mark.parametrize("html,want", [
+    (_header("December&#160;27, 2025"), "2025-12-27"),        # the usual cover-page form
+    (_header("December 31, 2025"), "2025-12-31"),
+    (_header("12/28/2025"), "2025-12-28"),                    # numeric form
+    (_header("<span>October</span>&#160;3, 2025"), "2025-10-03"),  # tags inside the value
+])
+def test_agree_when_cover_page_matches_the_name(html, want):
+    assert verify_period(html, want)[0] == "agree"
+
+
+def test_disagree_when_cover_page_differs_from_the_name():
+    status, text = verify_period(_header("June 22, 2026"), "2025-09-27")
+    assert (status, text) == ("disagree", "June 22, 2026")
+
+
+def test_unreadable_when_the_tag_is_missing():
+    assert verify_period("<html><body>no inline XBRL here</body></html>", "2025-09-27") == ("unreadable", "")
+
+
+def test_month_and_day_only_agrees_with_the_name_using_the_name_year():
+    # the usual form: the tag has "December 31" and the year comes from the name
+    assert verify_period(_header("December 31"), "2025-12-31") == ("agree", "December 31")
+
+
+def test_month_and_day_only_disagreeing_day_is_a_disagreement():
+    assert verify_period(_header("December 27"), "2025-12-31") == ("disagree", "December 27")
+
+
+def test_unreadable_when_the_month_and_day_are_not_a_date():
+    assert verify_period(_header("Sometime in December"), "2025-12-31") == ("unreadable", "Sometime in December")
+
+
+def test_unreadable_when_the_file_could_not_be_read():
+    assert verify_period(None, "2025-09-27") == ("unreadable", "")
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("December 27, 2025", "2025-12-27"),
+    ("12/28/2025", "2025-12-28"),
+    ("Feb 30, 2025", None),                                   # not a real day
+    ("sometime in 2025", None),
+])
+def test_xbrl_text_formats(text, expected):
+    assert xbrl_period_end(text) == expected
+
+
+def test_future_date_is_implausible():
+    assert plausible("2099-01-01", date(2026, 10, 24)) is False
+
+
+def test_date_before_2000_is_implausible():
+    assert plausible("1999-12-31", date(2026, 10, 24)) is False
+
+
+def test_today_and_2000_are_plausible():
+    assert plausible("2000-01-01", date(2026, 10, 24)) is True
+    assert plausible("2026-10-24", date(2026, 10, 24)) is True
