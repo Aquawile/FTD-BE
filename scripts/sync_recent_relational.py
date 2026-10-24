@@ -114,6 +114,8 @@ def sync_prices(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: boo
             if symbol not in symbols or rec.get("current") is None or not rec.get("timestamp"):
                 continue
             ts = datetime.fromisoformat(rec["timestamp"].replace("Z", "+00:00"))
+            if ts.year < 2000:     # Finnhub answers t=0 (1970) for a symbol with no real quote: not a price point
+                continue
             cal_date = ts.date()
             rows[(symbol, cal_date)] = {
                 "target_ticker": symbol,
@@ -150,7 +152,8 @@ def sync_prices(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: boo
                 SELECT 1 FROM staging_finnhub f
                 WHERE f.target_ticker = v.target_ticker
                   AND f.normalized_calendar_date = v.normalized_calendar_date::date
-                  AND f."timestamp" IS NOT DISTINCT FROM v."timestamp"::timestamp
+                  AND (f."timestamp" IS NULL                      -- rows loaded from the lakehouse snapshots carry no timestamp
+                       OR f."timestamp" IS NOT DISTINCT FROM v."timestamp"::timestamp)
             )
             RETURNING 1
             """,

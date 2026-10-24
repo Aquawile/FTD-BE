@@ -106,6 +106,32 @@ class TestPriceSyncInsertOnly:
         assert (first, second) == (4, 0)
         assert _count("SELECT COUNT(*) AS n FROM staging_finnhub") == before + 4
 
+    def test_existing_row_without_timestamp_counts_as_stored(self):
+        """Rows loaded from the lakehouse snapshots have no timestamp; re-reading raw files must not add a second copy."""
+        sync = _load_sync_module()
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""INSERT INTO staging_finnhub (target_ticker, element_type, content_body, normalized_calendar_date,
+                                                            ingest_date, symbol, "timestamp", "current")
+                               VALUES ('AAPL', 'quantitative', '', '2026-10-27', '2026-09-18', 'AAPL', NULL, 301.0)""")
+            conn.commit()
+        bucket = _Bucket({"prices/2026-10-27/data.jsonl": _quote("AAPL", "2026-10-27", 301.0)})
+        before = _count("SELECT COUNT(*) AS n FROM staging_finnhub WHERE target_ticker = 'AAPL'")
+        with get_connection() as conn:
+            inserted = sync.sync_prices(conn, bucket, {"AAPL"}, {}, 3, False, since_override=date(2026, 10, 27))
+        assert inserted == 0
+        assert _count("SELECT COUNT(*) AS n FROM staging_finnhub WHERE target_ticker = 'AAPL'") == before
+
+    def test_zero_timestamp_quote_is_not_stored(self):
+        sync = _load_sync_module()
+        junk = json.dumps({"symbol": "NVDA", "timestamp": "1970-01-01T00:00:00Z", "current": 220.0, "change": 0, "percent_change": 0,
+                           "high": 0, "low": 0, "open": 0, "previous_close": 0})
+        bucket = _Bucket({"prices/2026-10-28/data.jsonl": junk})
+        with get_connection() as conn:
+            inserted = sync.sync_prices(conn, bucket, {"NVDA"}, {}, 3, False, since_override=date(2026, 10, 28))
+        assert inserted == 0
+        assert _count("SELECT COUNT(*) AS n FROM staging_finnhub WHERE normalized_calendar_date < '2000-01-01'") == 0
+
     def test_prices_endpoint_returns_one_row_per_day(self):
         rows = crud.get_ticker_prices("AAPL", date(2026, 10, 12), date(2026, 10, 31))
         days = [r.normalized_calendar_date for r in rows]
