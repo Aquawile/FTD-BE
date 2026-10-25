@@ -1,4 +1,4 @@
-"""GNews queries search by company name and ticker (gnews/queries.py)."""
+"""GNews queries search by company name; a bare ticker only when no name is known (gnews/queries.py)."""
 import importlib.util
 import os
 
@@ -20,11 +20,11 @@ q = _load("gnews_queries", ("gnews", "queries.py"))
 srr = _load("sync_recent_relational", ("scripts", "sync_recent_relational.py"))
 
 
-def test_ticker_terms_use_name_and_ticker():
-    assert q.ticker_terms("NVDA", {"NVDA": "NVIDIA"}) == ['"NVIDIA"', '"NVDA"']
-    assert q.ticker_terms("XYZ", {}) == ['"XYZ"']
-    assert q.ticker_terms("IBM", {"IBM": "IBM"}) == ['"IBM"']           # name equal to ticker: once
-    assert q.ticker_terms("ACME", {"ACME": 'Acme "Labs"'}) == ['"Acme Labs"', '"ACME"']
+def test_ticker_terms_use_the_name_never_the_bare_symbol_next_to_it():
+    assert q.ticker_terms("NVDA", {"NVDA": "NVIDIA"}) == ['"NVIDIA"']
+    assert q.ticker_terms("XYZ", {}) == ['"XYZ"']                       # no name: the symbol is all there is
+    assert q.ticker_terms("IBM", {"IBM": "IBM"}) == ['"IBM"']
+    assert q.ticker_terms("ACME", {"ACME": 'Acme "Labs"'}) == ['"Acme Labs"']
 
 
 def _roster(n=500, name=lambda i: f"Company {i}"):
@@ -42,7 +42,7 @@ def test_spreads_over_budget_within_length_and_covers_every_ticker():
     assert sorted(t for b in batches for t in b["tickers"]) == sorted(tickers)
     first = batches[0]
     assert first["tickers"] == ["T000", "T001", "T002", "T003", "T004"]
-    assert first["query"] == '"T000" OR "Company 1" OR "T001" OR "Company 2" OR "T002" OR "Company 3" OR "T003" OR "Company 4" OR "T004"'
+    assert first["query"] == '"T000" OR "Company 1" OR "Company 2" OR "Company 3" OR "Company 4"'
 
 
 def test_tighter_budget_packs_more_then_drops_longest_names():
