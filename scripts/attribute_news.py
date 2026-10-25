@@ -39,10 +39,44 @@ def label(text: str, ticker: str, names: dict[str, list[str]]) -> str:
     return article_mentions(text or "", ticker, names.get(ticker, [])) or NOT_ATTRIBUTED
 
 
+def recheck(conn, names: dict[str, list[str]], apply: bool) -> int:
+    """Re-evaluate labelled rows; change only those whose label differs under the current rules."""
+    changes: list[tuple[str, str]] = []
+    by_change: collections.Counter = collections.Counter()
+    with conn.cursor() as cur:
+        cur.execute("SELECT ctid::text, target_ticker, content_body, attributed_by FROM staging_gnews "
+                    "WHERE attributed_by IS NOT NULL AND attributed_by <> %s", (NOT_ATTRIBUTED,))
+        for tid, ticker, body, old in cur.fetchall():
+            new = label(body, ticker, names)
+            if new != old:
+                changes.append((tid, new))
+                by_change[(ticker, old, new)] += 1
+    print(f"rows whose label changes: {len(changes)}")
+    for (ticker, old, new), n in by_change.most_common(15):
+        print(f"  {ticker:6s} {old} -> {new}: {n}")
+    if apply and changes:
+        with conn.cursor() as cur:
+            done = psycopg2.extras.execute_values(
+                cur, "UPDATE staging_gnews g SET attributed_by = v.rule FROM (VALUES %s) AS v(tid, rule) "
+                     "WHERE g.ctid = v.tid::tid AND g.attributed_by IS NOT NULL RETURNING 1",
+                changes, page_size=1000, fetch=True)
+            if len(done) != len(changes):
+                conn.rollback()
+                raise RuntimeError(f"changed {len(done)} of {len(changes)}; rolled back")
+        conn.commit()
+        print("APPLIED")
+    else:
+        conn.rollback()
+        print("dry run: nothing written")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--apply", action="store_true", help="write the labels (default: dry run)")
     parser.add_argument("--samples", type=int, default=8)
+    parser.add_argument("--recheck", action="store_true",
+                        help="with --apply: re-evaluate rows already labelled (not 'none') and change only those the current rules no longer match")
     parser.add_argument("--limit", type=int, help="with --apply: stop after labelling about this many rows (a trial run)")
     args = parser.parse_args()
 
@@ -60,6 +94,9 @@ def main() -> int:
             todo = cur.fetchone()[0]
         logger.info("%d company names loaded; %d unlabelled rows to look at (%s)", sum(map(len, names.values())), todo,
                     "APPLY" if args.apply else "dry run")
+
+        if args.recheck:
+            return recheck(conn, names, args.apply)
 
         by_rule: collections.Counter = collections.Counter()
         by_month: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
