@@ -1,8 +1,11 @@
 """Build GNews search queries from tickers and company names.
 
-Each ticker is searched by its full company name and its ticker symbol:
-    "NVIDIA" OR "NVDA" OR "Apple" OR "AAPL" ...
-(a ticker without a known name is searched by its symbol alone). Terms are
+Each company is searched by its name:
+    "NVIDIA" OR "Apple" OR "AbbVie" ...
+A ticker without a known name is searched by its symbol. A bare symbol is never
+added next to a name: GNews matches it anywhere in an article ("ABT" body kits,
+"ARE", "ALL", "ON"), and those hits, not the company's news, filled about two
+thirds of the 10 articles each query returns. Terms are
 spread over the daily request budget (GNews returns at most 10 articles per
 query, so more, smaller queries return more articles), each query within
 GNews's length limit. If the budget can't hold every ticker that way, terms
@@ -21,9 +24,7 @@ MAX_REQUESTS_PER_RUN = 100   # GNews free plan: 100 requests per day
 
 def ticker_terms(ticker: str, names: dict[str, str]) -> list[str]:
     name = (names.get(ticker) or "").replace('"', "").strip()
-    terms = [f'"{name}"'] if name and name.upper() != ticker.upper() else []
-    terms.append(f'"{ticker}"')
-    return terms
+    return [f'"{name}"'] if name else [f'"{ticker}"']
 
 
 def _pack(tickers: list[str], names: dict[str, str], max_query_length: int,

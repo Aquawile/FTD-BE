@@ -3,7 +3,7 @@
 
 Sources (gs://raw-data-strg):
   prices/{YYYY-MM-DD}/data.jsonl     -> staging_finnhub (one row per ticker per trading day)
-  gnews/{YYYY-MM-DD}/batch_NNN.json  -> staging_gnews   (one row per article per queried ticker)
+  gnews/{YYYY-MM-DD}/batch_NNN.json  -> staging_gnews   (one row per article per ticker it mentions)
 
 Then refreshes the price snapshot columns on ``tickers`` (current_price,
 change_percent, price_as_of) from the latest staging_finnhub row per symbol.
@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import logging
 import os
@@ -183,16 +184,19 @@ def _normalize_text(value) -> str:
 
 
 # ─── Attribution ─────────────────────────────────────────────────────────────
-# A GNews batch queries ~5 tickers at once ("$MMM" OR "$AOS" ...) and the API
-# matches loosely, so an article in a batch is not necessarily about every
-# ticker in its query. In strict mode an article is kept for a ticker only if
-# it actually mentions it.
+# A GNews batch queries ~5 companies at once ("3M" OR "MMM" OR "Abbott" OR ...)
+# and returns the 10 newest matches for the whole OR, so an article in a batch
+# is usually about ONE of the five. Each article is therefore attributed to a
+# ticker only if its text mentions that company, and staging_gnews.attributed_by
+# records the rule that tied them. The ticker page and news search show only
+# attributed rows.
 
 _EXCHANGES = r"(?:NYSE(?:\s+American)?|NASDAQ|Nasdaq|AMEX|Cboe)"
 _NAME_SUFFIX_RE = re.compile(
     r"[,\s]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|n\.?v|s\.?a|ag|holdings?|group|the)\.?$",
     re.IGNORECASE,
 )
+NOT_ATTRIBUTED = "none"
 
 
 def normalize_company_name(name: str) -> str | None:
@@ -209,33 +213,71 @@ def normalize_company_name(name: str) -> str | None:
     return base if len(base) >= 3 or (len(base) >= 2 and any(c.isdigit() for c in base)) else None
 
 
-def article_mentions(text: str, ticker: str, names: list[str]) -> str | None:
-    """Which rule ties the article to the ticker: 'dollar', 'exchange', 'paren', 'name', or None.
+@functools.lru_cache(maxsize=4096)
+def _name_regex(name: str) -> re.Pattern:
+    """A company name as a whole-word pattern.
 
-    A bare upper-case ticker is not enough: tickers collide with acronyms and
-    product names (e.g. "Step AOS" in a phone review was filed under AOS).
+    One-word names that are also ordinary words (Target, Visa, Block, Ford) only
+    count when written as a name: capitalised or all caps, never "price target".
     """
+    body = re.escape(name)
+    edge = r"(?<![A-Za-z0-9]){}(?![A-Za-z0-9])"
+    if " " not in name and name.isalpha():
+        forms = sorted({name, name.upper(), name.capitalize()}, key=len, reverse=True)
+        return re.compile(edge.format("(?:" + "|".join(re.escape(f) for f in forms) + ")"))
+    return re.compile(edge.format(body), re.IGNORECASE)
+
+
+@functools.lru_cache(maxsize=1024)
+def _symbol_regexes(ticker: str) -> tuple[re.Pattern, re.Pattern, re.Pattern]:
     t = re.escape(ticker)
-    if re.search(rf"\${t}\b", text, re.IGNORECASE):
+    return (
+        re.compile(rf"\${t}\b", re.IGNORECASE),
+        re.compile(rf"{_EXCHANGES}\s*:\s*{t}\b"),
+        re.compile(rf"\(\s*{t}\s*\)"),  # "Apple (AAPL)"
+    )
+
+
+# Names that are also ordinary words or well-known acronyms ("price target", "Banana Ball", "CME" = coronal mass
+# ejection, "AES" = encryption). On their own they prove nothing; they count only next to "(TICKER)".
+WEAK_NAMES = frozenset(n.lower() for n in (
+    "AES", "APA", "Aon", "Ball", "Block", "Booking", "Carnival", "CME", "Coherent", "Corning", "Dover", "Dow", "Flex",
+    "Fox", "News", "PPL", "Progressive", "PTC", "RTX", "Southern", "Tapestry", "Target", "TKO", "Visa",
+))
+
+
+def article_mentions(text: str, ticker: str, names: list[str]) -> str | None:
+    """Which rule ties the article to the ticker: 'dollar', 'exchange', 'name', or None.
+
+    Deliberately strict. A bare ticker is not enough: tickers collide with acronyms
+    and words ("Step AOS" in a phone review, "ABT" body kits, "(KMI) panel" in football),
+    and "(TICKER)" on its own is just as ambiguous. The company name is what ties an
+    article to a company, or the market notation $NVDA / NYSE: ITW. Names that are
+    ordinary words (WEAK_NAMES) need "(TICKER)" beside them.
+    """
+    dollar, exchange, paren = _symbol_regexes(ticker)
+    if dollar.search(text):
         return "dollar"
-    if re.search(rf"{_EXCHANGES}\s*:\s*{t}\b", text):
+    if exchange.search(text):
         return "exchange"
-    if re.search(rf"\(\s*{t}\s*\)", text):  # "Apple (AAPL)"
-        return "paren"
     for name in names:
-        if re.search(rf"(?<![A-Za-z]){re.escape(name)}(?![A-Za-z])", text, re.IGNORECASE):
+        if _name_regex(name).search(text) and (name.lower() not in WEAK_NAMES or paren.search(text)):
             return "name"
     return None
 
 
 def load_company_names(cur) -> dict[str, list[str]]:
-    """Ticker -> match names from tickers.name (only where it isn't just the symbol)."""
-    cur.execute("SELECT symbol, name FROM tickers WHERE name IS NOT NULL AND name <> symbol")
+    """Ticker -> names to match: ticker_company_names (what GNews was queried with), plus tickers.name when it is a real name."""
+    cur.execute("""
+        SELECT symbol, company_name FROM ticker_company_names
+        UNION
+        SELECT symbol, name FROM tickers WHERE name IS NOT NULL AND name <> symbol
+    """)
     names: dict[str, list[str]] = {}
     for symbol, name in cur.fetchall():
         normalized = normalize_company_name(name)
-        if normalized:
-            names.setdefault(symbol.upper(), []).append(normalized)
+        if normalized and normalized not in names.setdefault(symbol.upper(), []):
+            names[symbol.upper()].append(normalized)
     return names
 
 
@@ -250,8 +292,17 @@ def batch_tickers(payload: dict, symbols: set[str]) -> list[str]:
 
 
 def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
-              since_override: date | None = None, strict: bool = False,
+              since_override: date | None = None,
               names: dict[str, list[str]] | None = None) -> int:
+    """Load GNews batches into staging_gnews, each article under the tickers it is really about.
+
+    A batch covers ~5 tickers and returns the 10 newest matches for the whole OR query, so an
+    article is stored for a ticker only when article_mentions() ties it to that company, and the
+    row records the rule in attributed_by. An article that mentions none of its batch's companies
+    is kept once (under the batch's first ticker, attributed_by = 'none') so it still counts as an
+    analysed article; the ticker pages skip it. The raw batch files are untouched.
+    """
+    names = names or {}
     with conn.cursor() as cur:
         cur.execute("SELECT MAX(ingest_date)::date FROM staging_gnews")
         latest = cur.fetchone()[0] or date(2000, 1, 1)
@@ -260,10 +311,9 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
         existing = set(cur.fetchall())
     since = since_override or (latest - timedelta(days=lookback_days))
     folders = _list_date_folders(bucket, "gnews", since)
-    logger.info("gnews: latest ingest in PG=%s, reading %d GCS folder(s) since %s%s",
-                latest, len(folders), since, " (strict attribution)" if strict else "")
+    logger.info("gnews: latest ingest in PG=%s, reading %d GCS folder(s) since %s", latest, len(folders), since)
 
-    inserted = skipped_existing = skipped_unrelated = 0
+    inserted = skipped_existing = unattributed = 0
     # One day-folder at a time: bounded memory for long backfills, committed as it goes.
     for folder in folders:
         rows: dict[tuple[str, str, date], tuple] = {}
@@ -287,12 +337,14 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
                     continue
                 published = datetime.fromisoformat(article["publishedAt"].replace("Z", "+00:00")).date()
                 url = article.get("url") or None
-                for ticker in tickers:
-                    if strict and not article_mentions(content_body, ticker, (names or {}).get(ticker, [])):
-                        skipped_unrelated += 1
-                        continue
+                matched = [(t, article_mentions(content_body, t, names.get(t, []))) for t in tickers]
+                matched = [(t, rule) for t, rule in matched if rule]
+                if not matched:
+                    unattributed += 1
+                    matched = [(tickers[0], NOT_ATTRIBUTED)]
+                for ticker, rule in matched:
                     rows[(ticker, url or content_body[:200], published)] = (
-                        ticker, cik_map.get(ticker), "narrative", content_body, published, ingest_date, url,
+                        ticker, cik_map.get(ticker), "narrative", content_body, published, ingest_date, url, rule,
                     )
 
         new_keys = [k for k in rows if k not in existing]
@@ -303,7 +355,7 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
                     cur,
                     """
                     INSERT INTO staging_gnews
-                        (target_ticker, target_cik, element_type, content_body, normalized_calendar_date, ingest_date, url)
+                        (target_ticker, target_cik, element_type, content_body, normalized_calendar_date, ingest_date, url, attributed_by)
                     VALUES %s
                     """,
                     [rows[k] for k in new_keys],
@@ -314,8 +366,8 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
         inserted += len(new_keys)
 
     verb = "would insert" if dry_run else "inserted"
-    logger.info("gnews: %s %d new rows (%d already present, %d skipped as unrelated)",
-                verb, inserted, skipped_existing, skipped_unrelated)
+    logger.info("gnews: %s %d new rows (%d already present; %d articles mention none of their batch's companies)",
+                verb, inserted, skipped_existing, unattributed)
     return inserted
 
 
@@ -355,8 +407,6 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--since", type=date.fromisoformat, help="backfill from this date (YYYY-MM-DD) instead of the lookback")
     parser.add_argument("--skip-prices", action="store_true", help="only sync news")
-    parser.add_argument("--strict-attribution", action="store_true",
-                        help="keep an article for a ticker only if it mentions it (see article_mentions)")
     args = parser.parse_args()
 
     bucket = storage.Client().bucket(RAW_BUCKET)
@@ -368,12 +418,10 @@ def main() -> int:
         logger.info("Loaded %d tracked symbols; %d have a CIK from GCS filings", len(symbols), len(symbols & cik_map.keys()))
         if not args.skip_prices:
             sync_prices(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run, args.since)
-        names = None
-        if args.strict_attribution:
-            with conn.cursor() as cur:
-                names = load_company_names(cur)
+        with conn.cursor() as cur:
+            names = load_company_names(cur)
         sync_news(conn, bucket, symbols, cik_map, args.lookback_days, args.dry_run,
-                  since_override=args.since, strict=args.strict_attribution, names=names)
+                  since_override=args.since, names=names)
         refresh_ticker_prices(conn, args.dry_run)
     except Exception:
         conn.rollback()

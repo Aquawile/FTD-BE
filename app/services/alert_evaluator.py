@@ -24,6 +24,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
+from app.crud import NEWS_ABOUT_TICKER
 from app.db import get_connection, query_dict
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ def _latest_close(ticker: str) -> tuple[float | None, date | None]:
 
 def _news_count(ticker: str) -> tuple[int, date | None]:
     rows = query_dict(
-        "SELECT COUNT(*) AS n, MAX(normalized_calendar_date)::date AS latest FROM staging_gnews WHERE target_ticker = %s",
+        f"SELECT COUNT(*) AS n, MAX(normalized_calendar_date)::date AS latest FROM staging_gnews WHERE target_ticker = %s AND {NEWS_ABOUT_TICKER}",
         (ticker,),
     )
     return int(rows[0]["n"]), rows[0]["latest"]

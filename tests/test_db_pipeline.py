@@ -226,6 +226,59 @@ class TestArticleCount:
         assert crud.count_articles()[0] == before + 1  # one article filed under two tickers counts once
 
 
+class TestNewsAttribution:
+    """A GNews batch covers several companies; each article belongs only to the ones it names."""
+
+    def _batch(self):
+        def art(title, tail):
+            return {"title": title, "description": tail, "content": "", "url": f"https://example.com/{uuid4().hex}",
+                    "publishedAt": "2026-10-22T09:00:00Z"}
+        arts = {
+            "apple": art("Apple unveils a new foldable phone", "Analysts expect strong demand for the device this quarter."),
+            "nvidia": art("Chip stocks rally on AI demand", "Shares of NVIDIA ($NVDA) hit a record as data center sales surge again."),
+            "neither": art("Local council approves new bridge", "The long-awaited crossing will open to traffic next spring after review."),
+        }
+        payload = {"tickers": ["AAPL", "NVDA", "MMM"], "fetched_at": "2026-10-23T00:00:05+00:00",
+                   "data": {"articles": list(arts.values())}}
+        return arts, _Bucket({"gnews/2026-10-23/batch_001.json": json.dumps(payload)})
+
+    def test_article_is_filed_only_under_the_company_it_mentions(self):
+        sync = _load_sync_module()
+        arts, bucket = self._batch()
+        names = {"AAPL": ["Apple"], "NVDA": ["NVIDIA"], "MMM": ["3M"]}
+        symbols = {"AAPL", "NVDA", "MMM"}
+        with get_connection() as conn:
+            first = sync.sync_news(conn, bucket, symbols, {}, 3, False, since_override=date(2026, 10, 23), names=names)
+            again = sync.sync_news(conn, bucket, symbols, {}, 3, False, since_override=date(2026, 10, 23), names=names)
+        assert (first, again) == (3, 0)  # one row per article: nothing is stored under the 4 wrong tickers
+        rows = {r["url"]: r for r in query_dict(
+            "SELECT target_ticker, attributed_by, url FROM staging_gnews WHERE url = ANY(%s)",
+            ([a["url"] for a in arts.values()],))}
+        assert (rows[arts["apple"]["url"]]["target_ticker"], rows[arts["apple"]["url"]]["attributed_by"]) == ("AAPL", "name")
+        assert (rows[arts["nvidia"]["url"]]["target_ticker"], rows[arts["nvidia"]["url"]]["attributed_by"]) == ("NVDA", "dollar")
+        assert (rows[arts["neither"]["url"]]["target_ticker"], rows[arts["neither"]["url"]]["attributed_by"]) == ("AAPL", "none")
+
+    def test_pages_show_attributed_news_only_but_the_article_still_counts(self):
+        urls = {k: f"https://example.com/{uuid4().hex}" for k in ("about", "unrelated")}
+        before = crud.count_articles()[0]
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""INSERT INTO staging_gnews (target_ticker, element_type, content_body, normalized_calendar_date,
+                                                          ingest_date, url, attributed_by)
+                               VALUES ('ZZTEST', 'narrative', 'about the company', '2026-10-22', '2026-10-23', %s, 'name'),
+                                      ('ZZTEST', 'narrative', 'not about the company', '2026-10-22', '2026-10-23', %s, 'none'),
+                                      ('ZZTEST', 'narrative', 'not labelled yet', '2026-10-22', '2026-10-23', NULL, NULL)""",
+                            (urls["about"], urls["unrelated"]))
+            conn.commit()
+        window = (date(2026, 10, 1), date(2026, 10, 31))
+        shown = [r.content_body for r in crud.get_ticker_news("ZZTEST", *window)]
+        assert sorted(shown) == ["about the company", "not labelled yet"]
+        assert crud.get_ticker_news_bounds("ZZTEST", *window)[0] == 2
+        assert crud.count_articles()[0] == before + 2  # the unrelated article is still an analysed article
+        assert all("not about" not in e.content_body for e in
+                   crud.get_ticker_timeline("ZZTEST", *window, sources=["gnews"]))
+
+
 class TestCompanyNames:
     def test_name_falls_back_to_company_name_and_is_searchable(self):
         with get_connection() as conn:
