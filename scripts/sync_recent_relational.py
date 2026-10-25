@@ -221,7 +221,8 @@ def _name_regex(name: str) -> re.Pattern:
     count when written as a name: capitalised or all caps, never "price target".
     """
     body = re.escape(name)
-    edge = r"(?<![A-Za-z0-9]){}(?![A-Za-z0-9])"
+    # Not inside a longer word or number: "3M" must not match "$3M" or "$3.3M".
+    edge = r"(?<![A-Za-z0-9$])(?<![0-9]\.){}(?![A-Za-z0-9])"
     if " " not in name and name.isalpha():
         forms = sorted({name, name.upper(), name.capitalize()}, key=len, reverse=True)
         return re.compile(edge.format("(?:" + "|".join(re.escape(f) for f in forms) + ")"))
