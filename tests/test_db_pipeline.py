@@ -265,9 +265,9 @@ class TestNewsAttribution:
             with conn.cursor() as cur:
                 cur.execute("""INSERT INTO staging_gnews (target_ticker, element_type, content_body, normalized_calendar_date,
                                                           ingest_date, url, attributed_by)
-                               VALUES ('ZZTEST', 'narrative', 'about the company', '2026-10-22', now(), %s, 'name'),
-                                      ('ZZTEST', 'narrative', 'not about the company', '2026-10-22', now(), %s, 'none'),
-                                      ('ZZTEST', 'narrative', 'not labelled yet', '2026-10-22', now(), NULL, NULL)""",
+                               VALUES ('ZZTEST', 'narrative', 'about the company', '2026-10-22', '2026-10-23', %s, 'name'),
+                                      ('ZZTEST', 'narrative', 'not about the company', '2026-10-22', '2026-10-23', %s, 'none'),
+                                      ('ZZTEST', 'narrative', 'not labelled yet', '2026-10-22', '2026-10-23', NULL, NULL)""",
                             (urls["about"], urls["unrelated"]))
             conn.commit()
         window = (date(2026, 10, 1), date(2026, 10, 31))
