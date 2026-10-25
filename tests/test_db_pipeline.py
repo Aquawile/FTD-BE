@@ -205,10 +205,15 @@ class TestArticleCount:
                                       ('AAPL', '000032019324000999', '10-K', 'older filing only in the archive')""")
             conn.commit()
         assert crud.count_articles()[1] == filings + 1  # only the archive-only filing is new
-        # all-time elements: every archive row (3 just added) + vectorized chunks of filings the archive lacks
-        assert crud.count_articles()[2] == elements + 3
-        assert crud.count_articles()[2] >= _count("SELECT COUNT(*) AS n FROM staging_sec_archive")
-        assert archive_rows >= 0
+        # all-time elements = every archive row + vectorized chunks of filings the archive lacks (no double counting)
+        archive_after = _count("SELECT COUNT(*) AS n FROM staging_sec_archive")
+        mirror_only = _count("""SELECT COUNT(*) AS n FROM sec_vectorized_chunks
+                                WHERE source_object LIKE 'SEC/%%'
+                                  AND split_part(source_object, '/', 4) NOT IN
+                                      (SELECT accession_number FROM staging_sec_archive WHERE accession_number IS NOT NULL)""")
+        assert crud.count_articles()[2] == archive_after + mirror_only
+        assert crud.count_articles()[2] >= archive_after
+        assert archive_after == archive_rows + 3
 
     def test_new_article_raises_the_count(self):
         before = crud.count_articles()[0]
