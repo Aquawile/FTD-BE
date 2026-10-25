@@ -116,7 +116,7 @@ class TestDashboardEndpoint:
     @pytest.mark.unit
     def test_dashboard_stats_returns_expected_fields(self) -> None:
         with patch("app.services.vectorized_gcs.count_vectorized_content", return_value=15000), \
-             patch("app.crud.count_articles", return_value=(21959, 704)):
+             patch("app.crud.count_articles", return_value=(21959, 704, 758054)):
             with patch("app.db.query_dict") as mock_qd:
                 mock_qd.side_effect = [
                     [{"count": 500}],
@@ -125,7 +125,8 @@ class TestDashboardEndpoint:
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
-            assert data["articles_count"] == 21959 + 704
+            assert data["articles_count"] == 758054 + 21959
+            assert data["sec_elements_count"] == 758054
             assert data["news_articles_count"] == 21959
             assert data["sec_filings_count"] == 704
             assert data["tickers_count"] == 500
@@ -135,7 +136,7 @@ class TestDashboardEndpoint:
     @pytest.mark.unit
     def test_dashboard_stats_returns_zeros_on_empty(self) -> None:
         with patch("app.services.vectorized_gcs.count_vectorized_content", return_value=0), \
-             patch("app.crud.count_articles", return_value=(0, 0)):
+             patch("app.crud.count_articles", return_value=(0, 0, 0)):
             with patch("app.db.query_dict") as mock_qd:
                 mock_qd.side_effect = [
                     [{"count": 0}],
@@ -152,7 +153,7 @@ class TestDashboardEndpoint:
     @pytest.mark.unit
     def test_dashboard_stats_no_auth_required(self) -> None:
         with patch("app.services.vectorized_gcs.count_vectorized_content", return_value=0), \
-             patch("app.crud.count_articles", return_value=(0, 0)):
+             patch("app.crud.count_articles", return_value=(0, 0, 0)):
             with patch("app.db.query_dict") as mock_qd:
                 mock_qd.side_effect = [
                     [{"count": 0}],

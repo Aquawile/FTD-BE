@@ -88,7 +88,8 @@ class SearchResult(BaseModel):
 
 
 class DashboardStats(BaseModel):
-    articles_count: int = 0          # news_articles_count + sec_filings_count
+    articles_count: int = 0          # all-time items analysed: sec_elements_count + news_articles_count
+    sec_elements_count: int = 0      # all-time parsed SEC elements (relational archive + newer vectorized chunks)
     news_articles_count: int = 0     # distinct news articles (staging_gnews, by URL)
     sec_filings_count: int = 0       # distinct SEC filings (archive + vectorized mirror)
     tickers_count: int = 0
