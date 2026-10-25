@@ -71,11 +71,41 @@ export function Sidebar({ page, navigate, collapsed, onCollapse, unreadAlerts = 
   );
 }
 
-export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 0, userEmail, userName, onSignOut }: {
+export type BellAlert = { id: string | number; ticker?: string | null; type: string; message: string; read: boolean; severity: string; time?: string | null };
+
+export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 0, userEmail, userName, onSignOut, loadRecentAlerts, onMarkAllRead }: {
   navigate: (p: Page) => void; searchQuery: string; setSearchQuery: (v: string) => void; onSearch: () => void; unreadAlerts?: number; userEmail?: string; userName?: string; onSignOut?: () => void;
+  loadRecentAlerts?: () => Promise<BellAlert[]>; onMarkAllRead?: () => Promise<void>;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [bellAlerts, setBellAlerts] = useState<BellAlert[] | null>(null);
+  const [bellError, setBellError] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
+
+  const openBell = async () => {
+    const next = !bellOpen;
+    setBellOpen(next);
+    if (!next || !loadRecentAlerts) return;
+    setBellError(false);
+    try { setBellAlerts(await loadRecentAlerts()); } catch { setBellError(true); }
+  };
+
+  const markAll = async () => {
+    try {
+      await onMarkAllRead?.();
+      setBellAlerts(prev => (prev ? prev.map(a => ({ ...a, read: true })) : prev));
+    } catch { setBellError(true); }
+  };
+
+  useEffect(() => {
+    if (!bellOpen) return;
+    const outside = (e: MouseEvent) => { if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setBellOpen(false); };
+    document.addEventListener("mousedown", outside); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", outside); document.removeEventListener("keydown", esc); };
+  }, [bellOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => { if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false); };
@@ -97,10 +127,53 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
         />
       </div>
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => navigate("alerts")} className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all cursor-pointer">
-          <Bell size={18} />
-          {unreadAlerts > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" aria-label={`${unreadAlerts} unread alerts`} />}
-        </button>
+        <div className="relative" ref={bellRef}>
+          <button
+            onClick={openBell}
+            aria-label={unreadAlerts > 0 ? `Notifications, ${unreadAlerts} unread` : "Notifications"}
+            aria-expanded={bellOpen}
+            className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all cursor-pointer"
+          >
+            <Bell size={18} />
+            {unreadAlerts > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-orange-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                {unreadAlerts > 99 ? "99+" : unreadAlerts}
+              </span>
+            )}
+          </button>
+          {bellOpen && (
+            <div className="absolute right-0 mt-2 w-80 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+                <span className="text-sm font-semibold text-foreground">Notifications</span>
+                {unreadAlerts > 0 && onMarkAllRead && (
+                  <button onClick={markAll} className="text-xs text-primary hover:underline cursor-pointer">Mark all read</button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {bellError ? (
+                  <p className="px-4 py-6 text-xs text-red-400 text-center">Couldn't load notifications.</p>
+                ) : bellAlerts === null ? (
+                  <p className="px-4 py-6 text-xs text-muted-foreground text-center">Loading…</p>
+                ) : bellAlerts.length === 0 ? (
+                  <p className="px-4 py-6 text-xs text-muted-foreground text-center">No notifications yet. Subscribe to a ticker on the Alerts page.</p>
+                ) : bellAlerts.map(a => (
+                  <button key={a.id} onClick={() => { setBellOpen(false); navigate("alerts"); }}
+                    className="w-full text-left px-4 py-2.5 border-b border-border/30 last:border-0 hover:bg-secondary/50 cursor-pointer flex gap-2">
+                    <span className={cn("mt-1.5 w-1.5 h-1.5 rounded-full shrink-0", a.read ? "bg-transparent" : "bg-orange-500")} />
+                    <span className="min-w-0">
+                      <span className="block text-xs text-foreground"><span className="font-mono font-semibold">{a.ticker || "—"}</span> · {a.message}</span>
+                      {a.time && <span className="block text-[11px] text-muted-foreground mt-0.5">{new Date(a.time).toLocaleString()}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => { setBellOpen(false); navigate("alerts"); }}
+                className="w-full px-4 py-2.5 text-xs text-primary hover:bg-secondary/50 border-t border-border/50 cursor-pointer">
+                View all alerts and manage subscriptions →
+              </button>
+            </div>
+          )}
+        </div>
         <div className="relative" ref={profileRef}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
             {userName ? userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "IB"}
@@ -121,7 +194,7 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
   );
 }
 
-export function AppShell({ page, navigate, children, userEmail, userName, onSignOut, unreadAlerts = 0, onSearch }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void; unreadAlerts?: number; onSearch?: (query: string) => void }) {
+export function AppShell({ page, navigate, children, userEmail, userName, onSignOut, unreadAlerts = 0, onSearch, loadRecentAlerts, onMarkAllRead }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void; unreadAlerts?: number; onSearch?: (query: string) => void; loadRecentAlerts?: () => Promise<BellAlert[]>; onMarkAllRead?: () => Promise<void> }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const handleSearch = () => {
@@ -135,7 +208,7 @@ export function AppShell({ page, navigate, children, userEmail, userName, onSign
     <div className="flex min-h-screen">
       <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} unreadAlerts={unreadAlerts} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} unreadAlerts={unreadAlerts} userEmail={userEmail} userName={userName} onSignOut={onSignOut} />
+        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} unreadAlerts={unreadAlerts} userEmail={userEmail} userName={userName} onSignOut={onSignOut} loadRecentAlerts={loadRecentAlerts} onMarkAllRead={onMarkAllRead} />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>

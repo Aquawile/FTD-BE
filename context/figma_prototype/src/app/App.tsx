@@ -5,7 +5,7 @@ import { firebaseAuth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
-import { apiRequest, API_BASE } from "../api";
+import { apiRequest, API_BASE, markAlertsRead } from "../api";
 import { WorkspaceResponse } from "../types";
 
 import { AppShell } from "../components/Shell";
@@ -141,7 +141,9 @@ function App() {
       {isPublic ? (
         <div className="min-h-screen bg-background">{renderPage()}</div>
       ) : (
-        <AppShell page={page} navigate={navigate} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} unreadAlerts={unreadAlerts} onSearch={setSearchText}>
+        <AppShell page={page} navigate={navigate} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} unreadAlerts={unreadAlerts} onSearch={setSearchText}
+          loadRecentAlerts={async () => { const r = await apiRequest("/alerts?limit=6", firebaseUser); if (!r.ok) throw new Error("alerts"); return r.json(); }}
+          onMarkAllRead={async () => { await markAlertsRead(firebaseUser); await refreshAlerts(); }}>
           {renderPage()}
         </AppShell>
       )}

@@ -554,8 +554,11 @@ def get_workspace_by_id(workspace_id: int, user_id: int) -> WorkspaceResponse | 
     return _workspace_row(rows[0]) if rows else None
 
 
-def count_articles() -> tuple[int, int]:
-    """Distinct news articles and distinct SEC filings, counted live at request time.
+def count_articles() -> tuple[int, int, int]:
+    """(distinct news articles, distinct SEC filings, SEC elements analysed), all time, counted live at request time.
+
+    SEC elements = every parsed element in the relational archive (staging_sec_archive, restored from the
+    lakehouse snapshots) plus the vectorized chunks of filings the archive does not hold (filed after it).
 
     News: staging_gnews (relational, loaded nightly). One article is stored once per
     ticker in its GNews batch, so it is counted by URL. The vectorized gnews/ files
@@ -586,10 +589,14 @@ def count_articles() -> tuple[int, int]:
                 SELECT acc FROM archive WHERE acc IS NOT NULL
                 UNION
                 SELECT split_part(source_object, '/', 4) FROM sec_vectorized_chunks WHERE source_object LIKE 'SEC/%'
-            ) filings) AS filings
+            ) filings) AS filings,
+            (SELECT COUNT(*) FROM staging_sec_archive)
+            + (SELECT COUNT(*) FROM sec_vectorized_chunks c
+               WHERE c.source_object LIKE 'SEC/%'
+                 AND split_part(c.source_object, '/', 4) NOT IN (SELECT acc FROM archive WHERE acc IS NOT NULL)) AS sec_elements
         """
     )
-    return int(rows[0]["news"]), int(rows[0]["filings"])
+    return int(rows[0]["news"]), int(rows[0]["filings"]), int(rows[0]["sec_elements"])
 
 
 def get_user_alerts(user_id: int, limit: int = 10) -> list[AlertResponse]:

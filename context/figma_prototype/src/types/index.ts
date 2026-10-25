@@ -90,6 +90,7 @@ export interface FiscalYearEnd {
 
 export interface DashboardStats {
   articles_count: number;          // news_articles_count + sec_filings_count
+  sec_elements_count?: number;     // all-time parsed SEC elements
   news_articles_count?: number;    // distinct news articles (by URL)
   sec_filings_count?: number;      // distinct SEC filings (archive + vectorized)
   tickers_count: number;

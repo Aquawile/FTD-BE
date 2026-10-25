@@ -193,8 +193,9 @@ class TestAlertEvaluator:
 
 class TestArticleCount:
     def test_news_by_url_plus_sec_filings_across_archive_and_mirror(self):
-        news, filings = crud.count_articles()
+        news, filings, elements = crud.count_articles()
         assert news == _count("SELECT COUNT(DISTINCT url) AS n FROM staging_gnews")
+        archive_rows = _count("SELECT COUNT(*) AS n FROM staging_sec_archive")
         # Seed: 2 AAPL filings in the mirror; one also in the paused archive (undashed accession).
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -204,6 +205,10 @@ class TestArticleCount:
                                       ('AAPL', '000032019324000999', '10-K', 'older filing only in the archive')""")
             conn.commit()
         assert crud.count_articles()[1] == filings + 1  # only the archive-only filing is new
+        # all-time elements: every archive row (3 just added) + vectorized chunks of filings the archive lacks
+        assert crud.count_articles()[2] == elements + 3
+        assert crud.count_articles()[2] >= _count("SELECT COUNT(*) AS n FROM staging_sec_archive")
+        assert archive_rows >= 0
 
     def test_new_article_raises_the_count(self):
         before = crud.count_articles()[0]
