@@ -226,7 +226,8 @@ def _name_regex(name: str) -> re.Pattern:
     if " " not in name and name.isalpha():
         forms = sorted({name, name.upper(), name.capitalize()}, key=len, reverse=True)
         return re.compile(edge.format("(?:" + "|".join(re.escape(f) for f in forms) + ")"))
-    return re.compile(edge.format(body), re.IGNORECASE)
+    # "3M" is the company, "3m" is three metres or million euros: names with a digit keep their case.
+    return re.compile(edge.format(body), 0 if any(c.isdigit() for c in name) else re.IGNORECASE)
 
 
 @functools.lru_cache(maxsize=1024)

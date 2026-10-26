@@ -39,6 +39,7 @@ def test_normalize_company_name(raw, expected):
     ("The Premier League's KMI panel reviewed it", "KMI", ["Kinder Morgan"], None),
     ("Kinder Morgan raises dividend", "KMI", ["Kinder Morgan"], "name"),
     ("HSBC plans HK$100 fund; adviser admits scamming firms for $3.3M and $3M", "MMM", ["3M"], None),
+    ("Torrevieja awards a €3m lighting contract", "MMM", ["3M"], None),
     ("3M recalls laminators", "MMM", ["3M"], "name"),
     ("pays no tax on a target of $5", "TGT", ["Target"], None),
     ("Shares of NVIDIA rose 3%", "NVDA", ["NVIDIA"], "name"),
