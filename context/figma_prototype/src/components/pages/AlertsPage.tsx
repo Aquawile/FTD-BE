@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
@@ -139,10 +139,25 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
   const { alerts: ALERTS_DATA, loading, error, refetch } = useAlerts(50, firebaseUser);
   const { tickers: trackedTickers } = useTrackedTickers(500);
   const [filter, setFilter] = useState("all");
-  const unreadCount = ALERTS_DATA.filter(a => !a.read).length;
+  // Alerts that were unread when this page opened stay highlighted for this visit, but are
+  // marked read on the server straight away: looking at an alert clears the bell and nav badge.
+  const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
+  const markedRef = useRef<Set<number>>(new Set());
+  const isUnread = (a: { id: number | string; read?: boolean }) => !a.read || freshIds.has(Number(a.id));
+  const unreadCount = ALERTS_DATA.filter(isUnread).length;
+
+  useEffect(() => {
+    if (loading) return;
+    const ids = ALERTS_DATA.filter(a => !a.read && !markedRef.current.has(Number(a.id))).map(a => Number(a.id));
+    if (ids.length === 0) return;
+    ids.forEach(id => markedRef.current.add(id));
+    setFreshIds(prev => new Set([...prev, ...ids]));
+    markAlertsRead(firebaseUser, ids).then(() => onAlertsChanged?.()).catch(() => ids.forEach(id => markedRef.current.delete(id)));
+  }, [loading, ALERTS_DATA]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const markAllRead = async () => {
     await markAlertsRead(firebaseUser).catch(() => undefined);
+    setFreshIds(new Set());
     refetch();
     onAlertsChanged?.();
   };
@@ -150,7 +165,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
   const filtered = filter === "all"
     ? ALERTS_DATA
     : filter === "unread"
-      ? ALERTS_DATA.filter(a => !a.read)
+      ? ALERTS_DATA.filter(isUnread)
       : ALERTS_DATA.filter(a => a.severity === filter);
 
   const alertTypeIcon = (type: string) =>
@@ -201,7 +216,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
       </div>
       <div className="space-y-3">
         {filtered.map(a => (
-          <Card key={a.id} className={cn("p-4 transition-all cursor-pointer hover:border-primary/30", !a.read && "border-primary/20 bg-primary/3")}>
+          <Card key={a.id} className={cn("p-4 transition-all cursor-pointer hover:border-primary/30", isUnread(a) && "border-primary/20 bg-primary/3")}>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${alertTypeColor(a.type)}15` }}>
                 <span style={{ color: alertTypeColor(a.type) }}>{alertTypeIcon(a.type)}</span>
@@ -211,7 +226,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
                   <span className="font-mono font-bold text-sm text-foreground">{a.ticker || "—"}</span>
                   <Badge variant={a.severity === "high" ? "danger" : a.severity === "medium" ? "warning" : "neutral"} className="text-xs">{a.severity}</Badge>
                   <Badge variant="neutral" className="text-xs capitalize">{a.type?.replace("_", " ") || "—"}</Badge>
-                  {!a.read && <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />}
+                  {isUnread(a) && <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />}
                 </div>
                 <p className="text-sm text-foreground">{a.message}</p>
                 <p className="text-xs text-muted-foreground mt-1">{a.time}</p>

@@ -98,6 +98,9 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
                   </div>
                   <div>
                     <div className="font-mono font-semibold text-sm text-foreground">{symbol}</div>
+                    {displayTicker.name && displayTicker.name !== symbol && (
+                      <div className="text-xs text-muted-foreground truncate max-w-[10rem]">{displayTicker.name}</div>
+                    )}
                     {displayTicker.current_price && (
                       <div className="text-xs text-muted-foreground mt-0.5">${displayTicker.current_price.toFixed(2)}</div>
                     )}
