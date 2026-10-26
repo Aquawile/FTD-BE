@@ -87,15 +87,15 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
       </div>
       {adding && (
         <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-border/50">
-          <select className={inputCls} value={ticker} onChange={e => setTicker(e.target.value)}>
+          <select className={inputCls} aria-label="Ticker" value={ticker} onChange={e => setTicker(e.target.value)}>
             <option value="">Ticker…</option>
             {trackedTickers.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>)}
           </select>
-          <select className={inputCls} value={alertType} onChange={e => setAlertType(e.target.value as AlertSubscriptionType)}>
+          <select className={inputCls} aria-label="Alert type" value={alertType} onChange={e => setAlertType(e.target.value as AlertSubscriptionType)}>
             {SUBSCRIPTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           {isPriceType(alertType) && (
-            <input className={cn(inputCls, "w-24")} type="number" min="0" step="0.01" placeholder="$ price"
+            <input className={cn(inputCls, "w-24")} type="number" min="0" step="0.01" placeholder="$ price" aria-label="Price threshold in dollars"
               value={threshold} onChange={e => setThreshold(e.target.value)} />
           )}
           <Btn size="sm" onClick={add} disabled={saving || !ticker || (isPriceType(alertType) && !(Number(threshold) > 0))}>

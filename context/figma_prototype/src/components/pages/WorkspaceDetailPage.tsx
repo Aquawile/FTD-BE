@@ -118,7 +118,7 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
                   {t.change_percent !== undefined && t.change_percent !== null ? (
                     <span className={cn("flex items-center gap-0.5", t.change_percent > 0 ? "text-emerald-400" : t.change_percent < 0 ? "text-red-400" : "")}>
                       {t.change_percent > 0 ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
-                      {t.change_percent > 0 ? "+" : ""}{t.change_percent}%
+                      {t.change_percent > 0 ? "+" : ""}{Number(t.change_percent).toFixed(2)}%
                     </span>
                   ) : "No price data"}
                 </div>
@@ -133,6 +133,7 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
           <div className="space-y-4">
             <Input
               placeholder="Search ticker or company name..."
+              ariaLabel="Search ticker or company name"
               icon={<Search size={14} />}
               value={searchQuery}
               onChange={setSearchQuery}

@@ -88,6 +88,7 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = 
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search tickers, companies..."
+            aria-label="Search tickers and companies"
             className="w-full pl-9 pr-3 py-2.5 bg-input-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
@@ -107,7 +108,7 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = 
         ))}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Sort by:</span>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-secondary border border-border rounded-lg text-xs px-2 py-1 text-foreground focus:outline-none">
+          <select aria-label="Sort tickers by" value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-secondary border border-border rounded-lg text-xs px-2 py-1 text-foreground focus:outline-none">
             <option value="symbol">Symbol (A–Z)</option>
             <option value="change">Biggest daily move</option>
           </select>

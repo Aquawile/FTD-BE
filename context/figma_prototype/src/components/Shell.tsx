@@ -21,18 +21,19 @@ export function Sidebar({ page, navigate, collapsed, onCollapse, unreadAlerts = 
   return (
     <aside className={cn("flex flex-col h-screen sticky top-0 bg-sidebar border-r border-sidebar-border transition-all duration-200 shrink-0", collapsed ? "w-16" : "w-56")}>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-border">
+      <div className={cn("flex items-center border-b border-sidebar-border", collapsed ? "flex-col gap-2 px-2 py-3" : "gap-3 px-4 py-4")}>
         <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
           <BarChart size={16} className="text-white" />
         </div>
         {!collapsed && <span className="font-bold text-foreground tracking-tight" style={{ fontFamily: "'Outfit', sans-serif" }}>FTD</span>}
-        <button onClick={onCollapse} className={cn("ml-auto text-muted-foreground hover:text-foreground transition-colors cursor-pointer", collapsed && "mx-auto")}>
+        <button onClick={onCollapse} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={cn("text-muted-foreground hover:text-foreground transition-colors cursor-pointer", collapsed ? "p-1" : "ml-auto")}>
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-4 space-y-0.5 px-2">
+      <nav aria-label="Main" className="flex-1 py-4 space-y-0.5 px-2">
         {navItems.map(item => {
           const Icon = item.icon;
           const active = page === item.id;
@@ -40,6 +41,9 @@ export function Sidebar({ page, navigate, collapsed, onCollapse, unreadAlerts = 
             <button
               key={item.id}
               onClick={() => navigate(item.id as Page)}
+              aria-label={item.label}
+              aria-current={active ? "page" : undefined}
+              title={collapsed ? item.label : undefined}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-pointer",
                 active ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
@@ -62,7 +66,7 @@ export function Sidebar({ page, navigate, collapsed, onCollapse, unreadAlerts = 
 
       {/* Bottom */}
       <div className="px-2 pb-4 space-y-0.5 border-t border-sidebar-border pt-3">
-        <button onClick={() => navigate("profile")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
+        <button onClick={() => navigate("profile")} aria-label="Settings" title={collapsed ? "Settings" : undefined} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all cursor-pointer">
           <Settings size={16} className="shrink-0" />
           {!collapsed && <span>Settings</span>}
         </button>
@@ -119,6 +123,7 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
+          aria-label="Search tickers, companies, topics"
           placeholder="Search tickers, companies, topics..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
@@ -175,9 +180,10 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
           )}
         </div>
         <div className="relative" ref={profileRef}>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
+          <button type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded={profileOpen}
+            className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
             {userName ? userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "IB"}
-          </div>
+          </button>
           {profileOpen && (
             <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-2 z-50">
               <div className="px-4 py-2 border-b border-border/50">
