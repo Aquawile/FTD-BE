@@ -146,6 +146,8 @@ class TestUserSync(unittest.TestCase):
                 )
                 conn.commit()
         from datetime import datetime
+        from app.auth.index_maintainer import sync_user_permissions_index
+        sync_user_permissions_index(ids[1])
         now = datetime.now()
         empty_user = User(id=ids[0], firebase_uid=empty_uid, email="legacy.empty@example.com",
                           is_active=True, created_at=now, updated_at=now)
