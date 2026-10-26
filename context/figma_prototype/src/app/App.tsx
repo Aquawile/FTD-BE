@@ -7,6 +7,7 @@ import { signOut, onAuthStateChanged } from "firebase/auth";
 import { Page } from "./types";
 import { apiRequest, API_BASE, markAlertsRead } from "../api";
 import { WorkspaceResponse } from "../types";
+import { needsEmailVerification } from "./verification";
 
 import { AppShell } from "../components/Shell";
 import { Toaster } from "./components/ui/sonner";
@@ -44,6 +45,22 @@ function App() {
   const [authReady, setAuthReady] = useState(false);
   const [, setProfileVersion] = useState(0);   // bumped after a name change so the top bar re-reads displayName
 
+  const loadProfile = async (user: FirebaseUser) => {
+    setProfileLoading(true);
+    try {
+      const [profileRes, permsRes] = await Promise.all([
+        apiRequest("/auth/me/user", user),
+        apiRequest("/users/me/permissions", user),
+      ]);
+      if (profileRes.ok) setUserProfile(await profileRes.json());
+      if (permsRes.ok) setUserPermissions((await permsRes.json()).permissions || []);
+    } catch {
+      // ignore fetch errors during initial auth state resolution
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       setFirebaseUser(user);
@@ -55,26 +72,10 @@ function App() {
         if (!user && !["login", "register", "verify-email", "forgot-password"].includes(prev)) return "login";
         return prev;
       });
-      if (user) {
-        setProfileLoading(true);
-        try {
-          const [profileRes, permsRes] = await Promise.all([
-            apiRequest("/auth/me/user", user),
-            apiRequest("/users/me/permissions", user),
-          ]);
-          if (profileRes.ok) {
-            const profile = await profileRes.json();
-            setUserProfile(profile);
-          }
-          if (permsRes.ok) {
-            const perms = await permsRes.json();
-            setUserPermissions(perms.permissions || []);
-          }
-        } catch {
-          // ignore fetch errors during initial auth state resolution
-        } finally {
-          setProfileLoading(false);
-        }
+      if (user && needsEmailVerification(user)) {
+        setPage("verify-email");   // wait for verification before touching the API
+      } else if (user) {
+        loadProfile(user);
       } else {
         setUserProfile(null);
         setUserPermissions([]);
@@ -105,16 +106,20 @@ function App() {
   };
 
   const publicPages: Page[] = ["login", "register", "verify-email", "forgot-password"];
-  const isPublic = publicPages.includes(page);
+  const isPublic = publicPages.includes(page) || needsEmailVerification(firebaseUser);
 
   const userEmail = firebaseUser?.email || userProfile?.email || "";
   const userName = firebaseAuth.currentUser?.displayName || firebaseUser?.displayName || userProfile?.email?.split("@")[0] || "";
 
+  const mustVerify = needsEmailVerification(firebaseUser);
+
   const renderPage = () => {
+    // A new, unverified account sees only the verification page, whatever page it asks for.
+    if (mustVerify) return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email ?? undefined} onVerified={() => { if (firebaseUser) loadProfile(firebaseUser); }} />;
     switch (page) {
       case "login": return <LoginPage navigate={navigate} />;
       case "register": return <RegisterPage navigate={navigate} />;
-      case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email ?? undefined} />;
+      case "verify-email": return <VerifyEmailPage navigate={navigate} userEmail={firebaseUser?.email ?? undefined} onVerified={() => { if (firebaseUser) loadProfile(firebaseUser); }} />;
       case "forgot-password": return <ForgotPasswordPage navigate={navigate} />;
       case "dashboard": return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
       case "search": return <SearchPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} initialQuery={searchText} />;

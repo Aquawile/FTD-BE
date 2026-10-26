@@ -22,11 +22,6 @@ from app.models import (
     WorkspaceResponse,
 )
 
-# Rows of staging_gnews that are about their ticker. An article a GNews batch returned is stored once
-# per ticker in the batch; attributed_by = 'none' marks the ones that never mention that company
-# (scripts/attribute_news.py, sync_recent_relational.py). NULL = not labelled yet, shown.
-NEWS_ABOUT_TICKER = "attributed_by IS DISTINCT FROM 'none'"
-
 # `unified_staging` is now an always-empty view (WHERE false over
 # unified_staging_archive). Live relational data lives in staging_finnhub
 # (prices) and staging_gnews (news); this subquery unions them in the
@@ -44,7 +39,6 @@ _RELATIONAL_UNIFIED = f"""
                NULL::numeric, NULL::numeric, NULL::text, NULL::text,
                NULL::text, NULL::text
         FROM staging_gnews
-        WHERE {NEWS_ABOUT_TICKER}
     ) u
 """
 
@@ -153,7 +147,6 @@ def get_ticker_news(
             url
         FROM staging_gnews
         WHERE target_ticker = %s
-          AND {NEWS_ABOUT_TICKER}
           AND normalized_calendar_date >= %s
           AND normalized_calendar_date <= %s
         ORDER BY normalized_calendar_date DESC, ingest_date DESC, ctid DESC
@@ -171,7 +164,7 @@ def get_ticker_news_bounds(ticker: str, start: date, end: date) -> tuple[int, da
             COUNT(*) FILTER (WHERE normalized_calendar_date >= %s AND normalized_calendar_date <= %s) AS total,
             MIN(normalized_calendar_date)::date AS earliest
         FROM staging_gnews
-        WHERE target_ticker = %s AND {NEWS_ABOUT_TICKER}
+        WHERE target_ticker = %s
         """,
         (start, end, ticker),
     )
