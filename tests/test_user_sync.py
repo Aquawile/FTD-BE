@@ -123,6 +123,40 @@ class TestUserSync(unittest.TestCase):
                 for perm in DEFAULT_PERMISSIONS:
                     self.assertIn(perm, granted, f"Missing default permission: {perm}")
 
+    @unittest.skipUnless(_postgres_available(), "PostgreSQL user table is unavailable")
+    def test_user_with_no_permissions_is_healed_and_partial_user_untouched(self) -> None:
+        import asyncio
+
+        from app.auth.dependencies import get_current_permissions
+
+        empty_uid, partial_uid = uuid4().hex, uuid4().hex
+        self.addCleanup(self._cleanup_user, empty_uid)
+        self.addCleanup(self._cleanup_user, partial_uid)
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                ids = []
+                for uid, mail in ((empty_uid, "legacy.empty@example.com"), (partial_uid, "legacy.partial@example.com")):
+                    cur.execute("INSERT INTO users (firebase_uid, email) VALUES (%s, %s) RETURNING id", (uid, mail))
+                    ids.append(cur.fetchone()[0])
+                cur.execute(
+                    "INSERT INTO user_permissions (user_id, permission_id) "
+                    "SELECT %s, id FROM permissions WHERE name = 'dashboard.read'",
+                    (ids[1],),
+                )
+                conn.commit()
+        from datetime import datetime
+        now = datetime.now()
+        empty_user = User(id=ids[0], firebase_uid=empty_uid, email="legacy.empty@example.com",
+                          is_active=True, created_at=now, updated_at=now)
+        partial_user = User(id=ids[1], firebase_uid=partial_uid, email="legacy.partial@example.com",
+                            is_active=True, created_at=now, updated_at=now)
+
+        healed = asyncio.run(get_current_permissions(empty_user))
+        self.assertEqual(healed, set(DEFAULT_PERMISSIONS))
+        self.assertEqual(asyncio.run(get_current_permissions(empty_user)), set(DEFAULT_PERMISSIONS))
+        self.assertEqual(asyncio.run(get_current_permissions(partial_user)), {"dashboard.read"})
+
     def test_missing_firebase_uid_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
             synchronize_user({"email": "test@example.com"})
