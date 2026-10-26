@@ -35,6 +35,35 @@ def _row_to_user(row: Mapping[str, Any]) -> User:
     )
 
 
+def ensure_default_permissions(user_id: int) -> int:
+    """Grant the default permissions to a user who has none at all.
+
+    Insert-only. Users created before default grants existed (or whose first
+    grant failed) would otherwise get 403 on every data endpoint. A user who
+    already holds any permission is left exactly as they are.
+    """
+    with get_connection() as conn:
+        conn.rollback()
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM user_permissions WHERE user_id = %s LIMIT 1", (user_id,))
+            if cur.fetchone() is not None:
+                conn.commit()
+                return 0
+            for perm_name in DEFAULT_PERMISSIONS:
+                cur.execute(
+                    "INSERT INTO user_permissions (user_id, permission_id) "
+                    "SELECT %s, permissions.id FROM permissions WHERE permissions.name = %s "
+                    "ON CONFLICT (user_id, permission_id) DO NOTHING",
+                    (user_id, perm_name),
+                )
+            conn.commit()
+    from app.auth.index_maintainer import sync_user_permissions_index
+    sync_user_permissions_index(user_id)
+    logger.info("user_permissions_healed: user_id=%s granted=%d", user_id, len(DEFAULT_PERMISSIONS))
+    return len(DEFAULT_PERMISSIONS)
+
+
 def synchronize_user(verified_identity: Mapping[str, Any]) -> User:
     """Synchronize a verified Firebase identity to the PostgreSQL users table."""
     firebase_uid = verified_identity.get("firebase_uid")

@@ -46,6 +46,13 @@ async def get_current_application_user(request: Request) -> User:
 async def get_current_permissions(current_user: User = Depends(get_current_application_user)) -> set[str]:
     from app.services.user_service import get_user_permissions
     rows = get_user_permissions(current_user.id)
+    if not rows:
+        from app.auth.user_sync import ensure_default_permissions
+        try:
+            if ensure_default_permissions(current_user.id):
+                rows = get_user_permissions(current_user.id)
+        except Exception:
+            logger.error("permission_heal_failed: user_id=%s", current_user.id, exc_info=True)
     return {row["permission_name"] for row in rows}
 
 
