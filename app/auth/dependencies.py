@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 import logging
+import os
 
 from fastapi import Depends, HTTPException, status
 from starlette.requests import Request
@@ -14,6 +16,21 @@ from app.services.exceptions import UserNotFoundError
 from app.services.user_service import get_authenticated_user
 
 logger = logging.getLogger(__name__)
+
+# Accounts created on or after this moment must verify their email before using the API.
+# Accounts that already existed are not asked to (they never were). Override with the env var.
+EMAIL_VERIFICATION_REQUIRED_FROM = datetime.fromisoformat(
+    os.environ.get("EMAIL_VERIFICATION_REQUIRED_FROM", "2026-10-26T21:30:00+00:00")
+)
+
+
+def _must_verify_email(request: Request, user: User) -> bool:
+    # Only an explicit "not verified" from the Firebase token counts; real tokens always carry the flag.
+    if getattr(request.state, "email_verified", None) is not False:
+        return False
+    created = user.created_at if user.created_at.tzinfo else user.created_at.replace(tzinfo=timezone.utc)
+    return created >= EMAIL_VERIFICATION_REQUIRED_FROM
+
 
 async def get_current_application_user(request: Request) -> User:
     firebase_uid = getattr(request.state, "firebase_uid", None)
@@ -36,6 +53,8 @@ async def get_current_application_user(request: Request) -> User:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error",
             )
+        if _must_verify_email(request, user):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="email_not_verified")
         return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

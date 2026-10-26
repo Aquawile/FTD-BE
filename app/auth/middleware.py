@@ -70,6 +70,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             request.state.firebase_uid = firebase_uid
             request.state.email = firebase_user.get("email")
+            request.state.email_verified = firebase_user.get("email_verified")
             request.state.auth_method = "firebase"
             logger.info("authentication_succeeded: method=firebase firebase_uid=%s path=%s", firebase_uid, path)
             return await call_next(request)

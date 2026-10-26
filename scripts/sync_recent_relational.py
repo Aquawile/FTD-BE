@@ -196,7 +196,8 @@ _NAME_SUFFIX_RE = re.compile(
     r"[,\s]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|n\.?v|s\.?a|ag|holdings?|group|the)\.?$",
     re.IGNORECASE,
 )
-NOT_ATTRIBUTED = "none"
+NOT_ATTRIBUTED = "none"   # legacy label from the short-lived hide-unrelated filter; rows kept, now shown
+BATCH_ONLY = "batch"
 
 
 def normalize_company_name(name: str) -> str | None:
@@ -296,13 +297,12 @@ def batch_tickers(payload: dict, symbols: set[str]) -> list[str]:
 def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
               since_override: date | None = None,
               names: dict[str, list[str]] | None = None) -> int:
-    """Load GNews batches into staging_gnews, each article under the tickers it is really about.
+    """Load GNews batches into staging_gnews, each article under every ticker of its batch.
 
-    A batch covers ~5 tickers and returns the 10 newest matches for the whole OR query, so an
-    article is stored for a ticker only when article_mentions() ties it to that company, and the
-    row records the rule in attributed_by. An article that mentions none of its batch's companies
-    is kept once (under the batch's first ticker, attributed_by = 'none') so it still counts as an
-    analysed article; the ticker pages skip it. The raw batch files are untouched.
+    A batch covers ~5 tickers and returns the 10 newest matches for the whole OR query. Every
+    article is stored for every ticker in the batch so each ticker page shows its articles; the
+    row's attributed_by records how article_mentions() tied it to that company ('name', 'dollar',
+    'exchange') or 'batch' when it only came back from the same query. The raw files are untouched.
     """
     names = names or {}
     with conn.cursor() as cur:
@@ -339,11 +339,11 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
                     continue
                 published = datetime.fromisoformat(article["publishedAt"].replace("Z", "+00:00")).date()
                 url = article.get("url") or None
-                matched = [(t, article_mentions(content_body, t, names.get(t, []))) for t in tickers]
-                matched = [(t, rule) for t, rule in matched if rule]
-                if not matched:
+                # Every article the batch returned is filed under every ticker in the batch (an article can be
+                # indirectly related without naming the company); attributed_by only records how it matched.
+                matched = [(t, article_mentions(content_body, t, names.get(t, [])) or BATCH_ONLY) for t in tickers]
+                if all(rule == BATCH_ONLY for _, rule in matched):
                     unattributed += 1
-                    matched = [(tickers[0], NOT_ATTRIBUTED)]
                 for ticker, rule in matched:
                     rows[(ticker, url or content_body[:200], published)] = (
                         ticker, cik_map.get(ticker), "narrative", content_body, published, ingest_date, url, rule,
@@ -368,7 +368,7 @@ def sync_news(conn, bucket, symbols, cik_map, lookback_days: int, dry_run: bool,
         inserted += len(new_keys)
 
     verb = "would insert" if dry_run else "inserted"
-    logger.info("gnews: %s %d new rows (%d already present; %d articles mention none of their batch's companies)",
+    logger.info("gnews: %s %d new rows (%d already present; %d articles name none of their batch's companies)",
                 verb, inserted, skipped_existing, unattributed)
     return inserted
 
