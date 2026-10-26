@@ -106,7 +106,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
                 <div className="text-muted-foreground text-sm">{email || "—"}</div>
               </div>
               <Btn variant="secondary" size="sm" className="ml-auto" icon={<Edit2 size={12} />} onClick={() => fileInputRef.current?.click()}>Edit Photo</Btn>
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handlePhoto(e.target.files?.[0])} />
+              <input ref={fileInputRef} type="file" accept="image/*" aria-label="Upload profile photo" className="hidden" onChange={e => handlePhoto(e.target.files?.[0])} />
             </div>
             {loading ? (
               <div className="flex items-center justify-center py-4">

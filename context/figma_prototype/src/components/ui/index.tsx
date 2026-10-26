@@ -1,3 +1,4 @@
+import { useEffect, useId, useRef } from "react";
 import { X, FileText, Bell, Target, TrendingUp, TrendingDown } from "lucide-react";
 
 export { X, FileText, Bell, Target, TrendingUp, TrendingDown };
@@ -73,9 +74,12 @@ export interface InputProps {
   type?: string;
   icon?: React.ReactNode;
   className?: string;
+  ariaLabel?: string;
+  autoComplete?: string;
+  onEnter?: () => void;
 }
 
-export function Input({ id, placeholder, value, onChange, type = "text", icon, className }: InputProps) {
+export function Input({ id, placeholder, value, onChange, type = "text", icon, className, ariaLabel, autoComplete, onEnter }: InputProps) {
   return (
     <div className={cn("relative", className)}>
       {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</div>}
@@ -85,6 +89,9 @@ export function Input({ id, placeholder, value, onChange, type = "text", icon, c
         placeholder={placeholder}
         value={value}
         onChange={e => onChange?.(e.target.value)}
+        aria-label={ariaLabel}
+        autoComplete={autoComplete}
+        onKeyDown={onEnter ? e => { if (e.key === "Enter") { e.preventDefault(); onEnter(); } } : undefined}
         className={cn(
           "w-full bg-input-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all",
           icon ? "pl-9 pr-3 py-2" : "px-3 py-2"
@@ -122,12 +129,34 @@ export interface ModalProps {
 
 export function Modal({ title, children, onClose, size = "md" }: ModalProps) {
   const widths: Record<ModalSize, string> = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl" };
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    // Escape closes the dialog; focus moves into it (unless a field inside already took focus) and returns afterwards.
+    const previous = document.activeElement as HTMLElement | null;
+    if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCloseRef.current(); };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); previous?.focus?.(); };
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className={cn("relative bg-card border border-border rounded-2xl shadow-2xl w-full mx-4", widths[size])} onClick={e => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={cn("relative bg-card border border-border rounded-2xl shadow-2xl w-full mx-4 focus:outline-none", widths[size])}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h3 className="font-semibold text-foreground">{title}</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"><X size={18} /></button>
+          <h3 id={titleId} className="font-semibold text-foreground">{title}</h3>
+          <button onClick={onClose} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"><X size={18} /></button>
         </div>
         <div className="p-6">{children}</div>
       </div>

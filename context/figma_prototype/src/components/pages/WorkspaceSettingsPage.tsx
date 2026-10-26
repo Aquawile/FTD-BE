@@ -92,12 +92,13 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSa
           <h3 className="font-semibold mb-4">General</h3>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Workspace name</label>
-              <Input value={name} onChange={setName} icon={<Briefcase size={14} />} />
+              <label htmlFor="ws-name" className="text-sm font-medium">Workspace name</label>
+              <Input id="ws-name" value={name} onChange={setName} icon={<Briefcase size={14} />} />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Description (optional)</label>
+              <label htmlFor="ws-description" className="text-sm font-medium">Description (optional)</label>
               <textarea
+                id="ws-description"
                 value={description}
                 onChange={e => setDescription(e.target.value)}
                 maxLength={1000}

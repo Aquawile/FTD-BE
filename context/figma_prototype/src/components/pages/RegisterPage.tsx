@@ -45,11 +45,12 @@ function RegisterPage({ navigate }: { navigate: (p: Page) => void }) {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <label htmlFor="reg-email" className="text-sm font-medium">Email address</label>
-            <Input id="reg-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+            <Input id="reg-email" type="email" autoComplete="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="reg-password" className="text-sm font-medium">Password</label>
-            <Input id="reg-password" type="password" value={pw} onChange={setPw} placeholder="Min. 8 characters" icon={<Lock size={14} />} />
+            <Input id="reg-password" autoComplete="new-password" type="password" value={pw} onChange={setPw} placeholder="Min. 8 characters" icon={<Lock size={14} />}
+              onEnter={() => { if (email && pw.length >= 8 && !loading) handleSubmit(); }} />
           </div>
           {pw.length > 0 && (
             <div className="space-y-1">

@@ -129,8 +129,9 @@ function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navi
         <Modal title="Create New Workspace" onClose={() => setShowCreate(false)}>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Workspace name</label>
-              <Input value={wsName} onChange={setWsName} placeholder="e.g., My Research Theme" icon={<Briefcase size={14} />} />
+              <label htmlFor="new-workspace-name" className="text-sm font-medium">Workspace name</label>
+              <Input id="new-workspace-name" value={wsName} onChange={setWsName} placeholder="e.g., My Research Theme" icon={<Briefcase size={14} />}
+                onEnter={() => { if (wsName.trim()) handleCreate(); }} />
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <Btn variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Btn>

@@ -66,12 +66,12 @@ function LoginPage({ navigate }: { navigate: (p: Page) => void }) {
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); if (!loading) handleLogin(); }}>
           <div className="space-y-1.5">
             <label htmlFor="login-email" className="text-sm font-medium">Email address</label>
-            <Input id="login-email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
+            <Input id="login-email" type="email" autoComplete="email" value={email} onChange={setEmail} placeholder="you@example.com" icon={<Mail size={14} />} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="login-password" className="text-sm font-medium">Password</label>
             <div className="relative">
-              <Input id="login-password" type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
+              <Input id="login-password" autoComplete="current-password" type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="Enter your password" icon={<Lock size={14} />} />
               <button type="button" onClick={() => setShowPw(p => !p)} aria-label={showPw ? "Hide password" : "Show password"} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
                 {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
