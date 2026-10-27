@@ -50,8 +50,15 @@ def _terminate(pid: int) -> None:
 
 
 def test_a_burst_far_larger_than_the_pool_all_succeeds():
-    with ThreadPoolExecutor(80) as ex:
-        rows = list(ex.map(lambda _: db.query("SELECT pg_sleep(0.05), 1"), range(80)))
+    n = 60
+    gate = threading.Barrier(n)
+
+    def one(_):
+        gate.wait(10)                              # every request reaches the pool at the same instant
+        return db.query("SELECT pg_sleep(0.3), 1")
+
+    with ThreadPoolExecutor(n) as ex:
+        rows = list(ex.map(one, range(n)))
     assert all(r[0][1] == 1 for r in rows)
 
 
