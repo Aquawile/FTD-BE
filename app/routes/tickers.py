@@ -8,7 +8,6 @@ from datetime import date
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_application_user, require_permission
@@ -244,6 +243,28 @@ def _get_sec_primary_doc(cik: str, accession_number: str) -> str | None:
     return None
 
 
+# Filings are third-party documents served from our own origin by a link anyone can open, so they
+# are always rendered inside a locked-down sandbox: no scripts, no forms, no network access, and an
+# opaque origin (they cannot reach the app's storage or sign-in). The stored object type is
+# ignored: raw files carry text/plain, which showed the filing as source code.
+_FILING_CSP = (
+    "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+    "font-src data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+)
+
+
+def _filing_response(content: bytes, upstream_type: str | None) -> Response:
+    import re
+    match = re.search(r"charset=([\w.-]+)", upstream_type or "", re.I)
+    charset = match.group(1) if match else "utf-8"
+    return Response(content=content, media_type=f"text/html; charset={charset}", headers={
+        "Content-Security-Policy": _FILING_CSP,
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Cache-Control": f"max-age={_SEC_CACHE_SECONDS}",
+    })
+
+
 @router.get("/{ticker}/filings/{accession_number:path}/content")
 def route_get_filing_content(
     ticker: str,
@@ -290,10 +311,7 @@ def route_get_filing_content(
                 "content_length": len(content),
             },
         )
-        return HTMLResponse(content=content, headers={
-            "Content-Type": content_type,
-            "Cache-Control": f"max-age={_SEC_CACHE_SECONDS}",
-        })
+        return _filing_response(content, content_type)
 
     primary_doc = _get_sec_primary_doc(cik, accession_no_dashes)
 
@@ -326,7 +344,4 @@ def route_get_filing_content(
         },
     )
 
-    return HTMLResponse(content=content, headers={
-        "Content-Type": content_type,
-        "Cache-Control": f"max-age={_SEC_CACHE_SECONDS}",
-    })
+    return _filing_response(content, content_type)
