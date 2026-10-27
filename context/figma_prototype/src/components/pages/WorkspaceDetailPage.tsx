@@ -39,7 +39,7 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
   const filteredTickers = trackedTickers.filter(t =>
     t.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (t.name || "").toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ).sort((a, b) => a.symbol.localeCompare(b.symbol));
 
   const handleAddTicker = async (symbol: string) => {
     if (!firebaseUser || !ws.id) return;

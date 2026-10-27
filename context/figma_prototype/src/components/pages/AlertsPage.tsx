@@ -89,7 +89,7 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
         <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-border/50">
           <select className={inputCls} aria-label="Ticker" value={ticker} onChange={e => setTicker(e.target.value)}>
             <option value="">Ticker…</option>
-            {trackedTickers.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>)}
+            {trackedTickers.slice().sort((a, b) => a.symbol.localeCompare(b.symbol)).map(t => <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>)}
           </select>
           <select className={inputCls} aria-label="Alert type" value={alertType} onChange={e => setAlertType(e.target.value as AlertSubscriptionType)}>
             {SUBSCRIPTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
