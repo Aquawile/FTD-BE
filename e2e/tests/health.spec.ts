@@ -78,7 +78,7 @@ test.describe("Postgres, as the API sees it", () => {
     const s = await (await request.get("/api/dashboard/stats")).json();
     expect(s.tickers_count).toBeGreaterThanOrEqual(TARGET === "staging" ? 400 : 3);
     for (const k of ["articles_count", "news_articles_count", "sec_filings_count", "vectorized_sec_count"]) expect(s[k], k).toBeGreaterThanOrEqual(0);
-    expect(s.articles_count).toBe(s.news_articles_count + s.sec_filings_count);
+    expect(s.articles_count).toBe(s.news_articles_count + s.sec_elements_count);   // "Articles analysed" = news articles + SEC elements (app/models.py)
     expect(s.news_articles_count).toBeGreaterThan(0);
   });
 
