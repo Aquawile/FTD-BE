@@ -6,6 +6,7 @@ user identity information.
 import time
 import logging
 from fastapi import Request, Response
+from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,8 @@ class AuditLogMiddleware:
         try:
             query_params = dict(request.query_params)
             path_params = scope.get("path_params", {})
-            log_api_request(request, status_code, elapsed_ms,
-                            query_params=query_params,
-                            path_params=path_params)
+            # A blocking DB write must not run on the event loop (it would stall every other request).
+            await run_in_threadpool(log_api_request, request, status_code, elapsed_ms,
+                                    query_params=query_params, path_params=path_params)
         except Exception as e:
             logger.warning("audit_middleware_error: %s", e)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { fetchRetry } from "../api/retry";
 import type { User as FirebaseUser } from "firebase/auth";
 import { apiRequest } from "../api";
 
@@ -13,7 +14,7 @@ export function useWorkspace(id: string) {
     if (!id) return;
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/workspaces/${id}`)
+    fetchRetry(`/api/workspaces/${id}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) { setWorkspace(data); setLoading(false); } })
       .catch(() => { if (!cancelled) { setError(true); setLoading(false); } })
@@ -21,7 +22,7 @@ export function useWorkspace(id: string) {
     return () => { /* cancelled = true */ };
   }, [id]);
 
-  return { workspace, loading, error, refetch: () => fetch(`/api/workspaces/${id}`).then(r => r.ok ? r.json() : Promise.reject()).then(setWorkspace).catch(() => setError(true)) };
+  return { workspace, loading, error, refetch: () => fetchRetry(`/api/workspaces/${id}`).then(r => r.ok ? r.json() : Promise.reject()).then(setWorkspace).catch(() => setError(true)) };
 }
 
 export function useWorkspaces() {
@@ -32,7 +33,7 @@ export function useWorkspaces() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch("/api/workspaces")
+    fetchRetry("/api/workspaces")
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setWorkspaces(data); })
       .catch(() => { if (!cancelled) setError(true); setLoading(false); })
@@ -40,7 +41,7 @@ export function useWorkspaces() {
     return () => { /* cancelled = true */ };
   }, []);
 
-  return { workspaces, loading, error, refetch: () => fetch("/api/workspaces").then(r => r.ok ? r.json() : Promise.reject()).then(setWorkspaces).catch(() => setError(true)) };
+  return { workspaces, loading, error, refetch: () => fetchRetry("/api/workspaces").then(r => r.ok ? r.json() : Promise.reject()).then(setWorkspaces).catch(() => setError(true)) };
 }
 
 export function useCreateWorkspace() {
@@ -51,7 +52,7 @@ export function useCreateWorkspace() {
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch("/api/workspaces", {
+      const res = await fetchRetry("/api/workspaces", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, tickerSymbols }),
@@ -77,7 +78,7 @@ export function useDeleteWorkspace() {
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
+      const res = await fetchRetry(`/api/workspaces/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete workspace");
     } catch (err) {
       setError(true);
@@ -103,7 +104,7 @@ export function useWorkspaceTickers(workspaceId: string) {
     if (!workspaceId) return;
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/workspaces/${workspaceId}/tickers`)
+    fetchRetry(`/api/workspaces/${workspaceId}/tickers`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setTickers(data); })
       .catch(() => setError(true))
@@ -111,7 +112,7 @@ export function useWorkspaceTickers(workspaceId: string) {
     return () => { /* cancelled = true */ };
   }, [workspaceId]);
 
-  return { tickers, loading, error, refetch: () => fetch(`/api/workspaces/${workspaceId}/tickers`).then(r => r.ok ? r.json() : Promise.reject()).then(setTickers).catch(() => setError(true)) };
+  return { tickers, loading, error, refetch: () => fetchRetry(`/api/workspaces/${workspaceId}/tickers`).then(r => r.ok ? r.json() : Promise.reject()).then(setTickers).catch(() => setError(true)) };
 }
 
 export function useAddTickerToWorkspace() {
@@ -121,7 +122,7 @@ export function useAddTickerToWorkspace() {
   const addTicker = async (workspaceId: string, tickerSymbol: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/tickers`, {
+      const res = await fetchRetry(`/api/workspaces/${workspaceId}/tickers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tickerSymbol }),
@@ -146,7 +147,7 @@ export function useRemoveTickerFromWorkspace() {
   const removeTicker = async (workspaceId: string, tickerSymbol: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/tickers/${tickerSymbol}`, {
+      const res = await fetchRetry(`/api/workspaces/${workspaceId}/tickers/${tickerSymbol}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to remove ticker");
@@ -201,7 +202,7 @@ export function useDashboardStats() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch("/api/dashboard/stats")
+    fetchRetry("/api/dashboard/stats")
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setStats(data); })
       .catch(() => { if (!cancelled) setError(true); setLoading(false); })
@@ -209,6 +210,6 @@ export function useDashboardStats() {
     return () => { /* cancelled = true */ };
   }, []);
 
-  return { stats, loading, error, refetch: () => fetch("/api/dashboard/stats").then(r => r.ok ? r.json() : Promise.reject()).then(setStats).catch(() => setError(true)) };
+  return { stats, loading, error, refetch: () => fetchRetry("/api/dashboard/stats").then(r => r.ok ? r.json() : Promise.reject()).then(setStats).catch(() => setError(true)) };
 }
 

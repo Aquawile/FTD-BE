@@ -3,6 +3,7 @@
 // ────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from "react";
+import { fetchRetry } from "../api/retry";
 import { TrackedTicker } from "../types";
 import { addDays, formatISO } from "date-fns";
 
@@ -31,7 +32,7 @@ export function useTickerSearch(query: string, options?: { limit?: number; secto
       });
       if (options?.sector && options.sector !== "all") params.set("sector", options.sector);
       params.set("sort_by", options?.sortBy || "ticker");
-      const res = await fetch(`/api/tickers/search?${params.toString()}`, {
+      const res = await fetchRetry(`/api/tickers/search?${params.toString()}`, {
         headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -67,10 +68,10 @@ export function useTickerDashboard(ticker: string) {
       try {
         const { start, end } = getDateRange();
         const [news, timeline, filings, tracked] = await Promise.all([
-          fetch(`/api/tickers/${ticker}/news?start=${start}&end=${end}`).then(r => r.ok ? r.json() : []).catch(() => []),
-          fetch(`/api/tickers/${ticker}/timeline?start=${start}&end=${end}`).then(r => r.ok ? r.json() : []).catch(() => []),
-          fetch(`/api/tickers/${ticker}/filings`).then(r => r.ok ? r.json() : []).catch(() => []),
-          fetch(`/api/tickers/tracked`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetchRetry(`/api/tickers/${ticker}/news?start=${start}&end=${end}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetchRetry(`/api/tickers/${ticker}/timeline?start=${start}&end=${end}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetchRetry(`/api/tickers/${ticker}/filings`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetchRetry(`/api/tickers/tracked`).then(r => r.ok ? r.json() : []).catch(() => []),
         ]);
 
         if (!cancelled) {
@@ -101,7 +102,7 @@ export function useTickerNews(ticker: string) {
     if (!ticker) return;
     let cancelled = false;
     const { start, end } = getDateRange();
-    fetch(`/api/tickers/${ticker}/news?start=${start}&end=${end}`)
+    fetchRetry(`/api/tickers/${ticker}/news?start=${start}&end=${end}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setArticles(data); })
       .catch(() => { if (!cancelled) setError(true); })
@@ -121,7 +122,7 @@ export function useTickerTimeline(ticker: string) {
     if (!ticker) return;
     let cancelled = false;
     const { start, end } = getDateRange();
-    fetch(`/api/tickers/${ticker}/timeline?start=${start}&end=${end}`)
+    fetchRetry(`/api/tickers/${ticker}/timeline?start=${start}&end=${end}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setTimeline(data); })
       .catch(() => { setError(true); })
@@ -141,7 +142,7 @@ export function useTickerFilings(ticker: string) {
     if (!ticker) return;
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/tickers/${ticker}/filings`)
+    fetchRetry(`/api/tickers/${ticker}/filings`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setFilings(data); })
       .catch(() => { setError(true); })
@@ -160,7 +161,7 @@ export function useTrackedTickers(limit = 500) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/tickers/tracked?limit=${limit}`)
+    fetchRetry(`/api/tickers/tracked?limit=${limit}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => { if (!cancelled) setTickers(data); })
       .catch(() => setError(true))
@@ -168,5 +169,5 @@ export function useTrackedTickers(limit = 500) {
     return () => { /* cancelled = true */ };
   }, [limit]);
 
-  return { tickers, loading, error, refetch: () => fetch(`/api/tickers/tracked?limit=500`).then(r => r.ok ? r.json() : Promise.reject()).then(setTickers).catch(() => {}) };
+  return { tickers, loading, error, refetch: () => fetchRetry(`/api/tickers/tracked?limit=500`).then(r => r.ok ? r.json() : Promise.reject()).then(setTickers).catch(() => {}) };
 }
