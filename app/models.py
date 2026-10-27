@@ -43,6 +43,7 @@ class FilingSummary(BaseModel):
     form_type: str
     accession_number: str
     filing_date: Optional[date] = None
+    period_of_report: Optional[date] = None
     element_count: int = 0
     url: Optional[str] = None
 

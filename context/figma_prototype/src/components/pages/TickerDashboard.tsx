@@ -34,6 +34,7 @@ interface FilingSummary {
   form_type: string;
   accession_number: string;
   filing_date: string | null;
+  period_of_report?: string | null;
   element_count: number;
   url: string | null;
 }
@@ -237,17 +238,28 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onSetAlert }: { navig
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <Badge variant="neutral" className="text-xs font-mono">{f.form_type}</Badge>
-                          <span className="text-xs text-muted-foreground">{f.filing_date || "Unknown date"}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {f.filing_date ? `Filed ${f.filing_date}` : f.period_of_report ? `Period ending ${f.period_of_report}` : "Date not recorded"}
+                          </span>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           Accession: {f.accession_number}
                         </div>
                       </div>
-                      {f.url && (
-                        <a href={`/api/tickers/${t.symbol}/filings/${f.accession_number.replace(/-/g, "")}/content?cik=${f.target_cik}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 shrink-0">
-                          <ExternalLink size={12} />
-                          SEC.gov
-                        </a>
+                      {f.accession_number && (
+                        <div className="flex items-center gap-3 shrink-0">
+                          {/* Our rendered copy (read-only, sandboxed); v=2 skips copies cached as plain text */}
+                          <a href={`/api/tickers/${t.symbol}/filings/${f.accession_number.replace(/-/g, "")}/content?cik=${f.target_cik}&v=2`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300">
+                            View
+                          </a>
+                          {/* The filing on SEC.gov itself */}
+                          {f.url && (
+                            <a href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+                              <ExternalLink size={12} />
+                              SEC.gov
+                            </a>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 
 from google.cloud import storage
 
@@ -44,6 +44,22 @@ def _cik_prefixes(cik: str) -> tuple[str, str]:
 
 def _form_from_path(source_object: str) -> str:
     return "8-K" if source_object.startswith("SEC/8-K/") else "10-K"
+
+
+def _accession_from_path(source_object: str) -> str:
+    """Dashed accession number from ``SEC/{form}/{CIK}/{accession}/{file}`` ("" if not 18 digits)."""
+    parts = source_object.split("/")
+    digits = parts[3] if len(parts) > 4 else ""
+    return f"{digits[:10]}-{digits[10:12]}-{digits[12:]}" if len(digits) == 18 and digits.isdigit() else ""
+
+
+def _period_from_path(source_object: str) -> date | None:
+    """Period-of-report date from the filename (``nvda-20260125.htm``), if it has one."""
+    match = re.search(r"-(\d{8})\.html?$", source_object)
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%d").date() if match else None
+    except ValueError:
+        return None
 
 
 def _ticker_from_path(source_object: str) -> str | None:
@@ -75,13 +91,12 @@ def _resolve_ticker_to_cik(ticker: str) -> str | None:
 
 
 def _construct_edgar_url(cik: str, accession_number: str) -> str:
-    """Construct SEC.gov EDGAR URL from CIK and accession number."""
-    cik_clean = cik.replace("-", "")
-    acc_clean = accession_number.replace("-", "")
-    return (
-        f"https://www.sec.gov/cgi-bin/browse-edgar"
-        f"?action=getfile&CIK={cik_clean}&acckey={acc_clean}"
-    )
+    """The filing's own page on SEC.gov (its document index), or "" without an accession."""
+    digits = accession_number.replace("-", "")
+    if len(digits) != 18 or not digits.isdigit():
+        return ""
+    dashed = f"{digits[:10]}-{digits[10:12]}-{digits[12:]}"
+    return f"https://www.sec.gov/Archives/edgar/data/{int(cik.replace('-', ''))}/{digits}/{dashed}-index.htm"
 
 
 def list_filings_for_ticker(ticker: str) -> list[FilingSummary]:
@@ -105,18 +120,23 @@ def list_filings_for_ticker(ticker: str) -> list[FilingSummary]:
         """,
         _cik_prefixes(cik),
     )
-    return [
-        FilingSummary(
+    summaries = []
+    for r in rows:
+        # Some files were vectorized without sec_metadata: the stored path still says which
+        # form and accession they are, and the filename carries the period date.
+        accession = r["accession_number"] or _accession_from_path(r["source_object"])
+        summaries.append(FilingSummary(
             target_ticker=ticker.upper(),
             target_cik=cik,
-            form_type=r["form_type"] or "UNKNOWN",
-            accession_number=r["accession_number"] or "",
+            form_type=r["form_type"] or _form_from_path(r["source_object"]),
+            accession_number=accession,
             filing_date=r["filing_date"],
+            period_of_report=_period_from_path(r["source_object"]),
             element_count=r["chunk_count"],
-            url=_construct_edgar_url(cik, r["accession_number"] or ""),
-        )
-        for r in rows
-    ]
+            url=_construct_edgar_url(cik, accession),
+        ))
+    summaries.sort(key=lambda f: f.filing_date or f.period_of_report or date.min, reverse=True)
+    return summaries
 
 
 def get_filing_elements_by_accession(accession_number: str) -> list[FilingElement]:

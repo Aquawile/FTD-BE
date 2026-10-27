@@ -46,7 +46,7 @@ def test_list_filings_scoped_to_company_and_mapped():
     assert q.call_args_list[1].args[1] == ("SEC/8-K/0001045810/%", "SEC/10-K/0001045810/%")
     assert [f.accession_number for f in out] == ["0001045810-26-000021", ""]
     assert out[0].target_ticker == "NVDA" and out[0].element_count == 54
-    assert out[1].form_type == "UNKNOWN"
+    assert out[1].form_type == "8-K"  # no recorded form: taken from the stored path (was "UNKNOWN")
 
 
 def test_list_filings_unknown_ticker_skips_filings_query():
