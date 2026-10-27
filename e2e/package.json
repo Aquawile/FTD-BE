@@ -1,0 +1,21 @@
+{
+  "name": "ftd-e2e",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Browser tests for the FTD web app (Playwright). Runs against the Firebase Auth emulator in CI, or against staging with a dedicated test account.",
+  "scripts": {
+    "test": "playwright test",
+    "test:staging": "E2E_TARGET=staging playwright test",
+    "list": "playwright test --list",
+    "typecheck": "tsc --noEmit",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.10.2",
+    "@types/pg": "8.11.10",
+    "pg": "8.13.1",
+    "typescript": "5.7.2"
+  }
+}

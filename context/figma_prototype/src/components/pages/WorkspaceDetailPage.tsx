@@ -108,6 +108,7 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
                 </div>
                 <button
                   className="p-1 text-muted-foreground hover:text-red-400 cursor-pointer"
+                  aria-label={`Remove ${symbol}`} title="Remove from workspace"
                   onClick={e => { e.stopPropagation(); handleRemoveTicker(symbol); }}
                 >
                   <Minus size={14} />

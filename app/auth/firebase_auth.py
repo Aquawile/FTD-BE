@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import firebase_admin
@@ -12,11 +13,21 @@ from app.auth.firebase_config import FIREBASE_CREDENTIALS_PATH, FIREBASE_PROJECT
 _firebase_initialized: bool = False
 
 
+class _EmulatorCredential(credentials.Base):
+    def get_credential(self):
+        from google.auth.credentials import AnonymousCredentials
+        return AnonymousCredentials()
+
+
 def _initialize_firebase() -> None:
     global _firebase_initialized
     if _firebase_initialized:
         return
-    if FIREBASE_CREDENTIALS_PATH:
+    if os.environ.get("FIREBASE_AUTH_EMULATOR_HOST"):
+        # Browser tests (e2e/) run against the Firebase Auth emulator: tokens are unsigned and
+        # there is no Google account to authenticate as. Never set in staging or production.
+        cred = _EmulatorCredential()
+    elif FIREBASE_CREDENTIALS_PATH:
         cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
     else:
         cred = credentials.ApplicationDefault()

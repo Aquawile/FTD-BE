@@ -171,6 +171,106 @@ jobs:
           path: context/figma_prototype/dist
           retention-days: 7
 
+  # Real-browser tests of the whole app (e2e/): the built web app, the real API, a throwaway Postgres
+  # and the Firebase Auth emulator (sign-up, verification and reset emails are read from the emulator,
+  # so no real inbox or Firebase account is involved). It reports but does not gate a deploy yet:
+  # it is not in ci-complete's needs, and a failure here does not fail the run.
+  e2e-browser-tests:
+    name: Browser Tests (Playwright)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: ci_postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      E2E_FIREBASE_PROJECT: ftd-2026
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            context/figma_prototype/package-lock.json
+            e2e/package-lock.json
+      - name: Build test database (staging schema + migrations + seed + browser-test seed)
+        env:
+          PGUSER: postgres
+          PGPASSWORD: ci_postgres
+          TEST_DB: ftd_lakehouse_test
+          FTD_APP_PASSWORD: ftd_app_ci
+        run: |
+          bash tests/schema/setup_test_db.sh
+          psql -v ON_ERROR_STOP=1 -X -q -d ftd_lakehouse_test -f e2e/seed/e2e_seed.sql
+      - name: Build the web app pointed at the Auth emulator
+        working-directory: context/figma_prototype
+        env:
+          VITE_FIREBASE_AUTH_EMULATOR_URL: http://127.0.0.1:9099
+        run: |
+          npm ci --no-audit --no-fund
+          npx vite build
+      - name: Install browser tests and Chromium
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Start Firebase Auth emulator, API and web server
+        working-directory: e2e
+        env:
+          PGDATABASE: ftd_lakehouse_test
+          PGUSER: ftd_app
+          PGPASSWORD: ftd_app_ci
+          FIREBASE_PROJECT_ID: ftd-2026
+          FIREBASE_AUTH_ENABLED: "true"
+        run: |
+          npx --yes firebase-tools@13.29.1 emulators:start --only auth --project ftd-2026 > ../emulator.log 2>&1 &
+          (cd .. && python -m uvicorn app.main:app --host 127.0.0.1 --port 8080 > api.log 2>&1) &
+          node scripts/serve.mjs > ../web.log 2>&1 &
+          for url in http://127.0.0.1:9099/ http://127.0.0.1:8080/health http://127.0.0.1:5174/; do
+            for i in $(seq 1 60); do curl -fs "$url" > /dev/null && break; sleep 2; done
+            curl -fs "$url" > /dev/null || { echo "not up: $url"; tail -30 ../emulator.log ../api.log ../web.log; exit 1; }
+          done
+      - name: Run browser tests
+        working-directory: e2e
+        env:
+          CI: "true"
+          PGDATABASE: ftd_lakehouse_test
+          PGUSER: ftd_app
+          PGPASSWORD: ftd_app_ci
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-browser-test-results
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            e2e/e2e-test-results.xml
+            emulator.log
+            api.log
+            web.log
+          retention-days: 7
+      - if: always()
+        run: python3 scripts/summarize_tests.py e2e/e2e-test-results.xml "Browser Test Results (Playwright)"
+
   ci-complete:
     name: CI Complete
     needs: [unit-tests, db-integration-tests, api-contract-tests, frontend]
