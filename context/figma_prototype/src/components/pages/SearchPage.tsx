@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Btn, Card, cn } from "../ui";
-import { AlertCircle, ChevronRight, Filter, Search, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertCircle, ChevronRight, Search, TrendingDown, TrendingUp } from "lucide-react";
 import { apiRequest, API_BASE, formatPrice as formatSharedPrice, isStaleQuote, newestQuoteDate } from "../../api";
 
 interface TrackedTicker {
@@ -17,7 +17,6 @@ interface TrackedTicker {
 function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = "" }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; initialQuery?: string }) {
   const [query, setQuery] = useState(initialQuery);
   useEffect(() => { setQuery(initialQuery); }, [initialQuery]);
-  const [filterSector, setFilterSector] = useState("all");
   const [sortBy, setSortBy] = useState("symbol");
   const [tickers, setTickers] = useState<TrackedTicker[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,7 +53,6 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = 
 
   const filtered = tickers.filter(t => {
     if (query && !t.symbol.toLowerCase().includes(query.toLowerCase()) && !t.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (filterSector !== "all" && t.sector?.toLowerCase() !== filterSector) return false;
     return true;
   });
 
@@ -92,20 +90,9 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = 
             className="w-full pl-9 pr-3 py-2.5 bg-input-background border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
-        <Btn variant="secondary" icon={<Filter size={14} />}>Filter</Btn>
       </div>
 
-      {/* Filter chips */}
       <div className="flex items-center gap-2 flex-wrap">
-        {["all", "semiconductors", "ai", "ev", "cloud"].map(f => (
-          <button
-            key={f}
-            onClick={() => setFilterSector(f)}
-            className={cn("px-3 py-1 rounded-lg text-xs border transition-all cursor-pointer capitalize", filterSector === f ? "bg-primary/15 text-primary border-primary/30" : "bg-secondary text-muted-foreground border-border hover:border-primary/20")}
-          >
-            {f === "all" ? "All sectors" : f.toUpperCase()}
-          </button>
-        ))}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Sort by:</span>
           <select aria-label="Sort tickers by" value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-secondary border border-border rounded-lg text-xs px-2 py-1 text-foreground focus:outline-none">

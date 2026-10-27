@@ -77,7 +77,9 @@ export async function searchTickers(
 }
 
 export async function getTrackedTickers(limit = 500): Promise<TrackedTicker[]> {
-  return fetchWithAuth<TrackedTicker[]>(`/tickers/tracked?limit=${limit}`);
+  // The API returns most recently updated first; every list that shows these wants A-Z.
+  const rows = await fetchWithAuth<TrackedTicker[]>(`/tickers/tracked?limit=${limit}`);
+  return rows.slice().sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 
 /** One ticker's name, sector and latest price (same source as the dashboard list). */

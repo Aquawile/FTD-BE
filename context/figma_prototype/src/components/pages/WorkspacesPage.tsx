@@ -92,7 +92,7 @@ function WorkspacesPage({ navigate, firebaseUser, setSelectedWorkspace }: { navi
                 </div>
               </div>
               <h3 className="font-semibold text-foreground mb-1">{ws.name}</h3>
-              <p className="text-xs text-muted-foreground mb-4">Created {ws.created_at || "—"} · {ws.tickers.length} tickers</p>
+              <p className="text-xs text-muted-foreground mb-4">Created {ws.created_at ? ws.created_at.slice(0, 10) : "—"} · {ws.tickers.length} tickers</p>
               <div className="flex flex-wrap gap-1.5">
                 {ws.tickers.map(t => (
                   <span key={t} className="px-2 py-0.5 bg-secondary rounded-md text-xs font-mono text-muted-foreground border border-border">{t}</span>
