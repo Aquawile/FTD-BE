@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Page } from "../app/types";
-import { cn } from "./ui";
+import { cn, initialsOf } from "./ui";
 import {
   Home, Search, Briefcase, Clock, MessageSquare, Bell, Shield,
   BarChart, ChevronRight, ChevronLeft, Settings,
@@ -77,8 +77,8 @@ export function Sidebar({ page, navigate, collapsed, onCollapse, unreadAlerts = 
 
 export type BellAlert = { id: string | number; ticker?: string | null; type: string; message: string; read: boolean; severity: string; time?: string | null };
 
-export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 0, userEmail, userName, onSignOut, loadRecentAlerts, onMarkAllRead }: {
-  navigate: (p: Page) => void; searchQuery: string; setSearchQuery: (v: string) => void; onSearch: () => void; unreadAlerts?: number; userEmail?: string; userName?: string; onSignOut?: () => void;
+export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unreadAlerts = 0, userEmail, userName, avatarUrl, onSignOut, loadRecentAlerts, onMarkAllRead }: {
+  navigate: (p: Page) => void; searchQuery: string; setSearchQuery: (v: string) => void; onSearch: () => void; unreadAlerts?: number; userEmail?: string; userName?: string; avatarUrl?: string | null; onSignOut?: () => void;
   loadRecentAlerts?: () => Promise<BellAlert[]>; onMarkAllRead?: () => Promise<void>;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -181,8 +181,8 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
         </div>
         <div className="relative" ref={profileRef}>
           <button type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded={profileOpen}
-            className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer" onClick={() => setProfileOpen(p => !p)}>
-            {userName ? userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "IB"}
+            className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold cursor-pointer overflow-hidden" onClick={() => setProfileOpen(p => !p)}>
+            {avatarUrl ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" /> : initialsOf(userName, "?")}
           </button>
           {profileOpen && (
             <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-2 z-50">
@@ -200,7 +200,7 @@ export function TopBar({ navigate, searchQuery, setSearchQuery, onSearch, unread
   );
 }
 
-export function AppShell({ page, navigate, children, userEmail, userName, onSignOut, unreadAlerts = 0, onSearch, loadRecentAlerts, onMarkAllRead }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; onSignOut?: () => void; unreadAlerts?: number; onSearch?: (query: string) => void; loadRecentAlerts?: () => Promise<BellAlert[]>; onMarkAllRead?: () => Promise<void> }) {
+export function AppShell({ page, navigate, children, userEmail, userName, avatarUrl, onSignOut, unreadAlerts = 0, onSearch, loadRecentAlerts, onMarkAllRead }: { page: Page; navigate: (p: Page) => void; children: React.ReactNode; userEmail?: string; userName?: string; avatarUrl?: string | null; onSignOut?: () => void; unreadAlerts?: number; onSearch?: (query: string) => void; loadRecentAlerts?: () => Promise<BellAlert[]>; onMarkAllRead?: () => Promise<void> }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const handleSearch = () => {
@@ -214,7 +214,7 @@ export function AppShell({ page, navigate, children, userEmail, userName, onSign
     <div className="flex min-h-screen">
       <Sidebar page={page} navigate={navigate} collapsed={collapsed} onCollapse={() => setCollapsed(c => !c)} unreadAlerts={unreadAlerts} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} unreadAlerts={unreadAlerts} userEmail={userEmail} userName={userName} onSignOut={onSignOut} loadRecentAlerts={loadRecentAlerts} onMarkAllRead={onMarkAllRead} />
+        <TopBar navigate={navigate} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSearch={handleSearch} unreadAlerts={unreadAlerts} userEmail={userEmail} userName={userName} avatarUrl={avatarUrl} onSignOut={onSignOut} loadRecentAlerts={loadRecentAlerts} onMarkAllRead={onMarkAllRead} />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>

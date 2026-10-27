@@ -316,6 +316,19 @@ export function alertCoversTickers(subs: AlertSubscription[], tickers: string[],
   return tickers.length > 0 && tickers.every(t => subs.some(s => s.ticker === t && s.alert_type === alertType && s.active));
 }
 
+/** The user's saved profile photo (a small JPEG data URL), or null. Kept with the account, not the browser. */
+export async function getAvatar(firebaseUser: FirebaseUser | null): Promise<string | null> {
+  const body = await jsonOrThrow<{ avatar: string | null }>(await apiRequest("/users/me/avatar", firebaseUser));
+  return body.avatar;
+}
+
+export async function saveAvatar(firebaseUser: FirebaseUser | null, avatar: string): Promise<void> {
+  const res = await apiRequest("/users/me/avatar", firebaseUser, {
+    method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ avatar }),
+  });
+  if (!res.ok) throw new Error("Couldn't save your photo. Try a smaller image.");
+}
+
 export async function deleteAccountRecord(firebaseUser: FirebaseUser | null): Promise<void> {
   const res = await apiRequest("/users/me", firebaseUser, { method: "DELETE" });
   if (!res.ok) throw new Error("Couldn't close your account. Nothing was deleted.");
