@@ -49,7 +49,8 @@ if [[ -z "$size" || "$size" -lt "$MIN_BYTES" ]]; then
   exit 1
 fi
 
-entries="$(gcloud storage cat "$OBJ" | pg_restore --list 2>/dev/null | grep -c 'TABLE DATA')"
+# The table of contents sits at the start of a custom-format dump, so read only the first 8 MiB.
+entries="$(gcloud storage cat -r 0-8388607 "$OBJ" 2>/dev/null | pg_restore --list 2>/dev/null | grep -c 'TABLE DATA')"
 if [[ "${entries:-0}" -lt 10 ]]; then
   echo "BACKUP SUSPECT: pg_restore can read only ${entries:-0} table-data entries from ${OBJ}"
   exit 1
