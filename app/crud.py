@@ -728,6 +728,24 @@ def create_user_subscription(user_id: int, ticker: str, alert_type: str, thresho
     return row[0] if row else None
 
 
+def close_user_account(user_id: int) -> None:
+    """Close an account the user deleted. Nothing is removed from the database.
+
+    The row is detached from the person: email becomes an unreachable placeholder (which also
+    frees the address for a new sign-up), the Firebase link is cleared and the user is inactive.
+    Their workspaces are archived and their alert subscriptions paused so nothing keeps running for them.
+    """
+    with get_connection(validate=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE workspaces SET archived_at = COALESCE(archived_at, NOW()), alert_on_filings = FALSE WHERE user_id = %s", (user_id,))
+            cur.execute("UPDATE alert_subscriptions SET active = FALSE WHERE user_id = %s", (user_id,))
+            cur.execute(
+                "UPDATE users SET email = %s, firebase_uid = NULL, is_active = FALSE, updated_at = NOW() WHERE id = %s",
+                (f"deleted-{user_id}@deleted.invalid", user_id),
+            )
+        conn.commit()
+
+
 def update_user_subscription(user_id: int, subscription_id: int, active: bool | None, threshold: float | None) -> bool:
     """Toggle active and/or change threshold on the user's own subscription. False if not found."""
     with get_connection() as conn:

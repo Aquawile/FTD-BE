@@ -4,7 +4,7 @@ import { Page } from "../../app/types";
 import { Btn, Card, Input, Modal, cn } from "../ui";
 import { Archive, Briefcase, Check, ChevronLeft } from "lucide-react";
 import { WorkspaceResponse } from "../../types";
-import { fetchDeleteWorkspace, fetchUpdateWorkspace } from "../../api";
+import { alertCoversTickers, fetchDeleteWorkspace, fetchUpdateWorkspace, getAlertSubscriptions, setAlertForTickers } from "../../api";
 
 function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSaved, onArchived }: {
   navigate: (p: Page) => void;
@@ -17,6 +17,8 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSa
   const [name, setName] = useState(ws?.name || "");
   const [description, setDescription] = useState(ws?.description || "");
   const [alertOnFilings, setAlertOnFilings] = useState(!!ws?.alert_on_filings);
+  const [alertOnNews, setAlertOnNews] = useState(false);
+  const [newsBusy, setNewsBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +30,14 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSa
     setDescription(ws?.description || "");
     setAlertOnFilings(!!ws?.alert_on_filings);
   }, [ws?.id]);
+
+  // News alerts are the same per-ticker subscriptions as on the Alerts page: on when every ticker has one.
+  useEffect(() => {
+    if (!ws) return;
+    getAlertSubscriptions(firebaseUser)
+      .then(subs => setAlertOnNews(alertCoversTickers(subs, ws.tickers, "news")))
+      .catch(() => undefined);
+  }, [ws?.id, ws?.tickers.length, firebaseUser]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ws) {
     return (
@@ -64,6 +74,20 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSa
     } catch (e: any) {
       setAlertOnFilings(!next);
       setError(e.message || "Couldn't update alerts.");
+    }
+  };
+
+  const toggleNewsAlerts = async () => {
+    if (!ws) return;
+    const next = !alertOnNews;
+    setNewsBusy(true); setError(null);
+    try {
+      const subs = await setAlertForTickers(firebaseUser, ws.tickers, "news", next);
+      setAlertOnNews(alertCoversTickers(subs, ws.tickers, "news"));
+    } catch (e: any) {
+      setError(e.message || "Couldn't update alerts.");
+    } finally {
+      setNewsBusy(false);
     }
   };
 
@@ -114,6 +138,7 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSa
         </Card>
         <Card className="p-5">
           <h3 className="font-semibold mb-4">Alert Preferences</h3>
+          <div className="space-y-4">
           <div className="flex items-start justify-between gap-4 text-sm">
             <div>
               <div className="font-medium text-foreground">New SEC filings</div>
@@ -129,6 +154,25 @@ function WorkspaceSettingsPage({ navigate, selectedWorkspace, firebaseUser, onSa
               <span className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-transform", alertOnFilings ? "translate-x-5" : "translate-x-1")} />
             </button>
           </div>
+          <div className="flex items-start justify-between gap-4 text-sm">
+            <div>
+              <div className="font-medium text-foreground">New news articles</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Alert me when any ticker in this workspace gets new news articles. Checked after each nightly data sync.
+              </div>
+            </div>
+            <button
+              type="button" role="switch" aria-checked={alertOnNews} aria-label="Alert on new news articles"
+              onClick={toggleNewsAlerts} disabled={newsBusy || ws.tickers.length === 0}
+              className={cn("relative inline-flex w-10 h-6 rounded-full cursor-pointer transition-colors shrink-0 mt-0.5", alertOnNews ? "bg-primary" : "bg-switch-background")}
+            >
+              <span className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-transform", alertOnNews ? "translate-x-5" : "translate-x-1")} />
+            </button>
+          </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-4">
+            Price alerts are set per ticker on the <button type="button" onClick={() => navigate("alerts")} className="text-primary hover:underline cursor-pointer">Alerts page</button>, where you can also apply news and filing alerts to a whole workspace.
+          </p>
         </Card>
         <Card className="p-5 border-red-500/20">
           <h3 className="font-semibold mb-2 text-red-400">Archive</h3>

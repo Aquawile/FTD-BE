@@ -291,6 +291,36 @@ export async function updateAlertSubscription(
   return jsonOrThrow(res);
 }
 
+/**
+ * Turn one alert type on or off for a group of tickers (a workspace), using the same
+ * per-ticker subscriptions as the Alerts page: existing ones are resumed/paused, missing
+ * ones are created when turning on. Returns the user's subscriptions afterwards.
+ */
+export async function setAlertForTickers(
+  firebaseUser: FirebaseUser | null,
+  tickers: string[],
+  alertType: "news" | "filing",
+  on: boolean,
+): Promise<AlertSubscription[]> {
+  const existing = await getAlertSubscriptions(firebaseUser);
+  for (const ticker of tickers) {
+    const sub = existing.find(s => s.ticker === ticker && s.alert_type === alertType);
+    if (sub && sub.active !== on) await updateAlertSubscription(firebaseUser, sub.id, { active: on });
+    else if (!sub && on) await createAlertSubscription(firebaseUser, { ticker, alert_type: alertType });
+  }
+  return getAlertSubscriptions(firebaseUser);
+}
+
+/** True when every ticker has an active subscription of this type. */
+export function alertCoversTickers(subs: AlertSubscription[], tickers: string[], alertType: AlertSubscriptionType): boolean {
+  return tickers.length > 0 && tickers.every(t => subs.some(s => s.ticker === t && s.alert_type === alertType && s.active));
+}
+
+export async function deleteAccountRecord(firebaseUser: FirebaseUser | null): Promise<void> {
+  const res = await apiRequest("/users/me", firebaseUser, { method: "DELETE" });
+  if (!res.ok) throw new Error("Couldn't close your account. Nothing was deleted.");
+}
+
 // ────────────────────────────────────────────────
 // Dashboard Endpoints
 // ────────────────────────────────────────────────

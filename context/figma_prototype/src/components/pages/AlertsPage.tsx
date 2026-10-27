@@ -7,11 +7,14 @@ import { useAlerts } from "../../hooks";
 import { useTrackedTickers } from "../../hooks/tickerHooks";
 import {
   createAlertSubscription,
+  fetchUpdateWorkspace,
+  fetchWorkspaces,
   getAlertSubscriptions,
+  setAlertForTickers,
   markAlertsRead,
   updateAlertSubscription,
 } from "../../api";
-import type { AlertSubscription, AlertSubscriptionType, TrackedTicker } from "../../types";
+import type { AlertSubscription, AlertSubscriptionType, TrackedTicker, WorkspaceResponse } from "../../types";
 
 const SUBSCRIPTION_TYPES: { value: AlertSubscriptionType; label: string }[] = [
   { value: "price_above", label: "Price closes above" },
@@ -38,6 +41,19 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
   const [alertType, setAlertType] = useState<AlertSubscriptionType>("price_above");
   const [threshold, setThreshold] = useState("");
   const [saving, setSaving] = useState(false);
+  // An alert can target one ticker or a whole workspace (news / filing only: a price level
+  // only makes sense for a single ticker).
+  const [targetKind, setTargetKind] = useState<"ticker" | "workspace">("ticker");
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
+  useEffect(() => { fetchWorkspaces(firebaseUser).then(setWorkspaces).catch(() => undefined); }, [firebaseUser]);
+  const workspaceMode = targetKind === "workspace";
+  const chosenWorkspace = workspaces.find(w => String(w.id) === workspaceId);
+  const typeOptions = workspaceMode ? SUBSCRIPTION_TYPES.filter(t => !isPriceType(t.value)) : SUBSCRIPTION_TYPES;
+  const switchTarget = (kind: "ticker" | "workspace") => {
+    setTargetKind(kind);
+    if (kind === "workspace" && isPriceType(alertType)) setAlertType("news");
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -60,7 +76,27 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
     }
   };
 
+  const addForWorkspace = async () => {
+    if (!chosenWorkspace) return;
+    setSaving(true);
+    try {
+      if (alertType === "filing") {
+        // Same switch as the workspace's settings page: also covers tickers added later.
+        await fetchUpdateWorkspace(chosenWorkspace.id, { alert_on_filings: true }, firebaseUser);
+      } else {
+        await setAlertForTickers(firebaseUser, chosenWorkspace.tickers, "news", true);
+      }
+      load();
+      setAdding(false); setWorkspaceId(""); setError(null);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const add = async () => {
+    if (workspaceMode) return addForWorkspace();
     const value = Number(threshold);
     if (!ticker || (isPriceType(alertType) && !(value > 0))) return;
     setSaving(true);
@@ -87,18 +123,29 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
       </div>
       {adding && (
         <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-border/50">
-          <select className={inputCls} aria-label="Ticker" value={ticker} onChange={e => setTicker(e.target.value)}>
-            <option value="">Ticker…</option>
-            {trackedTickers.slice().sort((a, b) => a.symbol.localeCompare(b.symbol)).map(t => <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>)}
+          <select className={inputCls} aria-label="Alert target" value={targetKind} onChange={e => switchTarget(e.target.value as "ticker" | "workspace")}>
+            <option value="ticker">A ticker</option>
+            <option value="workspace">A workspace</option>
           </select>
+          {workspaceMode ? (
+            <select className={inputCls} aria-label="Workspace" value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>
+              <option value="">Workspace…</option>
+              {workspaces.map(w => <option key={w.id} value={String(w.id)}>{w.name} ({w.tickers.length} tickers)</option>)}
+            </select>
+          ) : (
+            <select className={inputCls} aria-label="Ticker" value={ticker} onChange={e => setTicker(e.target.value)}>
+              <option value="">Ticker…</option>
+              {trackedTickers.slice().sort((a, b) => a.symbol.localeCompare(b.symbol)).map(t => <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>)}
+            </select>
+          )}
           <select className={inputCls} aria-label="Alert type" value={alertType} onChange={e => setAlertType(e.target.value as AlertSubscriptionType)}>
-            {SUBSCRIPTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {typeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
-          {isPriceType(alertType) && (
+          {!workspaceMode && isPriceType(alertType) && (
             <input className={cn(inputCls, "w-24")} type="number" min="0" step="0.01" placeholder="$ price" aria-label="Price threshold in dollars"
               value={threshold} onChange={e => setThreshold(e.target.value)} />
           )}
-          <Btn size="sm" onClick={add} disabled={saving || !ticker || (isPriceType(alertType) && !(Number(threshold) > 0))}>
+          <Btn size="sm" onClick={add} disabled={saving || (workspaceMode ? !chosenWorkspace || chosenWorkspace.tickers.length === 0 : !ticker || (isPriceType(alertType) && !(Number(threshold) > 0)))}>
             {saving ? "Saving…" : "Save"}
           </Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setAdding(false); setError(null); }}>Cancel</Btn>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
-import { Btn, Card, Input, cn } from "../ui";
-import { Check, Edit2, Lock, Mail } from "lucide-react";
+import { Btn, Card, Input, Modal, cn } from "../ui";
+import { deleteAccountRecord } from "../../api";
+import { Check, Edit2, Lock, Mail, Trash2 } from "lucide-react";
 
 const photoKey = (uid: string) => `ftd.profilePhoto.${uid}`;
 
@@ -42,6 +43,34 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
   const [profileError, setProfileError] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "sending" | "sent">("idle");
   const [resetError, setResetError] = useState<string | null>(null);
+
+  // Delete account: two confirmations, then the password again (Firebase asks for a recent sign-in).
+  const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteTyped, setDeleteTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const closeDelete = () => { setDeleteStep(0); setDeletePassword(""); setDeleteTyped(""); setDeleteError(null); };
+
+  const deleteAccount = async () => {
+    if (!user || !user.email) return;
+    setDeleting(true); setDeleteError(null);
+    try {
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, deletePassword));
+    } catch {
+      setDeleteError("That password isn't right. Your account was not deleted.");
+      setDeleting(false);
+      return;
+    }
+    try {
+      await deleteAccountRecord(user);          // database side: archived and detached, not erased
+      await deleteUser(user);                   // Firebase side: the account record is removed
+      // Firebase now reports no user, so the app returns to the sign-in page on its own.
+    } catch (e: any) {
+      setDeleteError(e?.message || "Couldn't delete your account. Try again.");
+      setDeleting(false);
+    }
+  };
 
   const sendReset = async () => {
     setResetState("sending"); setResetError(null);
@@ -136,7 +165,35 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
               {resetState === "sent" ? "Reset link sent" : resetState === "sending" ? "Sending…" : "Email me a reset link"}
             </Btn>
           </Card>
+          <Card className="p-5 border-red-500/30">
+            <h3 className="font-semibold mb-1 text-red-400">Danger zone</h3>
+            <p className="text-sm text-muted-foreground mb-4">Deleting your account signs you out for good and removes your sign-in. Your workspaces are archived and your alerts stop. This can't be undone.</p>
+            <Btn variant="secondary" size="sm" className="border-red-500/30 text-red-400 hover:bg-red-500/10" icon={<Trash2 size={12} />} onClick={() => setDeleteStep(1)}>Delete my account</Btn>
+          </Card>
         </div>
+      )}
+      {deleteStep === 1 && (
+        <Modal title="Delete your account?" onClose={closeDelete}>
+          <p className="text-sm text-muted-foreground mb-4">You are about to delete the account for {email}. You will lose access to your workspaces and alerts.</p>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" onClick={closeDelete}>Cancel</Btn>
+            <Btn variant="danger" onClick={() => setDeleteStep(2)}>Yes, continue</Btn>
+          </div>
+        </Modal>
+      )}
+      {deleteStep === 2 && (
+        <Modal title="Are you absolutely sure?" onClose={deleting ? () => undefined : closeDelete}>
+          <p className="text-sm text-muted-foreground mb-3">This is permanent. Type <span className="font-mono text-foreground">DELETE</span> and enter your password to confirm.</p>
+          <div className="space-y-3 mb-4">
+            <Input id="delete-confirm" ariaLabel="Type DELETE to confirm" value={deleteTyped} onChange={setDeleteTyped} placeholder="DELETE" />
+            <Input id="delete-password" ariaLabel="Your password" type="password" autoComplete="current-password" value={deletePassword} onChange={setDeletePassword} placeholder="Password" onEnter={() => { if (deleteTyped === "DELETE" && deletePassword && !deleting) deleteAccount(); }} />
+          </div>
+          {deleteError && <p className="text-xs text-red-400 mb-3">{deleteError}</p>}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" onClick={closeDelete} disabled={deleting}>Cancel</Btn>
+            <Btn variant="danger" onClick={deleteAccount} disabled={deleting || deleteTyped !== "DELETE" || !deletePassword} icon={<Trash2 size={12} />}>{deleting ? "Deleting…" : "Delete my account"}</Btn>
+          </div>
+        </Modal>
       )}
     </div>
   );
