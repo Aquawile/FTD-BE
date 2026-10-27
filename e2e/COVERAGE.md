@@ -1,6 +1,6 @@
 # What the browser suite covers
 
-Each test runs in Chromium, Firefox and WebKit (Safari engine) and two phone profiles (Pixel 7, iPhone 14; hover-only tests skipped there). Plus Firebase and database health tests, and a database integrity check before and after the run. "#" is the function number from the manual test matrix (78 user-side functions).
+Each test runs in Chromium, Firefox and WebKit (Safari engine). There is no phone layout by design, so phones are not tested. Plus Firebase and database health tests, and a database integrity check before and after the run. "#" is the function number from the manual test matrix (78 user-side functions).
 Not yet run: this list was written before the first run, so the first CI run will likely need selector fixes.
 
 Tagged **[S]** = also runs against staging with the dedicated test account (10 tests, read-only apart from one workspace created and archived).
@@ -65,7 +65,6 @@ Tagged **[S]** = also runs against staging with the dedicated test account (10 t
 | 70 | Save first/last name, avatar and menu update, persists | settings › saving a name… |
 | 71 | Profile photo chosen and kept | settings › a profile photo… |
 | 72, 73 | Security tab, reset email requested | settings › Security… |
-| 74 | Phone layout: no sideways scroll, main buttons reachable | cross-cutting › phone layout |
 | 76 | Accessibility scan of every page and dialog (axe, WCAG A and AA, serious/critical; colour contrast excluded) | cross-cutting › accessibility (2 tests) |
 | 78 | Stats request fails; slow ticker list; 401 from API | cross-cutting › when things go wrong (3 tests) |
 
@@ -79,7 +78,7 @@ Every test also fails on any uncaught page error or `console.error`, and (emulat
 ## Not covered by this suite (stay manual)
 - Whether Firebase's real mail servers deliver the verification / reset email (sender, spam folder, link). The emulator proves the app asks for the email and handles the link; it cannot prove delivery.
 - Firebase console settings: email templates, authorized domains, sign-in providers, quotas, the user list.
-- A real phone (the suite emulates two phone profiles).
+- Phones: the app has no phone layout (deliberate), so nothing is tested there.
 - Screen-reader behaviour. The axe scan catches missing names and roles, not how it sounds.
 - Browser Back / Forward (the app keeps its page in memory, so this is a design question rather than a bug to assert).
 - Data-pipeline correctness against the raw files (prices, news loads): checked separately. The database integrity script (`scripts/check_database_health.py`) and nightly freshness check cover the rest.

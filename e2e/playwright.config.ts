@@ -24,15 +24,13 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "off",
   },
-  // Staging runs Chromium only. The emulator target runs every browser plus two phone profiles
-  // (the phone profiles skip the hover / mouse-sweep tests tagged @desktop-only).
+  // Staging runs Chromium only. The emulator target runs the three desktop engines (Chrome, Firefox, Safari's WebKit).
+  // The app is a desktop research tool; there is deliberately no phone layout, so no phone profiles are run.
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } },
     ...(TARGET === "staging" ? [] : [
       { name: "firefox", use: { ...devices["Desktop Firefox"], viewport: { width: 1280, height: 800 } } },
       { name: "webkit", use: { ...devices["Desktop Safari"], viewport: { width: 1280, height: 800 } } },
-      { name: "phone-android", use: { ...devices["Pixel 7"] }, grepInvert: /@desktop-only/ },
-      { name: "phone-iphone", use: { ...devices["iPhone 14"] }, grepInvert: /@desktop-only/ },
     ]),
   ],
 });

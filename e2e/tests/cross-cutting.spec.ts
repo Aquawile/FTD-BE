@@ -58,21 +58,6 @@ test.describe("accessibility", () => {
   });
 });
 
-test.describe("phone layout", { tag: "@desktop-only" }, () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("sign in, then no page scrolls sideways and the main buttons stay reachable", async ({ page }) => {
-    await signInUi(page, await accountFor());
-    for (const name of ["Dashboard", "Research", "Workspaces", "Alerts"] as const) {
-      await goTo(page, name);
-      await page.waitForTimeout(400);
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      expect(overflow, `${name} scrolls sideways by ${overflow}px`).toBeLessThanOrEqual(1);
-      await expect(page.getByRole("navigation", { name: "Main" }).getByRole("button", { name })).toBeVisible();
-    }
-  });
-});
-
 test.describe("when things go wrong", () => {
   test("the dashboard still renders when its stats request fails", async ({ page }) => {
     test.info().annotations.push({ type: "allow-errors" });
