@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from app.auth.dependencies import get_current_application_user
+from app.crud import close_user_account
 from app.auth.models import User, UserPermissionsResponse, UserWithPermissionDetails
 from app.services.user_service import (
     get_user_with_permission_details,
@@ -53,3 +54,16 @@ def get_current_user_permission_details(
     current_user: User = Depends(get_current_application_user),
 ) -> UserWithPermissionDetails:
     return get_user_with_permission_details(current_user.id)
+
+
+@router.delete(
+    "/me",
+    responses={status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid authentication", "model": None}},
+)
+def delete_current_user(current_user: User = Depends(get_current_application_user)) -> dict:
+    """Close the caller's account in the database (data is kept, detached from the person).
+
+    The web app then deletes the Firebase account itself, right after this succeeds.
+    """
+    close_user_account(current_user.id)
+    return {"closed": True}
