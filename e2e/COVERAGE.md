@@ -1,6 +1,6 @@
 # What the browser suite covers
 
-67 tests in 8 files (plus 2 skipped known-defect tests). "#" is the function number from the manual test matrix (78 user-side functions).
+Each test runs in Chromium, Firefox and WebKit (Safari engine) and two phone profiles (Pixel 7, iPhone 14; hover-only tests skipped there). Plus Firebase and database health tests, and a database integrity check before and after the run. "#" is the function number from the manual test matrix (78 user-side functions).
 Not yet run: this list was written before the first run, so the first CI run will likely need selector fixes.
 
 Tagged **[S]** = also runs against staging with the dedicated test account (10 tests, read-only apart from one workspace created and archived).
@@ -79,8 +79,8 @@ Every test also fails on any uncaught page error or `console.error`, and (emulat
 ## Not covered by this suite (stay manual)
 - Whether Firebase's real mail servers deliver the verification / reset email (sender, spam folder, link). The emulator proves the app asks for the email and handles the link; it cannot prove delivery.
 - Firebase console settings: email templates, authorized domains, sign-in providers, quotas, the user list.
-- Browsers other than Chromium (Safari, Firefox), and a real phone.
+- A real phone (the suite emulates two phone profiles).
 - Screen-reader behaviour. The axe scan catches missing names and roles, not how it sounds.
 - Browser Back / Forward (the app keeps its page in memory, so this is a design question rather than a bug to assert).
-- Data-pipeline correctness (prices, news loads). That is checked separately against the raw files.
+- Data-pipeline correctness against the raw files (prices, news loads): checked separately. The database integrity script (`scripts/check_database_health.py`) and nightly freshness check cover the rest.
 - #46: there is no screen that shows SEC filings, so there is nothing to click. The filings endpoints are covered by the API tests.

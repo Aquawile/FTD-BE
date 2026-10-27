@@ -20,7 +20,7 @@ test.describe("sidebar", () => {
     await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
   });
 
-  test("collapse and expand with the mouse, keeping every button reachable", async ({ page }) => {
+  test("collapse and expand with the mouse, keeping every button reachable", { tag: "@desktop-only" }, async ({ page }) => {
     await signInUi(page, await accountFor());
     const aside = page.locator("aside");
     const wide = (await aside.boundingBox())!.width;

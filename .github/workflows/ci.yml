@@ -179,7 +179,7 @@ jobs:
     name: Browser Tests (Playwright)
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 25
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:15
@@ -231,7 +231,7 @@ jobs:
         working-directory: e2e
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox webkit
       - name: Start Firebase Auth emulator, API and web server
         working-directory: e2e
         env:
@@ -248,6 +248,12 @@ jobs:
             for i in $(seq 1 60); do curl -fs "$url" > /dev/null && break; sleep 2; done
             curl -fs "$url" > /dev/null || { echo "not up: $url"; tail -30 ../emulator.log ../api.log ../web.log; exit 1; }
           done
+      - name: Database integrity before the browser tests
+        env:
+          PGDATABASE: ftd_lakehouse_test
+          PGUSER: ftd_app
+          PGPASSWORD: ftd_app_ci
+        run: python scripts/check_database_health.py
       - name: Run browser tests
         working-directory: e2e
         env:
@@ -255,8 +261,15 @@ jobs:
           PGDATABASE: ftd_lakehouse_test
           PGUSER: ftd_app
           PGPASSWORD: ftd_app_ci
-          E2E_REPEAT: "3"     # stability check while the suite is new; set back to 1 (or remove) afterwards
+          E2E_REPEAT: "1"     # raise to 3 to check a new test for flakiness
         run: npx playwright test --repeat-each=${E2E_REPEAT:-1}
+      - name: Database integrity after the browser tests (did the UI tests damage any data?)
+        if: always()
+        env:
+          PGDATABASE: ftd_lakehouse_test
+          PGUSER: ftd_app
+          PGPASSWORD: ftd_app_ci
+        run: python scripts/check_database_health.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

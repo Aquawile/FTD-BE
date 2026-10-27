@@ -11,7 +11,7 @@ const total = async (page: Page) => {
 const dbCount = async (sql: string, args: unknown[] = []) => Number((await db.one<{ n: string }>(sql, args)).n);
 
 test.describe("ticker page: overview", () => {
-  test("header, key financials and a chart that follows the cursor", { tag: "@staging" }, async ({ page }) => {
+  test("header, key financials and a chart that follows the cursor", { tag: ["@staging", "@desktop-only"] }, async ({ page }) => {
     await signInUi(page, await accountFor());
     await openTicker(page, "NVDA");
     await expect(page.getByText("NVDA", { exact: true }).first()).toBeVisible();
