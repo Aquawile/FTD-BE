@@ -17,7 +17,6 @@ from app.routes import dashboard, filings, search, tickers, users, workspaces, a
 from app.auth.router import router as auth_router
 from app.auth.middleware import AuthMiddleware
 from app.middleware.audit_middleware import AuditLogMiddleware
-from app.db import PoolTimeout
 from app.services.db_access_counter import get_counters
 from app.logging_config import setup_logging
 from app.services.exceptions import (
@@ -166,12 +165,6 @@ async def data_validation_error_handler(request: Request, exc: DataValidationErr
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"detail": str(exc) or "Validation error"},
     )
-
-
-@app.exception_handler(PoolTimeout)
-async def pool_timeout_handler(request: Request, exc: PoolTimeout) -> JSONResponse:
-    logger.error("http:database_busy path=%s detail=%s", request.url.path, exc)
-    return JSONResponse(status_code=503, content={"detail": "The server is busy. Please try again."}, headers={"Retry-After": "1"})
 
 
 @app.exception_handler(Exception)
