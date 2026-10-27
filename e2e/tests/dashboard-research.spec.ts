@@ -70,6 +70,7 @@ test.describe("research", () => {
     await goTo(page, "Research");
     const box = page.getByRole("textbox", { name: "Search tickers and companies" });
     const count = page.getByText(/^\d+ tickers? tracked$/);
+    await expect(count).not.toHaveText(/^0 tickers? tracked$/);   // the list has finished loading
     const all = await count.textContent();
     await box.fill("electronic");
     await expect(count).toHaveText("1 tickers tracked");
