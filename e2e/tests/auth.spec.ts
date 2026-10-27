@@ -8,7 +8,8 @@ const mainNav = (page: Page) => page.getByRole("navigation", { name: "Main" });
 async function persistedSessions(page: Page) {
   return page.evaluate(async () => {
     const session = Object.keys(sessionStorage).filter(k => k.startsWith("firebase:authUser")).length;
-    const local = await new Promise<number>(resolve => {
+    const inLocalStorage = Object.keys(localStorage).filter(k => k.startsWith("firebase:authUser")).length;
+    const inIndexedDb = await new Promise<number>(resolve => {
       const req = indexedDB.open("firebaseLocalStorageDb");
       req.onerror = () => resolve(0);
       req.onsuccess = () => {
@@ -19,7 +20,7 @@ async function persistedSessions(page: Page) {
         } catch { resolve(0); }
       };
     });
-    return { session, local };
+    return { session, local: inLocalStorage + inIndexedDb };
   });
 }
 

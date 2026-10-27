@@ -155,7 +155,7 @@ test.describe("ticker page: actions", () => {
     await page.getByRole("button", { name: "Add to Workspace" }).first().click();
     const dialog = page.getByRole("dialog", { name: "Add NVDA to a workspace" });
     await dialog.getByRole("button", { name: /E2E picker workspace/ }).click();
-    await expect(dialog.getByText("Added")).toBeVisible();
+    await expect(dialog.getByText("Added").first()).toBeVisible();
     await page.keyboard.press("Escape");
     await goTo(page, "Workspaces");
     await page.getByRole("heading", { name: "E2E picker workspace" }).click();

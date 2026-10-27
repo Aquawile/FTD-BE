@@ -93,7 +93,7 @@ test.describe("workspace settings", () => {
     await createWorkspace(page, "E2E settings before");
     await goTo(page, "Workspaces");
     await page.getByRole("heading", { name: "E2E settings before" }).click();
-    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("main").getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByLabel("Workspace name").fill("E2E settings after");
     await page.getByLabel("Description (optional)").fill("e2e description");
     await page.getByRole("button", { name: "Save Changes" }).click();
@@ -114,7 +114,7 @@ test.describe("workspace settings", () => {
     await createWorkspace(page, "E2E to archive");
     await goTo(page, "Workspaces");
     await page.getByRole("heading", { name: "E2E to archive" }).click();
-    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("main").getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Archive Workspace" }).click();
     await expect(page.getByRole("dialog", { name: "Archive workspace?" })).toBeVisible();
     await page.keyboard.press("Escape");

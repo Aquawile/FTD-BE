@@ -92,17 +92,17 @@ test.describe("alerts list", () => {
     ]);
     await page.reload();
     await goTo(page, "Alerts");
-    for (const m of ["e2e high one", "e2e medium one", "e2e low read"]) await expect(page.getByText(m).first()).toBeVisible();
+    for (const m of ["e2e high one", "e2e medium one", "e2e low read"]) await expect(page.locator("main").getByText(m).first()).toBeVisible();
     await page.getByRole("button", { name: "high", exact: true }).click();
-    await expect(page.getByText("e2e high one").first()).toBeVisible();
-    await expect(page.getByText("e2e medium one")).toHaveCount(0);
+    await expect(page.locator("main").getByText("e2e high one").first()).toBeVisible();
+    await expect(page.locator("main").getByText("e2e medium one")).toHaveCount(0);
     await page.getByRole("button", { name: "low", exact: true }).click();
-    await expect(page.getByText("e2e low read").first()).toBeVisible();
-    await expect(page.getByText("e2e high one")).toHaveCount(0);
+    await expect(page.locator("main").getByText("e2e low read").first()).toBeVisible();
+    await expect(page.locator("main").getByText("e2e high one")).toHaveCount(0);
     await page.getByRole("button", { name: "unread", exact: true }).click();
-    await expect(page.getByText("e2e low read")).toHaveCount(0);
+    await expect(page.locator("main").getByText("e2e low read")).toHaveCount(0);
     await page.getByRole("button", { name: "all", exact: true }).click();
-    await expect(page.getByText("e2e medium one").first()).toBeVisible();
+    await expect(page.locator("main").getByText("e2e medium one").first()).toBeVisible();
   });
 
   test("opening the Alerts page clears the unread badge", async ({ page }) => {
