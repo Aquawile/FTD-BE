@@ -93,6 +93,7 @@ class FilingSummaryResponse(BaseModel):
     form_type: str
     accession_number: str
     filing_date: date | None = None
+    period_of_report: date | None = None
     element_count: int = 0
     url: str | None = None
 
