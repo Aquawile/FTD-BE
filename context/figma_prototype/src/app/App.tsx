@@ -5,7 +5,7 @@ import { firebaseAuth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
-import { apiRequest, API_BASE, markAlertsRead } from "../api";
+import { apiRequest, API_BASE, getAvatar, markAlertsRead, saveAvatar } from "../api";
 import { WorkspaceResponse } from "../types";
 import { needsEmailVerification } from "./verification";
 
@@ -43,7 +43,24 @@ function App() {
   // Firebase restores the session asynchronously on load; render nothing until it has,
   // so a signed-in user isn't shown the login page on every refresh.
   const [authReady, setAuthReady] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);   // saved with the account (server side)
   const [, setProfileVersion] = useState(0);   // bumped after a name change so the top bar re-reads displayName
+
+  // The photo lives on the account. A photo an earlier version kept only in this browser is
+  // uploaded once, so it isn't lost.
+  const loadAvatar = async (user: FirebaseUser) => {
+    try {
+      const saved = await getAvatar(user);
+      if (saved) { setAvatarUrl(saved); return; }
+      const legacyKey = `ftd.profilePhoto.${user.uid}`;
+      let legacy: string | null = null;
+      try { legacy = localStorage.getItem(legacyKey); } catch { /* storage unavailable */ }
+      if (legacy && legacy.startsWith("data:image/jpeg")) {
+        await saveAvatar(user, legacy);
+        setAvatarUrl(legacy);
+      }
+    } catch { /* photo is optional: the initials show instead */ }
+  };
 
   const loadProfile = async (user: FirebaseUser) => {
     setProfileLoading(true);
@@ -54,6 +71,7 @@ function App() {
       ]);
       if (profileRes.ok) setUserProfile(await profileRes.json());
       if (permsRes.ok) setUserPermissions((await permsRes.json()).permissions || []);
+      loadAvatar(user);
     } catch {
       // ignore fetch errors during initial auth state resolution
     } finally {
@@ -78,6 +96,7 @@ function App() {
         loadProfile(user);
       } else {
         setUserProfile(null);
+        setAvatarUrl(null);
         setUserPermissions([]);
       }
     });
@@ -128,7 +147,7 @@ function App() {
       case "workspace-detail": return <WorkspaceDetailPage navigate={navigate} setSelectedTicker={setSelectedTicker} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} refreshWorkspace={refreshWorkspace} />;
       case "workspace-settings": return <WorkspaceSettingsPage navigate={navigate} selectedWorkspace={selectedWorkspace} firebaseUser={firebaseUser} onSaved={setSelectedWorkspace} onArchived={() => { setSelectedWorkspace(null); navigate("workspaces"); }} />;
       case "alerts": return <AlertsPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} onAlertsChanged={refreshAlerts} prefillTicker={alertPrefill} onPrefillUsed={() => setAlertPrefill(null)} />;
-      case "profile": return <ProfilePage navigate={navigate} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} onProfileUpdated={() => setProfileVersion(v => v + 1)} />;
+      case "profile": return <ProfilePage navigate={navigate} avatarUrl={avatarUrl} onAvatarChanged={setAvatarUrl} userEmail={userEmail} userName={userName} userPermissions={userPermissions} loading={profileLoading} onProfileUpdated={() => setProfileVersion(v => v + 1)} />;
       default: return <DashboardPage navigate={navigate} setSelectedTicker={setSelectedTicker} firebaseUser={firebaseUser} setSelectedWorkspace={setSelectedWorkspace} />;
     }
   };
@@ -146,7 +165,7 @@ function App() {
       {isPublic ? (
         <div className="min-h-screen bg-background">{renderPage()}</div>
       ) : (
-        <AppShell page={page} navigate={navigate} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} unreadAlerts={unreadAlerts} onSearch={setSearchText}
+        <AppShell page={page} navigate={navigate} avatarUrl={avatarUrl} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} unreadAlerts={unreadAlerts} onSearch={setSearchText}
           loadRecentAlerts={async () => { const r = await apiRequest("/alerts?limit=6", firebaseUser); if (!r.ok) throw new Error("alerts"); return r.json(); }}
           onMarkAllRead={async () => { await markAlertsRead(firebaseUser); await refreshAlerts(); }}>
           {renderPage()}

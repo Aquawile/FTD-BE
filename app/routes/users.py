@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+import base64
+import binascii
+
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from app.auth.dependencies import get_current_application_user
-from app.crud import close_user_account
+from app.crud import close_user_account, get_user_avatar, set_user_avatar
 from app.auth.models import User, UserPermissionsResponse, UserWithPermissionDetails
 from app.services.user_service import (
     get_user_with_permission_details,
@@ -67,3 +70,30 @@ def delete_current_user(current_user: User = Depends(get_current_application_use
     """
     close_user_account(current_user.id)
     return {"closed": True}
+
+
+_AVATAR_PREFIX = "data:image/jpeg;base64,"
+_AVATAR_MAX_CHARS = 120_000   # the app sends ~160 px JPEGs (a few KB); this is generous headroom
+
+
+@router.get("/me/avatar")
+def get_current_user_avatar(current_user: User = Depends(get_current_application_user)) -> dict:
+    return {"avatar": get_user_avatar(current_user.id)}
+
+
+@router.put("/me/avatar")
+def put_current_user_avatar(
+    avatar: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_application_user),
+) -> dict:
+    """Save the caller's profile photo: a small JPEG data URL. Only the caller's own row changes."""
+    if not avatar.startswith(_AVATAR_PREFIX) or len(avatar) > _AVATAR_MAX_CHARS:
+        raise HTTPException(status_code=422, detail="Photo must be a small JPEG image.")
+    try:
+        raw = base64.b64decode(avatar[len(_AVATAR_PREFIX):], validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=422, detail="Photo data is not valid.")
+    if not raw.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(status_code=422, detail="Photo must be a JPEG image.")
+    set_user_avatar(current_user.id, avatar)
+    return {"saved": True}

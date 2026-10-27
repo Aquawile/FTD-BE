@@ -728,6 +728,17 @@ def create_user_subscription(user_id: int, ticker: str, alert_type: str, thresho
     return row[0] if row else None
 
 
+def get_user_avatar(user_id: int) -> str | None:
+    rows = query_dict("SELECT avatar FROM users WHERE id = %s", (user_id,))
+    return rows[0]["avatar"] if rows else None
+
+
+def set_user_avatar(user_id: int, avatar: str) -> None:
+    """Replace the user's own profile photo (a small JPEG data URL, already validated)."""
+    from app.db import execute
+    execute("UPDATE users SET avatar = %s, updated_at = NOW() WHERE id = %s", (avatar, user_id))
+
+
 def close_user_account(user_id: int) -> None:
     """Close an account the user deleted. Nothing is removed from the database.
 

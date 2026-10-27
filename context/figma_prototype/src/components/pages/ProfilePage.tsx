@@ -2,13 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
-import { Btn, Card, Input, Modal, cn } from "../ui";
-import { deleteAccountRecord } from "../../api";
+import { Btn, Card, Input, Modal, cn, initialsOf } from "../ui";
+import { deleteAccountRecord, saveAvatar } from "../../api";
 import { Check, Edit2, Lock, Mail, Trash2 } from "lucide-react";
 
-const photoKey = (uid: string) => `ftd.profilePhoto.${uid}`;
-
-// Shrink an uploaded image to a small JPEG data URL so it can be kept on this device.
+// Shrink an uploaded image to a small JPEG data URL; it is saved with the account.
 function shrinkImage(file: File, size = 160): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -26,17 +24,14 @@ function shrinkImage(file: File, size = 160): Promise<string> {
   });
 }
 
-function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, onProfileUpdated }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean; onProfileUpdated?: () => void }) {
+function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, onProfileUpdated, avatarUrl, onAvatarChanged }: { navigate: (p: Page) => void; userEmail?: string; userName?: string; userPermissions?: string[]; loading?: boolean; onProfileUpdated?: () => void; avatarUrl?: string | null; onAvatarChanged?: (url: string) => void }) {
   const [activeTab, setActiveTab] = useState("profile");
   const user = firebaseAuth.currentUser;
   const email = userEmail || "";
-  // The name lives on the Firebase account (displayName), so it follows you to any device.
-  const accountName = user?.displayName || "";
-  const [firstName, setFirstName] = useState(accountName.split(" ")[0] || "");
-  const [lastName, setLastName] = useState(accountName.split(" ").slice(1).join(" ") || "");
-  const displayName = [firstName, lastName].filter(Boolean).join(" ") || userName || "";
-  const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "??";
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // The username is the Firebase account's displayName, so it follows you to any device.
+  const [username, setUsername] = useState(user?.displayName || userName || "");
+  const displayName = username.trim() || userName || "";
+  const initials = initialsOf(displayName);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -83,34 +78,38 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
     }
   };
 
-  // Photo: kept on this device (there is no file storage for profile photos).
-  useEffect(() => {
-    if (!user) return;
-    try { setPhotoUrl(localStorage.getItem(photoKey(user.uid))); } catch { /* storage unavailable */ }
-  }, [user?.uid]);
-
+  // The photo is saved with the account (not in this browser), so it is there on every sign-in.
   const handlePhoto = async (file: File | undefined) => {
     if (!file || !user) return;
+    setProfileError(null);
+    let dataUrl: string;
     try {
-      const dataUrl = await shrinkImage(file);
-      setPhotoUrl(dataUrl);
-      try { localStorage.setItem(photoKey(user.uid), dataUrl); } catch { /* storage full or blocked */ }
+      dataUrl = await shrinkImage(file);
     } catch {
       setProfileError("Couldn't read that image.");
+      return;
+    }
+    try {
+      await saveAvatar(user, dataUrl);
+      onAvatarChanged?.(dataUrl);
+    } catch (e: any) {
+      setProfileError(e?.message || "Couldn't save your photo.");
     }
   };
 
   const handleSaveProfile = async () => {
     if (!user) return;
+    const name = username.trim();
+    if (name.length < 2 || name.length > 30) { setProfileError("Username must be 2 to 30 characters."); return; }
     setSaving(true); setProfileError(null);
     try {
-      await updateProfile(user, { displayName: [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") || null });
+      await updateProfile(user, { displayName: name });
       await user.reload();
       onProfileUpdated?.();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      setProfileError("Couldn't save your name. Try again.");
+      setProfileError("Couldn't save your username. Try again.");
     } finally {
       setSaving(false);
     }
@@ -128,7 +127,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
           <Card className="p-5">
             <div className="flex items-center gap-4 mb-5">
               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold overflow-hidden">
-                {photoUrl ? <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" /> : initials}
+                {avatarUrl ? <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" /> : initials}
               </div>
               <div>
                 <div className="font-semibold text-lg">{displayName || "User"}</div>
@@ -143,10 +142,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
               </div>
             ) : (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5"><label htmlFor="firstName" className="text-sm font-medium">First name</label><Input id="firstName" value={firstName} onChange={setFirstName} placeholder="First name" /></div>
-                    <div className="space-y-1.5"><label htmlFor="lastName" className="text-sm font-medium">Last name</label><Input id="lastName" value={lastName} onChange={setLastName} placeholder="Last name" /></div>
-                  </div>
+                  <div className="space-y-1.5"><label htmlFor="username" className="text-sm font-medium">Username</label><Input id="username" value={username} onChange={setUsername} placeholder="Choose a username" autoComplete="username" onEnter={handleSaveProfile} /><p className="text-xs text-muted-foreground">Shown in the top bar and your account menu.</p></div>
                   <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><div id="email" className="flex items-center gap-2 bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground"><Mail size={14} />{email || "—"}</div><p className="text-xs text-muted-foreground">Your sign-in email (from your account).</p></div>
                   {profileError && <p className="text-xs text-red-400">{profileError}</p>}
                   <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile} disabled={saving}>{saved ? "Saved" : saving ? "Saving…" : "Save Profile"}</Btn>
