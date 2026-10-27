@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import type { User as FirebaseUser } from "firebase/auth";
 import { firebaseAuth } from "../app/firebase";
+import { fetchRetry } from "./retry";
 
 export const API_BASE = "/api";
 
@@ -28,7 +29,7 @@ export async function apiRequest(
     const token = await firebaseUser.getIdToken();
     headers["Authorization"] = `Bearer ${token}`;
   }
-  return fetch(`${API_BASE}${path}`, { ...options, headers: { ...options?.headers as Record<string, string>, ...headers } });
+  return fetchRetry(`${API_BASE}${path}`, { ...options, headers: { ...options?.headers as Record<string, string>, ...headers } });
 }
 
 const API_BASE_FALLBACK = "/api";
@@ -43,7 +44,7 @@ async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promis
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_BASE_FALLBACK}${endpoint}`, {
+  const response = await fetchRetry(`${API_BASE_FALLBACK}${endpoint}`, {
     ...options,
     headers,
     signal: options?.signal,
