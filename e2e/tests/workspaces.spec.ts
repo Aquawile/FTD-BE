@@ -29,7 +29,7 @@ test.describe("creating", () => {
     await goTo(page, "Workspaces");
     await page.getByRole("button", { name: "New Workspace" }).click();
     const name = page.getByLabel("Workspace name");
-    await expect(page.getByRole("button", { name: "Create Workspace" })).toBeDisabled();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Create Workspace" })).toBeDisabled();
     await name.fill("   ");
     await name.press("Enter");
     await expect(page.getByRole("dialog")).toBeVisible();     // blank name: Enter does nothing

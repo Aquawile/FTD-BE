@@ -79,8 +79,8 @@ test.describe("when things go wrong", () => {
   });
 
   test("a slow ticker list shows a loading state, then the data", async ({ page }) => {
-    await page.route("**/api/tickers/tracked?limit=500", async route => { await new Promise(r => setTimeout(r, 2500)); await route.continue(); });
     await signInUi(page, await accountFor());
+    await page.route("**/api/tickers/tracked**", async route => { await new Promise(r => setTimeout(r, 2500)); await route.continue(); });
     await goTo(page, "Research");
     await expect(page.getByText("Loading tickers...")).toBeVisible();
     await expect(page.getByText(/^\d+ tickers? tracked$/)).toBeVisible({ timeout: 20_000 });

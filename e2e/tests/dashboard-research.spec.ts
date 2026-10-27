@@ -41,8 +41,8 @@ test.describe("dashboard", () => {
     await db.seedAlerts(acct.email, [{ ticker: "TGT", message: "e2e dashboard alert" }]);
     await createWorkspace(page, "E2E dashboard workspace");
     await goTo(page, "Dashboard");
-    await expect(page.getByText("e2e dashboard alert")).toBeVisible();
-    await expect(page.getByText("E2E dashboard workspace")).toBeVisible();
+    await expect(page.getByText("e2e dashboard alert").first()).toBeVisible();
+    await expect(page.getByText("E2E dashboard workspace").first()).toBeVisible();
     await page.getByText("E2E dashboard workspace").click();
     await expect(page.getByRole("heading", { name: "E2E dashboard workspace" })).toBeVisible();
   });
@@ -73,7 +73,7 @@ test.describe("research", () => {
     const all = await count.textContent();
     await box.fill("electronic");
     await expect(count).toHaveText("1 tickers tracked");
-    await expect(page.getByText("EA", { exact: true })).toBeVisible();
+    await expect(page.getByText("Electronic Arts")).toBeVisible();
     await box.fill("tgt");
     await expect(page.getByText("Target Corporation")).toBeVisible();
     await box.fill("zzzzzz");

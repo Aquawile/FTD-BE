@@ -12,14 +12,22 @@ INSERT INTO ticker_company_names (symbol, company_name, source) VALUES
   ('TGT', 'Target', 'e2e'), ('EA', 'Electronic Arts', 'e2e'), ('KO', 'Coca-Cola', 'e2e')
 ON CONFLICT DO NOTHING;
 
--- Recent quotes for the new tickers (EA stays stale on purpose: its last quote is August).
+-- The base seed has quotes only for 2024 and mid-October; this database is throwaway, so replace those rows
+-- and give every seeded ticker 60 recent daily quotes (a chart, Top Movers and the "latest quote" logic need them).
+DELETE FROM staging_finnhub WHERE target_ticker IN ('AAPL', 'NVDA', 'MSFT');   -- no duplicate (ticker, day) rows
+UPDATE tickers SET price_as_of = now() - interval '1 day' WHERE symbol IN ('AAPL', 'NVDA', 'MSFT');
+
 INSERT INTO staging_finnhub (target_ticker, target_cik, element_type, content_body, normalized_calendar_date,
                              ingest_date, symbol, "timestamp", "current", change, percent_change, high, low, open, previous_close)
 SELECT s.sym, s.cik, 'quantitative', '', d::date, d::date + interval '22 hours', s.sym, d::date + interval '20 hours',
-       s.base + (extract(day FROM d)::numeric / 10), 1.0, s.pct, s.base + 3, s.base - 3, s.base, s.base - 1
-FROM (VALUES ('TGT', '0000027419', 112.0, 6.2517), ('KO', '0000021344', 70.0, -3.4)) AS s(sym, cik, base, pct)
-CROSS JOIN generate_series(current_date - 20, current_date - 1, interval '1 day') AS d;
+       s.base + (extract(doy FROM d)::int % 9) * 0.6, 1.0,
+       CASE WHEN s.sym = 'TGT' THEN 6.2517 ELSE round((((extract(doy FROM d)::int * length(s.sym)) % 9) - 4) * 0.73, 4) END,
+       s.base + 3, s.base - 3, s.base, s.base - 1
+FROM (VALUES ('AAPL', '0000320193', 300.0), ('NVDA', '0001045810', 180.0), ('MSFT', '0000789019', 450.0),
+             ('TGT', '0000027419', 112.0), ('KO', '0000021344', 70.0)) AS s(sym, cik, base)
+CROSS JOIN generate_series(current_date - 60, current_date - 1, interval '1 day') AS d;
 
+-- EA stays stale on purpose: its last quote is in August.
 INSERT INTO staging_finnhub (target_ticker, target_cik, element_type, content_body, normalized_calendar_date,
                              ingest_date, symbol, "timestamp", "current", change, percent_change, high, low, open, previous_close)
 SELECT 'EA', '0000712515', 'quantitative', '', d::date, d::date + interval '22 hours', 'EA', d::date + interval '20 hours',

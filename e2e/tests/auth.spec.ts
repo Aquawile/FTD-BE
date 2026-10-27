@@ -94,12 +94,12 @@ test.describe("signing in and out", () => {
   test("remember me keeps the session on this browser; unticked keeps it for the tab only", async ({ page }) => {
     const acct = await emu.verifiedAccount("remember");
     await signInUi(page, acct, { remember: true });
-    expect(await persistedSessions(page)).toEqual({ session: 0, local: 1 });
+    await expect.poll(() => persistedSessions(page)).toEqual({ session: 0, local: 1 });
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("button", { name: "Sign Out" }).click();
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     await signInUi(page, acct, { remember: false });
-    expect(await persistedSessions(page)).toEqual({ session: 1, local: 0 });
+    await expect.poll(() => persistedSessions(page)).toEqual({ session: 1, local: 0 });
   });
 
   test("an account created before email verification was required gets straight in", async ({ page }) => {

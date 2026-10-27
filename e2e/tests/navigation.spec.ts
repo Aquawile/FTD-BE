@@ -80,8 +80,9 @@ test.describe("top bar", () => {
     const bell = page.getByRole("button", { name: "Notifications, 3 unread" });
     await expect(bell).toBeVisible();
     await bell.click();
-    await expect(page.getByText("e2e bell alert one")).toBeVisible();
-    await expect(page.getByText("e2e bell already read")).toBeVisible();
+    const panel = page.locator("div.absolute").filter({ hasText: "View all alerts and manage subscriptions" }).last();
+    await expect(panel.getByText("e2e bell alert one")).toBeVisible();
+    await expect(panel.getByText("e2e bell already read")).toBeVisible();
     await page.getByRole("button", { name: "Mark all read" }).click();
     await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
@@ -94,7 +95,7 @@ test.describe("top bar", () => {
     await db.seedAlerts(acct.email, [{ ticker: "NVDA", message: "e2e click-through alert" }]);
     await page.reload();
     await page.getByRole("button", { name: /^Notifications/ }).click();
-    await page.getByText("e2e click-through alert").click();
+    await page.locator("div.absolute").filter({ hasText: "View all alerts and manage subscriptions" }).last().getByText("e2e click-through alert").click();
     await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();
   });
 });

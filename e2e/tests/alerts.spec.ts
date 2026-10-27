@@ -11,7 +11,7 @@ async function openForm(page: Page) {
 
 async function addSubscription(page: Page, ticker: string, type: string, threshold?: string) {
   await openForm(page);
-  await page.getByLabel("Ticker").selectOption(ticker);
+  await page.getByLabel("Ticker", { exact: true }).selectOption(ticker);
   await page.getByLabel("Alert type").selectOption(type);
   if (threshold !== undefined) await page.getByLabel("Price threshold in dollars").fill(threshold);
   await page.getByRole("button", { name: "Save" }).click();
@@ -38,7 +38,7 @@ test.describe("alert subscriptions", () => {
     await openForm(page);
     const save = page.getByRole("button", { name: "Save" });
     await expect(save).toBeDisabled();                       // no ticker
-    await page.getByLabel("Ticker").selectOption("NVDA");
+    await page.getByLabel("Ticker", { exact: true }).selectOption("NVDA");
     await expect(save).toBeDisabled();                       // price type, no threshold
     await page.getByLabel("Price threshold in dollars").fill("0");
     await expect(save).toBeDisabled();                       // zero is not a price
@@ -48,13 +48,13 @@ test.describe("alert subscriptions", () => {
     await expect(page.getByLabel("Price threshold in dollars")).toHaveCount(0);
     await expect(save).toBeEnabled();                        // no threshold needed
     await page.getByRole("button", { name: "Cancel" }).click();
-    await expect(page.getByLabel("Ticker")).toHaveCount(0);
+    await expect(page.getByLabel("Ticker", { exact: true })).toHaveCount(0);
   });
 
   test("the ticker list is alphabetical", async ({ page }) => {
     await signInUi(page, await accountFor());
     await openForm(page);
-    const symbols = (await page.getByLabel("Ticker").locator("option").evaluateAll(os => os.map(o => (o as HTMLOptionElement).value))).filter(Boolean);
+    const symbols = (await page.getByLabel("Ticker", { exact: true }).locator("option").evaluateAll(os => os.map(o => (o as HTMLOptionElement).value))).filter(Boolean);
     expect(symbols).toEqual([...symbols].sort((a, b) => a.localeCompare(b)));
   });
 
@@ -92,17 +92,17 @@ test.describe("alerts list", () => {
     ]);
     await page.reload();
     await goTo(page, "Alerts");
-    for (const m of ["e2e high one", "e2e medium one", "e2e low read"]) await expect(page.getByText(m)).toBeVisible();
+    for (const m of ["e2e high one", "e2e medium one", "e2e low read"]) await expect(page.getByText(m).first()).toBeVisible();
     await page.getByRole("button", { name: "high", exact: true }).click();
-    await expect(page.getByText("e2e high one")).toBeVisible();
+    await expect(page.getByText("e2e high one").first()).toBeVisible();
     await expect(page.getByText("e2e medium one")).toHaveCount(0);
     await page.getByRole("button", { name: "low", exact: true }).click();
-    await expect(page.getByText("e2e low read")).toBeVisible();
+    await expect(page.getByText("e2e low read").first()).toBeVisible();
     await expect(page.getByText("e2e high one")).toHaveCount(0);
     await page.getByRole("button", { name: "unread", exact: true }).click();
     await expect(page.getByText("e2e low read")).toHaveCount(0);
     await page.getByRole("button", { name: "all", exact: true }).click();
-    await expect(page.getByText("e2e medium one")).toBeVisible();
+    await expect(page.getByText("e2e medium one").first()).toBeVisible();
   });
 
   test("opening the Alerts page clears the unread badge", async ({ page }) => {

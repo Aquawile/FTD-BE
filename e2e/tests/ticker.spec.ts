@@ -21,11 +21,14 @@ test.describe("ticker page: overview", () => {
     const chart = page.locator(".recharts-wrapper").first();
     await expect(chart).toBeVisible();
     const box = (await chart.boundingBox())!;
-    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
-    await expect(page.locator(".recharts-tooltip-wrapper").first()).toBeVisible();
-    const before = await page.locator(".recharts-tooltip-wrapper").first().innerText();
-    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5);
-    await expect.poll(async () => page.locator(".recharts-tooltip-wrapper").first().innerText()).not.toBe(before);
+    const tooltip = page.locator(".recharts-tooltip-wrapper").first();
+    const seen = new Set<string>();
+    for (let x = 0; x < box.width; x += 4) {                   // days without a quote have no tooltip, so sweep the plot
+      await page.mouse.move(box.x + x, box.y + box.height * 0.5);
+      if (await tooltip.isVisible()) seen.add((await tooltip.innerText()).trim());
+    }
+    expect(seen.size, "the tooltip follows the cursor to different days").toBeGreaterThanOrEqual(2);
+    expect([...seen][0]).toMatch(/\$\d/);
   });
 
   test("a ticker whose quote is old shows when that quote is from", async ({ page }) => {
@@ -82,8 +85,8 @@ test.describe("ticker page: news", () => {
     await page.getByRole("button", { name: "Custom" }).click();
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     const to = new Date(); const from = new Date(Date.now() - 60 * 864e5);
-    await page.getByLabel("From").fill(iso(from));
-    await page.getByLabel("To").fill(iso(to));
+    await page.getByLabel("From", { exact: true }).fill(iso(from));
+    await page.getByLabel("To", { exact: true }).fill(iso(to));
     await expect.poll(async () => total(page)).toBe(await dbCount(
       "SELECT count(*) AS n FROM staging_gnews WHERE target_ticker = 'NVDA' AND normalized_calendar_date BETWEEN $1 AND $2", [iso(from), iso(to)]));
   });
@@ -132,7 +135,7 @@ test.describe("ticker page: actions", () => {
     await openTicker(page, "NVDA");
     await page.getByRole("button", { name: "Set Alert" }).first().click();
     await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();
-    await expect(page.getByLabel("Ticker")).toHaveValue("NVDA");
+    await expect(page.getByLabel("Ticker", { exact: true })).toHaveValue("NVDA");
   });
 
   test("Add to Workspace with no workspace offers to create one", async ({ page }) => {

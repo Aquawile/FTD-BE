@@ -64,6 +64,6 @@ export async function createWorkspace(page: Page, name: string) {
   await goTo(page, "Workspaces");
   await page.getByRole("button", { name: "New Workspace" }).click();
   await page.getByLabel("Workspace name").fill(name);
-  await page.getByRole("button", { name: "Create Workspace" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Create Workspace" }).click();
   await expect(page.getByRole("heading", { name })).toBeVisible();
 }
