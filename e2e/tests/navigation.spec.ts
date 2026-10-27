@@ -94,6 +94,8 @@ test.describe("top bar", () => {
     await signInUi(page, acct);
     await db.seedAlerts(acct.email, [{ ticker: "NVDA", message: "e2e click-through alert" }]);
     await page.reload();
+    await expect(page.getByRole("button", { name: "Notifications, 1 unread" })).toBeVisible();
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 20_000 });   // the "new alert" pop-up sits over the bell panel
     await page.getByRole("button", { name: /^Notifications/ }).click();
     await page.locator("div.absolute").filter({ hasText: "View all alerts and manage subscriptions" }).last().getByText("e2e click-through alert").click();
     await expect(page.getByRole("heading", { name: "Alerts", exact: true })).toBeVisible();

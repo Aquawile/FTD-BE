@@ -255,7 +255,8 @@ jobs:
           PGDATABASE: ftd_lakehouse_test
           PGUSER: ftd_app
           PGPASSWORD: ftd_app_ci
-        run: npx playwright test
+          E2E_REPEAT: "3"     # stability check while the suite is new; set back to 1 (or remove) afterwards
+        run: npx playwright test --repeat-each=${E2E_REPEAT:-1}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
