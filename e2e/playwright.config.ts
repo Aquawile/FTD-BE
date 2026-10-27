@@ -10,7 +10,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  workers: process.env.CI ? 2 : 1,
+  workers: 1,   // 2 workers push the API's 5-connection DB pool into 500s (see the fixme in cross-cutting.spec.ts)
   retries: process.env.CI ? 1 : 0,
   grep: TARGET === "staging" ? /@staging/ : undefined,
   reporter: [

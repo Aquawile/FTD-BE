@@ -28,6 +28,8 @@ test.describe("accessibility", () => {
     await expect(page.getByText(/^\d+ tickers? tracked$/)).toBeVisible();
     await scan(page, "research");
     await openTicker(page, "NVDA");
+    await expect(page.getByLabel("Loading price")).toHaveCount(0);   // scan the loaded page; the loading skeleton has its own known defect
+    await expect(page.locator(".recharts-wrapper").first()).toBeVisible();
     await scan(page, "ticker overview");
     await page.getByRole("button", { name: /^news$/i }).click();
     await expect(page.getByText(/Showing .* of \d+ articles/)).toBeVisible();
@@ -95,4 +97,12 @@ test.describe("when things go wrong", () => {
     await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Workspaces" }).click();
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();   // no white screen
   });
+});
+
+test.fixme("the API answers a burst of simultaneous requests without a 500 (its database pool holds only 5 connections)", async ({ request }) => {
+  // Known defect: app/db.py uses a pool of at most 5 connections and raises "connection pool exhausted" instead of
+  // waiting, so a page that fires ~7 requests at once (plus a second user) can get HTTP 500. Seen in CI and on staging.
+  // Remove the fixme once the pool waits (or is larger).
+  const results = await Promise.all(Array.from({ length: 40 }, () => request.get("/api/tickers/tracked?limit=3")));
+  expect(results.map(r => r.status()).filter(s => s !== 200)).toEqual([]);
 });

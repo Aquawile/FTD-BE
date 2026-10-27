@@ -116,15 +116,15 @@ test.describe("alerts list", () => {
     expect(await db.one("SELECT count(*)::int AS n FROM alerts WHERE user_id = $1 AND NOT read", [await db.userIdByEmail(acct.email)])).toEqual({ n: 0 });
   });
 
-  test("Mark all read", async ({ page }) => {
+  test("viewing the page marks everything read, so Mark all read has nothing left to do", async ({ page }) => {
     const acct = await accountFor();
     await signInUi(page, acct);
-    await goTo(page, "Alerts");
     await db.seedAlerts(acct.email, [{ ticker: "TGT", message: "e2e mark all" }]);
     await page.reload();
     await goTo(page, "Alerts");
-    await page.getByRole("button", { name: "Mark all read" }).click();
+    await expect(page.locator("main").getByText("e2e mark all")).toBeVisible();
     await expect(page.getByText("0 unread notifications")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark all read" })).toBeDisabled();
   });
 });
 

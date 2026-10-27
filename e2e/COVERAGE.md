@@ -1,6 +1,6 @@
 # What the browser suite covers
 
-67 tests in 8 files. "#" is the function number from the manual test matrix (78 user-side functions).
+67 tests in 8 files (plus 2 skipped known-defect tests). "#" is the function number from the manual test matrix (78 user-side functions).
 Not yet run: this list was written before the first run, so the first CI run will likely need selector fixes.
 
 Tagged **[S]** = also runs against staging with the dedicated test account (10 tests, read-only apart from one workspace created and archived).
@@ -71,7 +71,9 @@ Tagged **[S]** = also runs against staging with the dedicated test account (10 t
 
 Every test also fails on any uncaught page error or `console.error`, and (emulator target) on any call to the real Firebase hosts.
 
-## Known defect, written down as a skipped test
+## Known defects, written down as skipped tests
+- API: the database pool holds 5 connections and fails with a 500 instead of waiting, so a burst of simultaneous requests can fail (`cross-cutting.spec.ts`, `test.fixme`). Reproduced on staging: 1 of 40 concurrent requests returned 500.
+- Ticker page: the loading skeleton `<div aria-label="Loading price">` has an aria-label without a role (axe: aria-prohibited-attr). The accessibility walk scans the loaded page.
 - #68: "Max 50 tickers per workspace" is shown in the page, but the API does not enforce it (`workspaces.spec.ts`, `test.fixme`).
 
 ## Not covered by this suite (stay manual)
