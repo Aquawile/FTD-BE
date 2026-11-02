@@ -18,7 +18,7 @@ PUBLIC_PATHS = {
     "/auth/me",
     "/dashboard/stats",
     "/tickers/tracked",
-    "/auth/account-exists",
+    "/auth/password-reset",
 }
 
 SEC_PROXY_PREFIX = "/tickers/"

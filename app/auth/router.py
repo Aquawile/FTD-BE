@@ -11,9 +11,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from starlette.requests import Request
 
 from app.auth.dependencies import get_current_application_user
-from app.auth.firebase_auth import firebase_email_registered, validate_firebase_token
+from app.auth.firebase_auth import validate_firebase_token
 from app.auth.models import User, UserPermissionsResponse
-from app.services.user_service import get_user_with_permissions
+from app.services.exceptions import UserNotFoundError, UserValidationError
+from app.services.user_service import get_user_with_permissions, request_password_reset
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -66,11 +67,14 @@ def auth_me_user_permissions(
     return get_user_with_permissions(current_user.id)
 
 
-@router.post("/account-exists")
-def account_exists(email: str = Body(..., embed=True, max_length=254)):
-    """Public: whether this email has an account. Used before sending a password-reset link,
-    so one is only sent to real users. An unreachable Firebase is a 503, never "not registered"."""
+@router.post("/password-reset")
+def password_reset(email: str = Body(..., embed=True, max_length=254)):
+    """Public: email a password-reset link to a registered user. The web app only submits the
+    address; whether an account exists is decided here, in the service layer."""
     try:
-        return {"registered": firebase_email_registered(email.strip())}
+        request_password_reset(email)
+    except (UserNotFoundError, UserValidationError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account exists for that email address")
     except Exception:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not check the account right now")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send the reset email right now")
+    return {"sent": True}

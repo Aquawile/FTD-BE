@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import urllib.request
 from typing import Any
 
 import firebase_admin
@@ -7,7 +9,7 @@ from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials
 
 from app.auth.exceptions import AuthenticationError
-from app.auth.firebase_config import FIREBASE_CREDENTIALS_PATH, FIREBASE_PROJECT_ID
+from app.auth.firebase_config import FIREBASE_CREDENTIALS_PATH, FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
 
 _firebase_initialized: bool = False
 
@@ -54,15 +56,18 @@ def validate_firebase_token_with_reason(token: str) -> tuple[dict[str, Any] | No
         return None, "invalid"
 
 
-def firebase_email_registered(email: str) -> bool:
-    """True if a Firebase account exists for this email. Unlike get_firebase_user, any other
-    failure (credentials, network) raises, so it is never mistaken for "not registered"."""
-    _initialize_firebase()
-    try:
-        firebase_auth.get_user_by_email(email)
-        return True
-    except firebase_auth.UserNotFoundError:
-        return False
+def send_password_reset_email(email: str) -> None:
+    """Ask Firebase to email a reset link (Firebase owns credentials and the email template).
+    Uses the project's public web API key, so the API needs no extra IAM permission.
+    Raises on any failure."""
+    request = urllib.request.Request(
+        f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_WEB_API_KEY}",
+        data=json.dumps({"requestType": "PASSWORD_RESET", "email": email}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10):
+        pass
 
 
 def get_firebase_user(uid: str) -> dict[str, Any] | None:

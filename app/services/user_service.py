@@ -4,11 +4,13 @@ import logging
 import psycopg2
 
 from app.auth.models import User, UserCreateRequest, UserPermissionsResponse, UserUpdateRequest, UserWithPermissionDetails, PermissionDetail
+from app.auth.firebase_auth import send_password_reset_email
 from app.auth.hasher import hash_password
 from app.auth.models import normalize_email
 from app.auth.repository import (
     create_user as repo_create_user,
     deactivate_user,
+    get_user_by_email,
     get_user_by_firebase_uid,
     get_user_by_id,
     get_user_permission_details as repo_get_user_permission_details,
@@ -257,3 +259,12 @@ def delete_user(user_id: int) -> bool:
     result = deactivate_user(user_id)
     logger.info("service:delete_user success user_id=%s deactivated=%s", user_id, result)
     return result
+
+
+def request_password_reset(email: str) -> None:
+    """Email a password-reset link, only if the address belongs to an active application user."""
+    _validate_email(email)
+    user = get_user_by_email(email)
+    if user is None or not user["is_active"]:
+        raise UserNotFoundError("No account exists for that email address")
+    send_password_reset_email(normalize_email(email))
