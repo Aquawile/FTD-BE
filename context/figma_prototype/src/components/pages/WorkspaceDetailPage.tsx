@@ -65,9 +65,9 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3 mb-6">
         <button onClick={() => navigate("workspaces")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer"><ChevronLeft size={14} /> Workspaces</button>
-        <h1 className="text-xl font-bold flex-1">{ws.name || "Untitled Workspace"}</h1>
+        <h1 className="text-xl font-bold flex-1 min-w-0">{ws.name || "Untitled Workspace"}</h1>
         <Badge variant="neutral">{ws.tickers.length} / 50 tickers</Badge>
         <Btn variant="secondary" size="sm" icon={<Settings size={12} />} onClick={() => navigate("workspace-settings")}>Settings</Btn>
         <Btn variant="primary" size="sm" icon={<Plus size={12} />} onClick={() => setShowAdd(true)}>Add Ticker</Btn>
@@ -107,6 +107,7 @@ function WorkspaceDetailPage({ navigate, setSelectedTicker, selectedWorkspace, f
                   </div>
                 </div>
                 <button
+                  aria-label={`Remove ${symbol} from workspace`}
                   className="p-1 text-muted-foreground hover:text-red-400 cursor-pointer"
                   onClick={e => { e.stopPropagation(); handleRemoveTicker(symbol); }}
                 >

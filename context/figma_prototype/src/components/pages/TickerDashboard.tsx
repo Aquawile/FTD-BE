@@ -279,11 +279,11 @@ function TickerDashboard({ navigate, ticker, firebaseUser, onSetAlert }: { navig
                   {financials ? (
                     [
                       { label: "Current Price", value: `$${formatPrice(financials.currentPrice)}`, source: "Latest" },
-                      { label: "Previous Close", value: `$${formatPrice(financials.previousClose)}`, source: "Prior Day" },
-                      { label: "Open", value: `$${formatPrice(financials.open)}`, source: "Today" },
-                      { label: "High", value: `$${formatPrice(financials.high)}`, source: "Today" },
-                      { label: "Low", value: `$${formatPrice(financials.low)}`, source: "Today" },
-                      { label: "Daily Change", value: financials.dailyChange !== null ? `${financials.dailyChange > 0 ? "+" : ""}${financials.dailyChange.toFixed(2)}%` : "—", source: "Today" },
+                      { label: "Previous Close", value: `$${formatPrice(financials.previousClose)}`, source: "Prior session" },
+                      { label: "Open", value: `$${formatPrice(financials.open)}`, source: "Latest session" },
+                      { label: "High", value: `$${formatPrice(financials.high)}`, source: "Latest session" },
+                      { label: "Low", value: `$${formatPrice(financials.low)}`, source: "Latest session" },
+                      { label: "Daily Change", value: financials.dailyChange !== null ? `${financials.dailyChange > 0 ? "+" : ""}${financials.dailyChange.toFixed(2)}%` : "—", source: "Latest session" },
                     ].map(f => (
                       <div key={f.label} className="flex items-center justify-between py-1 border-b border-border/30 last:border-0">
                         <span className="text-muted-foreground text-xs">{f.label}</span>

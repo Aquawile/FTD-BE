@@ -309,9 +309,10 @@ class TrackedTicker(BaseModel):
     # name = tickers.name if it is a real name, else ticker_company_names, else the symbol
 
 class DashboardStats(BaseModel):
-    articles_count: int = 0        # news_articles_count + sec_filings_count (live, never frozen)
+    articles_count: int = 0        # sec_elements_count + news_articles_count (live, never frozen)
     news_articles_count: int = 0   # COUNT(DISTINCT url) on staging_gnews
     sec_filings_count: int = 0     # distinct accessions: staging_sec_archive UNION vectorized mirror
+    sec_elements_count: int = 0    # parsed SEC elements: archive rows + vectorized chunks of filings the archive lacks
     tickers_count: int = 0         # COUNT DISTINCT from tickers table
     vectorized_sec_count: int = 0  # count_vectorized_content() — COUNT on sec_vectorized_chunks (SEC rows)
     # hype/evidence scores and the global alerts_count were removed (mock / not per-user)
@@ -354,8 +355,9 @@ Frontend Request:
 GET /api/dashboard/stats
   → dashboard.py: route_dashboard_stats()
   → count_vectorized_content()  → COUNT(*) on sec_vectorized_chunks WHERE source_object LIKE 'SEC/%' (26,918; ~6 ms)
-  → crud.count_articles()       → news (distinct URLs in staging_gnews, 21,959) +
-                                   filings (archive accessions via index skip scan UNION mirror accessions, 707)
+  → crud.count_articles()       → (news, filings, elements): news = distinct URLs in staging_gnews; filings = archive
+                                   accessions (index skip scan) UNION mirror accessions; elements = archive rows + new chunks.
+                                   Headline articles_count = elements + news (2026-11-02: 758,068 + 80,563 = 838,631)
   → query_dict("SELECT COUNT(DISTINCT symbol) FROM tickers")  → tickers_count (494)
   (whole endpoint ~0.13 s on the VM; indexes from migration 012)
 ```

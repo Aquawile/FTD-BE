@@ -103,7 +103,7 @@ function SearchPage({ navigate, setSelectedTicker, firebaseUser, initialQuery = 
       </div>
 
       <div className="text-sm text-muted-foreground">
-        {loading ? "Loading tickers..." : error ? "Error loading tickers" : `${sorted.length} tickers tracked`}
+        {loading ? "Loading tickers..." : error ? "Error loading tickers" : `${sorted.length} ${sorted.length === 1 ? "ticker" : "tickers"} tracked`}
       </div>
 
       {loading && (
