@@ -7,11 +7,11 @@ and tokens outside Firebase, and the web app never used them.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from starlette.requests import Request
 
 from app.auth.dependencies import get_current_application_user
-from app.auth.firebase_auth import validate_firebase_token
+from app.auth.firebase_auth import firebase_email_registered, validate_firebase_token
 from app.auth.models import User, UserPermissionsResponse
 from app.services.user_service import get_user_with_permissions
 
@@ -64,3 +64,13 @@ def auth_me_user_permissions(
 ) -> UserPermissionsResponse:
     """The signed-in user with their granted permissions."""
     return get_user_with_permissions(current_user.id)
+
+
+@router.post("/account-exists")
+def account_exists(email: str = Body(..., embed=True, max_length=254)):
+    """Public: whether this email has an account. Used before sending a password-reset link,
+    so one is only sent to real users. An unreachable Firebase is a 503, never "not registered"."""
+    try:
+        return {"registered": firebase_email_registered(email.strip())}
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not check the account right now")
