@@ -304,8 +304,8 @@ class TestTickerPricesEndpoint:
         assert data[0]["current"] == 190.5
         assert data[0]["open"] == 188.0
         assert data[0]["high"] == 191.0
-        assert data[0]["low"] == "187.50"
-        assert data[0]["previous_close"] == "188.00"
+        assert data[0]["low"] == 187.5
+        assert data[0]["previous_close"] == 188.0
 
     @pytest.mark.unit
     def test_get_prices_missing_dates_returns_422(self, _mock_permissions) -> None:
