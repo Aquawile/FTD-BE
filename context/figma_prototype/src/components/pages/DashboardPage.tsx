@@ -3,11 +3,11 @@ import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
-import { fetchWorkspaces, getTrackedTickers, apiRequest, formatPrice, isStaleQuote, newestQuoteDate } from "../../api";
-import { WorkspaceResponse, AlertResponse, TrackedTicker } from "../../types";
+import { fetchWorkspaces, getDashboardStats, getTrackedTickers, apiRequest, formatPrice, isStaleQuote, newestQuoteDate } from "../../api";
+import { WorkspaceResponse, AlertResponse, DashboardStats, TrackedTicker } from "../../types";
 
 function DashboardPage({ navigate, setSelectedTicker, firebaseUser, setSelectedWorkspace }: { navigate: (p: Page) => void; setSelectedTicker: (t: string) => void; firebaseUser: FirebaseUser | null; setSelectedWorkspace: (ws: WorkspaceResponse) => void }) {
-  const [stats, setStats] = useState<{ articles_count: number; news_articles_count?: number; sec_filings_count?: number; sec_elements_count?: number; tickers_count: number; vectorized_sec_count: number } | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
@@ -21,9 +21,7 @@ function DashboardPage({ navigate, setSelectedTicker, firebaseUser, setSelectedW
     let cancelled = false;
     const fetchStats = async () => {
       try {
-        const res = await fetch("/api/dashboard/stats");
-        if (!res.ok) throw new Error("failed");
-        const data = await res.json();
+        const data = await getDashboardStats();
         if (!cancelled) { setStats(data); setStatsLoading(false); }
       } catch {
         if (!cancelled) { setStatsError(true); setStatsLoading(false); }

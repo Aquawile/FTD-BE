@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Page } from "../../app/types";
 import { Btn, Input } from "../ui";
+import { requestPasswordReset } from "../../api";
 import { CheckCircle, ChevronLeft, Mail, Send } from "lucide-react";
 
 function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
@@ -13,10 +14,8 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
   const sendReset = async () => {
     setSending(true); setError(null);
     try {
-      const res = await fetch("/api/auth/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
-      if (!res.ok) setError("Couldn't send the reset email. Try again.");
-      else if (!(await res.json()).sent) setError("No account exists for that email address.");
-      else setSent(true);
+      if (await requestPasswordReset(email)) setSent(true);
+      else setError("No account exists for that email address.");
     } catch {
       setError("Couldn't send the reset email. Try again.");
     } finally {
