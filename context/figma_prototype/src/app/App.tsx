@@ -5,6 +5,7 @@ import { firebaseAuth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
 import { Page } from "./types";
+import { toast } from "sonner";
 import { apiRequest, API_BASE, getAvatar, markAlertsRead, saveAvatar } from "../api";
 import { WorkspaceResponse } from "../types";
 import { needsEmailVerification } from "./verification";
@@ -167,7 +168,7 @@ function App() {
       ) : (
         <AppShell page={page} navigate={navigate} avatarUrl={avatarUrl} userEmail={userEmail} userName={userName} onSignOut={handleSignOut} unreadAlerts={unreadAlerts} onSearch={setSearchText}
           loadRecentAlerts={async () => { const r = await apiRequest("/alerts?limit=6", firebaseUser); if (!r.ok) throw new Error("alerts"); return r.json(); }}
-          onMarkAllRead={async () => { await markAlertsRead(firebaseUser); await refreshAlerts(); }}>
+          onMarkAllRead={async () => { await markAlertsRead(firebaseUser); toast.dismiss(); await refreshAlerts(); }}>
           {renderPage()}
         </AppShell>
       )}
