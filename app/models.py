@@ -19,13 +19,13 @@ class TickerResult(BaseModel):
 
 class PriceRow(BaseModel):
     normalized_calendar_date: Optional[date] = None
-    current: Optional[Decimal] = None
-    change: Optional[Decimal] = None
-    percent_change: Optional[Decimal] = None
-    open: Optional[Decimal] = None
-    high: Optional[Decimal] = None
-    low: Optional[Decimal] = None
-    previous_close: Optional[Decimal] = None
+    current: Optional[float] = None
+    change: Optional[float] = None
+    percent_change: Optional[float] = None
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    previous_close: Optional[float] = None
 
 
 class NewsRow(BaseModel):

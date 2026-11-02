@@ -287,7 +287,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
           </Card>
         ))}
         {filtered.length === 0 && (
-          <p className="text-center text-sm text-muted-foreground py-8">No alerts match your filter.</p>
+          <p className="text-center text-sm text-muted-foreground py-8">{ALERTS_DATA.length === 0 ? "No alerts yet. They appear here when one of your subscriptions triggers." : "No alerts match your filter."}</p>
         )}
       </div>
 

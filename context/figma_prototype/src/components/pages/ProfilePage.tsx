@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, updateProfile } from "firebase/auth";
 import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
 import { Btn, Card, Input, Modal, cn, initialsOf } from "../ui";
@@ -70,7 +70,8 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
   const sendReset = async () => {
     setResetState("sending"); setResetError(null);
     try {
-      await sendPasswordResetEmail(firebaseAuth, email);
+      const res = await fetch("/api/auth/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      if (!res.ok || !(await res.json()).sent) throw new Error("reset");
       setResetState("sent");
     } catch {
       setResetState("idle");
