@@ -551,25 +551,20 @@ WantedBy=multi-user.target
 export async function apiRequest(path, firebaseUser, options?): Promise<Response>
   → Gets Firebase ID token, adds Authorization: Bearer header
 
-// Same, for helpers that don't receive firebaseUser
+// Same request for whoever is signed in now; returns parsed JSON, throws on non-OK (not exported)
 async function fetchWithAuth<T>(endpoint, options?): Promise<T>
-  → firebaseAuth.currentUser.getIdToken() (cached), adds Bearer header when signed in
+  → both helpers share bearerHeader() and API_BASE, and go through fetchRetry
 ```
 
 ### Frontend Hooks (`src/hooks/index.ts`, `src/hooks/tickerHooks.ts`)
 
+Only two hooks remain (the workspace/ticker/dashboard-stats hooks were unused duplicates of the `src/api/index.ts` functions and were removed 2026-11-02).
+Everything else calls the API client directly (`fetchWorkspaces`, `getDashboardStats`, `getTickerNews`, `requestPasswordReset`, ...).
+
 | Hook | Purpose | Endpoint |
 |---|---|---|
 | `useAlerts(limit, firebaseUser)` | Fetch user alerts | `GET /api/alerts?limit=N` |
-| `useTrackedTickers(limit)` | Fetch all tracked tickers | `GET /api/tickers/tracked?limit=N` |
-| `useTickerSearch(query, options)` | Search tickers | `GET /api/tickers/search?q=...&limit=...&sector=...&sort_by=...` |
-| `useTickerDashboard(ticker)` | Fetch news/timeline/filings/tracked | Multiple endpoints |
-| `useTickerNews(ticker)` | Fetch news for ticker | `GET /api/tickers/{ticker}/news` |
-| `useTickerTimeline(ticker)` | Fetch timeline for ticker | `GET /api/tickers/{ticker}/timeline` |
-| `useTickerFilings(ticker)` | Fetch filings for ticker | `GET /api/tickers/{ticker}/filings` |
-| `useDashboardStats()` | Fetch dashboard stats | `GET /api/dashboard/stats` |
-| `useAuth()` | Firebase auth state management | `/auth/me`, `/auth/login`, `/auth/register` |
-| `useWorkspaces()` | Fetch user workspaces | `GET /api/workspaces` |
+| `useTrackedTickers(limit)` | Tracked tickers (wraps `getTrackedTickers`, sorted by symbol) | `GET /api/tickers/tracked?limit=N` |
 
 ### Price Timeline Chart
 

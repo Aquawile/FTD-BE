@@ -3,7 +3,7 @@ import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, updateProf
 import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
 import { Btn, Card, Input, Modal, cn, initialsOf } from "../ui";
-import { deleteAccountRecord, saveAvatar } from "../../api";
+import { deleteAccountRecord, requestPasswordReset, saveAvatar } from "../../api";
 import { Check, Edit2, Lock, Mail, Trash2 } from "lucide-react";
 
 // Shrink an uploaded image to a small JPEG data URL; it is saved with the account.
@@ -70,8 +70,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
   const sendReset = async () => {
     setResetState("sending"); setResetError(null);
     try {
-      const res = await fetch("/api/auth/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
-      if (!res.ok || !(await res.json()).sent) throw new Error("reset");
+      if (!(await requestPasswordReset(email))) throw new Error("no account");
       setResetState("sent");
     } catch {
       setResetState("idle");

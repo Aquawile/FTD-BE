@@ -17,34 +17,30 @@ import { fetchRetry } from "./retry";
 
 export const API_BASE = "/api";
 
+// Cached token; Firebase refreshes it on its own shortly before it expires.
+// Forcing a refresh here cost a round trip to Google on every API call.
+async function bearerHeader(user: FirebaseUser | null): Promise<Record<string, string>> {
+  return user ? { Authorization: `Bearer ${await user.getIdToken()}` } : {};
+}
+
+// Raw request with an explicit user; the caller reads the Response itself.
 export async function apiRequest(
   path: string,
   firebaseUser: FirebaseUser | null,
   options?: RequestInit,
 ): Promise<Response> {
-  const headers: Record<string, string> = {};
-  if (firebaseUser) {
-    // Cached token; Firebase refreshes it on its own shortly before it expires.
-    // Forcing a refresh here cost a round trip to Google on every API call.
-    const token = await firebaseUser.getIdToken();
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  const headers = await bearerHeader(firebaseUser);
   return fetchRetry(`${API_BASE}${path}`, { ...options, headers: { ...options?.headers as Record<string, string>, ...headers } });
 }
 
-const API_BASE_FALLBACK = "/api";
-
-// Sends the signed-in user's Firebase ID token (cached; Firebase refreshes it before it expires).
+// Same request for whoever is signed in now; returns parsed JSON and throws on a non-OK response.
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const token = firebaseAuth.currentUser ? await firebaseAuth.currentUser.getIdToken() : null;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...((options?.headers as Record<string, string>) || {}),
+    ...(await bearerHeader(firebaseAuth.currentUser)),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const response = await fetchRetry(`${API_BASE_FALLBACK}${endpoint}`, {
+  const response = await fetchRetry(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
     signal: options?.signal,
@@ -340,4 +336,16 @@ export async function deleteAccountRecord(firebaseUser: FirebaseUser | null): Pr
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   return fetchWithAuth<DashboardStats>("/dashboard/stats");
+}
+
+// The API checks the address has an account and asks Firebase to email the reset link.
+// Resolves true if sent, false if there is no account; throws if the request itself fails.
+export async function requestPasswordReset(email: string): Promise<boolean> {
+  const res = await fetchRetry(`${API_BASE}/auth/password-reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: email.trim() }),
+  });
+  if (!res.ok) throw new Error("Couldn't send the reset email.");
+  return (await res.json()).sent === true;
 }
