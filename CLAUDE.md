@@ -97,10 +97,18 @@ gcloud-bucket-data/
 └── CLAUDE.md                     # This file
 ```
 
-### Git Repositories (split from original monorepo)
+### Git Repositories
 
-| Repo | GitHub | Branch | Status |
-|---|---|---|---|
+**One working repo: `Aquawile/FTD-BE`** (branch `staging` is deployed). It holds everything: backend (`app/`), frontend
+(`context/figma_prototype/`), VM scripts (`scripts/`), ingestion jobs and CI/CD (`.github/workflows/`). One pipeline deploys both VMs.
+`Aquawile/FTD-FE` and `Aquawile/FTD-Cloud` are **stale snapshots from 2026-10-15**, not connected to any pipeline or VM; do not push there.
+Recovery tag before the 2026-11-02 cleanup: `backup-staging-before-repo-cleanup`.
+
+**Folder naming note:** in the repo the backend package is `app/`. On the API VM the service working dir is also `~/app`, so the deployed
+package lives at `~/app/app/` (outer = working dir with `.venv/` and `scripts/`, inner = the Python package). Renaming the outer dir would
+require changing the systemd unit, cron, and deploy workflow together, so it is deliberately left as is.
+
+---|---|---|---|
 | FTD-BFE (backend) | `Aquawile/FTD-BE` | `feature/frontend-modular-refactor` | ✅ Pushed cc1de008 |
 | FTD-FE (frontend) | `Aquawile/FTD-FE` | `main` | ✅ 1 commit (initial prototype) |
 | ftd-cloud (infra) | `Aquawile/ftd-cloud` | `main` | ✅ Created |
@@ -1047,14 +1055,11 @@ backup-before-55e179b5-revert    # Before reverting to mock data state
 production-ready-backup           # Snapshot before final fixes
 ```
 
-### Repo Split (from original monorepo)
+### Repo Split (not in use)
 
-The original `gcloud-bucket-data` repo was split into 3 GitHub repos:
-1. **FTD-BE**: `Aquawile/FTD-BE` — Backend code (app/, tests/, scripts/)
-2. **FTD-FE**: `Aquawile/FTD-FE` — Frontend prototype (context/figma_prototype/)
-3. **ftd-cloud**: `Aquawile/ftd-cloud` — Infrastructure/deployment scripts
-
-The split was done via `gh CLI` and all use the main `gcloud-bucket-data` directory for local development.
+The original monorepo was copied into three GitHub repos once (2026-10-15) but all development and deployment stayed in
+`Aquawile/FTD-BE`. A real split would give each repo its own pipeline and deploy credentials for one VM; it is not worth the added risk
+for a single developer on staging.
 
 ### Environment Variables on VMs
 
