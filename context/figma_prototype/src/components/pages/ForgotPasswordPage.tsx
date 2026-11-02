@@ -14,8 +14,8 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
     setSending(true); setError(null);
     try {
       const res = await fetch("/api/auth/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
-      if (res.status === 404) setError("No account exists for that email address.");
-      else if (!res.ok) setError("Couldn't send the reset email. Try again.");
+      if (!res.ok) setError("Couldn't send the reset email. Try again.");
+      else if (!(await res.json()).sent) setError("No account exists for that email address.");
       else setSent(true);
     } catch {
       setError("Couldn't send the reset email. Try again.");

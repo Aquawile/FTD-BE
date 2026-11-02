@@ -69,12 +69,13 @@ def auth_me_user_permissions(
 
 @router.post("/password-reset")
 def password_reset(email: str = Body(..., embed=True, max_length=254)):
-    """Public: email a password-reset link to a registered user. The web app only submits the
+    """Public: email a password-reset link to a registered user ({"sent": false} if there is no account). The web app only submits the
     address; whether an account exists is decided here, in the service layer."""
     try:
         request_password_reset(email)
     except (UserNotFoundError, UserValidationError):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account exists for that email address")
+        # An expected answer, not an HTTP error: the browser would log a 404 as a failed request.
+        return {"sent": False, "reason": "no_account"}
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send the reset email right now")
     return {"sent": True}
