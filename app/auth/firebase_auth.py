@@ -54,6 +54,17 @@ def validate_firebase_token_with_reason(token: str) -> tuple[dict[str, Any] | No
         return None, "invalid"
 
 
+def firebase_email_registered(email: str) -> bool:
+    """True if a Firebase account exists for this email. Unlike get_firebase_user, any other
+    failure (credentials, network) raises, so it is never mistaken for "not registered"."""
+    _initialize_firebase()
+    try:
+        firebase_auth.get_user_by_email(email)
+        return True
+    except firebase_auth.UserNotFoundError:
+        return False
+
+
 def get_firebase_user(uid: str) -> dict[str, Any] | None:
     _initialize_firebase()
     try:

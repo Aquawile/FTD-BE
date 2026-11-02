@@ -11,16 +11,17 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Firebase sends the reset email. For privacy it doesn't reveal whether the address
-  // has an account, so "sent" is shown either way unless the request itself fails.
+  // A reset link is only sent to an address that has an account (checked by the API first).
   const sendReset = async () => {
     setSending(true); setError(null);
     try {
+      const check = await fetch("/api/auth/account-exists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
+      if (!check.ok) throw new Error("check");
+      if (!(await check.json()).registered) { setError("No account exists for that email address."); return; }
       await sendPasswordResetEmail(firebaseAuth, email.trim());
       setSent(true);
     } catch (e: any) {
-      if (e?.code === "auth/user-not-found") setSent(true);
-      else setError(e?.code === "auth/invalid-email" ? "That email address isn't valid." : "Couldn't send the reset email. Try again.");
+      setError(e?.code === "auth/invalid-email" ? "That email address isn't valid." : "Couldn't send the reset email. Try again.");
     } finally {
       setSending(false);
     }
