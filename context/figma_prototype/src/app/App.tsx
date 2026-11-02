@@ -105,7 +105,7 @@ function App() {
   }, []);
 
   const navigate = (p: Page) => setPage(p);
-  const { unreadAlerts, refreshAlerts } = useAlertNotifications(firebaseUser, page, () => navigate("alerts"));
+  const { unreadAlerts, refreshAlerts } = useAlertNotifications(needsEmailVerification(firebaseUser) ? null : firebaseUser, page, () => navigate("alerts"));
 
   const refreshWorkspace = async () => {
     if (!firebaseUser || !selectedWorkspace) return;
