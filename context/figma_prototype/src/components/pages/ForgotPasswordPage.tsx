@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";
 import { Btn, Input } from "../ui";
 import { CheckCircle, ChevronLeft, Mail, Send } from "lucide-react";
@@ -11,17 +9,16 @@ function ForgotPasswordPage({ navigate }: { navigate: (p: Page) => void }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A reset link is only sent to an address that has an account (checked by the API first).
+  // The API decides whether the address has an account and sends the reset email.
   const sendReset = async () => {
     setSending(true); setError(null);
     try {
-      const check = await fetch("/api/auth/account-exists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
-      if (!check.ok) throw new Error("check");
-      if (!(await check.json()).registered) { setError("No account exists for that email address."); return; }
-      await sendPasswordResetEmail(firebaseAuth, email.trim());
-      setSent(true);
-    } catch (e: any) {
-      setError(e?.code === "auth/invalid-email" ? "That email address isn't valid." : "Couldn't send the reset email. Try again.");
+      const res = await fetch("/api/auth/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
+      if (res.status === 404) setError("No account exists for that email address.");
+      else if (!res.ok) setError("Couldn't send the reset email. Try again.");
+      else setSent(true);
+    } catch {
+      setError("Couldn't send the reset email. Try again.");
     } finally {
       setSending(false);
     }
