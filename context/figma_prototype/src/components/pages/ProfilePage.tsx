@@ -143,7 +143,7 @@ function ProfilePage({ navigate, userEmail, userName, userPermissions, loading, 
             ) : (
                 <div className="space-y-3">
                   <div className="space-y-1.5"><label htmlFor="username" className="text-sm font-medium">Username</label><Input id="username" value={username} onChange={setUsername} placeholder="Choose a username" autoComplete="username" onEnter={handleSaveProfile} /><p className="text-xs text-muted-foreground">Shown in the top bar and your account menu.</p></div>
-                  <div className="space-y-1.5"><label htmlFor="email" className="text-sm font-medium">Email address</label><div id="email" className="flex items-center gap-2 bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground"><Mail size={14} />{email || "—"}</div><p className="text-xs text-muted-foreground">Your sign-in email (from your account).</p></div>
+                  <div className="space-y-1.5"><span id="email-label" className="block text-sm font-medium">Email address</span><div role="group" aria-labelledby="email-label" className="flex items-center gap-2 bg-input-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground"><Mail size={14} />{email || "—"}</div><p className="text-xs text-muted-foreground">Your sign-in email (from your account).</p></div>
                   {profileError && <p className="text-xs text-red-400">{profileError}</p>}
                   <Btn variant="primary" size="sm" icon={<Check size={12} />} onClick={handleSaveProfile} disabled={saving}>{saved ? "Saved" : saving ? "Saving…" : "Save Profile"}</Btn>
                 </div>

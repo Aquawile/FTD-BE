@@ -3,6 +3,7 @@ import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
 import { Activity, AlertTriangle, ArrowRight, Check, FileText, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { useAlerts } from "../../hooks";
 import { useTrackedTickers } from "../../hooks/tickerHooks";
 import {
@@ -204,6 +205,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
 
   const markAllRead = async () => {
     await markAlertsRead(firebaseUser).catch(() => undefined);
+    toast.dismiss();
     setFreshIds(new Set());
     refetch();
     onAlertsChanged?.();
