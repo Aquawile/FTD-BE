@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Page } from "../app/types";
 import { cn, initialsOf } from "./ui";
 import {
-  Home, Search, Briefcase, Clock, MessageSquare, Bell, Shield,
+  Home, Search, Briefcase, Bell,
   BarChart, ChevronRight, ChevronLeft, Settings,
 } from "lucide-react";
 

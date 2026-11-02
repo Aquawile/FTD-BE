@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, Input, Modal } from "../ui";
+import { Btn, Card, Input, Modal } from "../ui";
 import { Archive, Briefcase, MoreVertical, Plus } from "lucide-react";
 import { fetchWorkspaces, fetchCreateWorkspace, fetchDeleteWorkspace } from "../../api";
 import { WorkspaceResponse } from "../../types";

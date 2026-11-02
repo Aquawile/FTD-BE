@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Page } from "../../app/types";
 import { Btn } from "../ui";
-import { AlertCircle, Check, CheckCircle, ChevronLeft, Info, Mail } from "lucide-react";
+import { AlertCircle, Check, CheckCircle, ChevronLeft, Mail } from "lucide-react";
 import { firebaseAuth } from "../../app/firebase";
 import { sendEmailVerification, signOut } from "firebase/auth";
 

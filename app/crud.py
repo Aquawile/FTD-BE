@@ -773,25 +773,3 @@ def update_user_subscription(user_id: int, subscription_id: int, active: bool | 
             found = cur.rowcount == 1
         conn.commit()
     return found
-
-
-def get_all_alerts(limit: int = 10) -> list[AlertResponse]:
-    sql = """
-        SELECT id, ticker, type, message, read, severity, created_at
-        FROM alerts
-        ORDER BY created_at DESC
-        LIMIT %s
-    """
-    rows = query_dict(sql, (limit,))
-    results = []
-    for r in rows:
-        results.append(AlertResponse(
-            id=r["id"],
-            ticker=r["ticker"],
-            type=r["type"],
-            message=r["message"],
-            read=r["read"],
-            severity=r["severity"],
-            time=r["created_at"].isoformat() if r["created_at"] else None,
-        ))
-    return results

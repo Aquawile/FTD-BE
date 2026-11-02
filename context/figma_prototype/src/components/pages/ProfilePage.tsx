@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { EmailAuthProvider, deleteUser, reauthenticateWithCredential, updateProfile } from "firebase/auth";
 import { firebaseAuth } from "../../app/firebase";
 import { Page } from "../../app/types";

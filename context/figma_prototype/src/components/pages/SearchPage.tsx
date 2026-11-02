@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Btn, Card, cn } from "../ui";
+import { Card } from "../ui";
 import { AlertCircle, ChevronRight, Search, TrendingDown, TrendingUp } from "lucide-react";
-import { apiRequest, API_BASE, formatPrice as formatSharedPrice, isStaleQuote, newestQuoteDate } from "../../api";
+import { apiRequest, formatPrice as formatSharedPrice, isStaleQuote, newestQuoteDate } from "../../api";
 
 interface TrackedTicker {
   symbol: string;

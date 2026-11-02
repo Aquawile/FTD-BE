@@ -2,19 +2,6 @@
 // TYPES - Shared TypeScript Interfaces
 // ────────────────────────────────────────────────
 
-// ────────────────────────────────────────────────
-// API Response Types
-// ────────────────────────────────────────────────
-
-export interface TickerSearchResult {
-  ticker: string;
-  cik: string;
-  sector?: string;
-  current_price?: number;
-  change_percent?: number;
-  price_as_of?: string;
-}
-
 export interface TrackedTicker {
   symbol: string;
   name: string;
@@ -31,17 +18,6 @@ export interface TrackedTicker {
   change_percent?: number;
   price_as_of?: string;
 }
-
-export interface FilingResponse {
-  id: string;
-  type: string;
-  date: string;
-  period: string;
-  sections: number;
-  size: string;
-  key: boolean;
-}
-
 export interface FilingSummary {
   id: string;
   ticker: string;
@@ -80,14 +56,6 @@ export interface PriceRow {
   open: number;
   previous_close: number;
 }
-
-export interface FiscalYearEnd {
-  target_cik: string;
-  fiscal_year_end_date: string;
-  source_accession: string;
-  extracted_at: string;
-}
-
 export interface DashboardStats {
   articles_count: number;          // sec_elements_count + news_articles_count
   sec_elements_count?: number;     // all-time parsed SEC elements
@@ -96,17 +64,6 @@ export interface DashboardStats {
   tickers_count: number;
   vectorized_sec_count: number;
 }
-
-export interface TickerResult {
-  ticker: string;
-  cik: string;
-}
-
-export interface SearchResult {
-  ticker: string;
-  cik: string;
-}
-
 export interface PriceRow {
   symbol: string;
   timestamp: string;
@@ -140,20 +97,6 @@ export interface TimelineEventResponse {
   item_number: string | null;
   date_precision: string | null;
 }
-
-export interface FilingElement {
-  id: string;
-  target_cik: string;
-  accession_number: string;
-  form_type: string;
-  item_number: string;
-  content_type: string;
-  raw_text_string: string;
-  period_of_report: string;
-  filing_date: string;
-  date_precision: string;
-}
-
 export interface WorkspaceResponse {
   id: number;
   name: string;

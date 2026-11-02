@@ -4,7 +4,7 @@ import { Page } from "../../app/types";
 import { Badge, Btn, Card, Modal, cn } from "../ui";
 import PriceTimeline from "../PriceTimeline";
 import TickerNewsFeed from "../TickerNewsFeed";
-import { Bell, Briefcase, ExternalLink, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Bell, Briefcase, ExternalLink, TrendingDown, TrendingUp } from "lucide-react";
 import { apiRequest, fetchAddTickerToWorkspace, fetchWorkspaces, formatPrice, getTrackedTicker, isStaleQuote } from "../../api";
 import { TrackedTicker, WorkspaceResponse } from "../../types";
 
