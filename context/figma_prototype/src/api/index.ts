@@ -1,11 +1,6 @@
 import type {
   TrackedTicker,
-  TimelineEventResponse,
-  FilingSummary,
-  PriceRow,
-  NewsRow,
   WorkspaceResponse,
-  AlertResponse,
   AlertSubscription,
   AlertSummary,
   AlertSubscriptionType,
@@ -52,27 +47,6 @@ async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promis
   return response.json();
 }
 
-// ────────────────────────────────────────────────
-// Ticker Endpoints
-// ────────────────────────────────────────────────
-
-export async function searchTickers(
-  query: string,
-  options?: { limit?: number; sector?: string; sortBy?: string }
-): Promise<TrackedTicker[]> {
-  const params = new URLSearchParams({
-    q: query,
-    limit: (options?.limit ?? 20).toString(),
-  });
-  if (options?.sector && options.sector !== "all") {
-    params.set("sector", options.sector);
-  }
-  if (options?.sortBy) {
-    params.set("sort_by", options.sortBy);
-  }
-  return fetchWithAuth<TrackedTicker[]>(`/tickers/search?${params.toString()}`);
-}
-
 export async function getTrackedTickers(limit = 500): Promise<TrackedTicker[]> {
   // The API returns most recently updated first; every list that shows these wants A-Z.
   const rows = await fetchWithAuth<TrackedTicker[]>(`/tickers/tracked?limit=${limit}`);
@@ -107,23 +81,6 @@ export function formatPrice(price: number | string | null | undefined): string {
   const n = Number(price);
   return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
 }
-
-export async function getTickerNews(ticker: string): Promise<NewsRow[]> {
-  return fetchWithAuth<NewsRow[]>(`/tickers/${ticker}/news`);
-}
-
-export async function getTickerTimeline(ticker: string): Promise<TimelineEventResponse[]> {
-  return fetchWithAuth<TimelineEventResponse[]>(`/tickers/${ticker}/timeline`);
-}
-
-export async function getTickerFilings(ticker: string): Promise<FilingSummary[]> {
-  return fetchWithAuth<FilingSummary[]>(`/tickers/${ticker}/filings`);
-}
-
-export async function getTickerPrices(ticker: string): Promise<PriceRow[]> {
-  return fetchWithAuth<PriceRow[]>(`/tickers/${ticker}/prices`);
-}
-
 // ────────────────────────────────────────────────
 // Workspace Endpoints (Firebase auth)
 // ────────────────────────────────────────────────
@@ -169,16 +126,6 @@ export async function fetchUpdateWorkspace(
   });
   return jsonOrThrow(res);
 }
-
-export async function fetchWorkspaceTickers(
-  id: string | number,
-  firebaseUser: FirebaseUser | null,
-): Promise<string[]> {
-  const res = await apiRequest(`/workspaces/${id}/tickers`, firebaseUser);
-  if (!res.ok) throw new Error("Failed to fetch workspace tickers");
-  return res.json();
-}
-
 export async function fetchAddTickerToWorkspace(
   id: string | number,
   tickerSymbol: string,
@@ -202,45 +149,6 @@ export async function fetchRemoveTickerFromWorkspace(
   });
   if (!res.ok) throw new Error("Failed to remove ticker");
 }
-
-// ────────────────────────────────────────────────
-// Workspace Endpoints (legacy - localStorage auth)
-// ────────────────────────────────────────────────
-
-export async function getWorkspaces(): Promise<WorkspaceResponse[]> {
-  return fetchWithAuth<WorkspaceResponse[]>("/workspaces");
-}
-
-export async function getWorkspace(id: string): Promise<WorkspaceResponse> {
-  return fetchWithAuth<WorkspaceResponse>(`/workspaces/${id}`);
-}
-
-export async function createWorkspace(name: string, tickerSymbols: string[]): Promise<WorkspaceResponse> {
-  return fetchWithAuth<WorkspaceResponse>("/workspaces", {
-    method: "POST",
-    body: JSON.stringify({ name, ticker_symbols: tickerSymbols }),
-  });
-}
-
-export async function updateWorkspace(id: string, data: { name?: string; tickerSymbols?: string[] }): Promise<WorkspaceResponse> {
-  return fetchWithAuth<WorkspaceResponse>(`/workspaces/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(data.tickerSymbols ? { ...data, ticker_symbols: data.tickerSymbols } : data),
-  });
-}
-
-export async function deleteWorkspace(id: string): Promise<void> {
-  await fetchWithAuth<void>(`/workspaces/${id}`, { method: "DELETE" });
-}
-
-// ────────────────────────────────────────────────
-// Alert Endpoints
-// ────────────────────────────────────────────────
-
-export async function getAlerts(limit = 10): Promise<AlertResponse[]> {
-  return fetchWithAuth<AlertResponse[]>(`/alerts?limit=${limit}`);
-}
-
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

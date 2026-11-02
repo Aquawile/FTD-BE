@@ -68,21 +68,3 @@ def send_password_reset_email(email: str) -> None:
     )
     with urllib.request.urlopen(request, timeout=10):
         pass
-
-
-def get_firebase_user(uid: str) -> dict[str, Any] | None:
-    _initialize_firebase()
-    try:
-        user = firebase_auth.get_user(uid)
-        return {
-            "firebase_uid": user.uid,
-            "email": user.email,
-            "email_verified": user.email_verified,
-            "name": user.display_name,
-            "picture": user.photo_url,
-            "disabled": user.disabled,
-        }
-    except firebase_auth.UserNotFoundError:
-        return None
-    except Exception:
-        return None

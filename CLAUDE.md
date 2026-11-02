@@ -541,7 +541,6 @@ WantedBy=multi-user.target
 | `TickerDashboard.tsx` | Single ticker detail page | Yes (getTrackedTickers, apiRequest for prices/news/filings, `PriceTimeline` chart) |
 | `components/PriceTimeline.tsx` | 365-day price chart (Recharts) | Yes (`/tickers/{t}/price-timeline`) |
 | `SearchPage.tsx` | Ticker search + autocomplete | Yes (useTickerSearch hook → /api/tickers/search) |
-| `src/archive/` | **Archived 2026-10-16**: pages and sections showing data with no API behind it (hype/evidence scores, Timeline, Filings, Community, Comparison, Chat, Admin, Legacy landing). Not built or routed. See `src/archive/README.md` | No |
 | `WorkspaceDetailPage.tsx` | Workspace detail view | Yes (workspace hooks) |
 
 ### Frontend API Client (`src/api/index.ts`)
@@ -776,7 +775,7 @@ python -m pytest tests/test_api_endpoints.py -v
 **Test count**: ~190 unit tests + ~70 `db_integration` tests. CI runs the db tests against a throwaway
 `postgres:15` built by `tests/schema/setup_test_db.sh` (staging schema + pending migrations + seed), as
 `ftd_app`, with `REQUIRE_DB=1` (a skipped db test fails CI). Frontend: `npx tsc --noEmit` is clean
-(`src/archive` and `src/legacy` are excluded).
+.
 
 ### Test Files
 
@@ -887,11 +886,9 @@ There is no `latest_price_data` table; latest prices come from `staging_finnhub`
 - **Frontend**: `searchTickers()` in `api/index.ts` uses `fetchWithAuth` (sends auth if available)
 - **Note**: The task context mentioned making search public, but this was not implemented in the current commit. If unauthenticated search is needed, add `/tickers/search` to `PUBLIC_PATHS` and remove the `require_permission` decorator.
 
-### 3. get_all_alerts() in CRUD (Unused)
+### 3. get_all_alerts() in CRUD (REMOVED 2026-11-02)
 
-- **File**: `app/crud.py` (line 449)
-- **Status**: The function exists but is NOT imported or used by `alerts.py`. The alerts route uses `get_user_alerts()` (user-specific).
-- **Note**: This was an attempt to make alerts public that was reverted in the route layer.
+- It was unused (the alerts route uses `get_user_alerts()`); removed with the other unused code. Recovery tag: `backup-staging-before-unused-removal`.
 
 ### 4. Articles Count Source
 

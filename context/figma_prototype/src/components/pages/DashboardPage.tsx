@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
-import { Badge, Btn, Card, cn } from "../ui";
-import { FileText, MessageSquare, Sparkles, Target, TrendingDown, TrendingUp } from "lucide-react";
+import { Badge, Card, cn } from "../ui";
+import { FileText, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { fetchWorkspaces, getDashboardStats, getTrackedTickers, apiRequest, formatPrice, isStaleQuote, newestQuoteDate } from "../../api";
 import { WorkspaceResponse, AlertResponse, DashboardStats, TrackedTicker } from "../../types";
 
