@@ -20,10 +20,10 @@ def test_registered_user_gets_email_without_auth():
 
 
 @pytest.mark.parametrize("row", [None, {"id": 2, "is_active": False}])
-def test_unknown_or_inactive_gets_404_and_no_email(row):
+def test_unknown_or_inactive_is_not_sent_and_no_email(row):
     with patch(f"{SERVICE}.get_user_by_email", return_value=row), patch(f"{SERVICE}.send_password_reset_email") as send:
         r = client.post("/auth/password-reset", json={"email": "x@y.com"})
-    assert r.status_code == 404
+    assert r.status_code == 200 and r.json() == {"sent": False, "reason": "no_account"}
     send.assert_not_called()
 
 
