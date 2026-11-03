@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { Page } from "../../app/types";
 import { Badge, Btn, Card, cn } from "../ui";
-import { Activity, AlertTriangle, ArrowRight, Check, FileText, Plus } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Check, FileText, History, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useAlerts } from "../../hooks";
 import { useTrackedTickers } from "../../hooks/tickerHooks";
@@ -191,6 +191,7 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
   const { alerts: ALERTS_DATA, loading, error, refetch } = useAlerts(50, firebaseUser);
   const { tickers: trackedTickers } = useTrackedTickers(500);
   const [filter, setFilter] = useState("all");
+  const [showHistory, setShowHistory] = useState(false);
   // Alerts that were unread when this page opened stay highlighted for this visit, but are
   // marked read on the server straight away: looking at an alert clears the bell and nav badge.
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
@@ -215,11 +216,14 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
     onAlertsChanged?.();
   };
 
-  const filtered = filter === "all"
-    ? ALERTS_DATA
-    : filter === "unread"
-      ? ALERTS_DATA.filter(isUnread)
-      : ALERTS_DATA.filter(a => a.severity === filter);
+  // New alerts by default; the full record (and its filters) sits behind the History button.
+  const filtered = !showHistory
+    ? ALERTS_DATA.filter(isUnread)
+    : filter === "all"
+      ? ALERTS_DATA
+      : filter === "unread"
+        ? ALERTS_DATA.filter(isUnread)
+        : ALERTS_DATA.filter(a => a.severity === filter);
 
   const alertTypeIcon = (type: string) =>
     type === "filing" ? <FileText size={14} /> : type === "narrative_shift" ? <Activity size={14} /> : <AlertTriangle size={14} />;
@@ -260,13 +264,18 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
           <h1 className="text-2xl font-bold">Alerts</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{unreadCount} unread notifications</p>
         </div>
-        <Btn variant="secondary" size="sm" icon={<Check size={12} />} onClick={markAllRead} disabled={unreadCount === 0}>Mark all read</Btn>
+        <div className="flex items-center gap-2">
+          <Btn variant={showHistory ? "primary" : "secondary"} size="sm" icon={<History size={12} />} onClick={() => { setShowHistory(h => !h); setFilter("all"); }}>History</Btn>
+          <Btn variant="secondary" size="sm" icon={<Check size={12} />} onClick={markAllRead} disabled={unreadCount === 0}>Mark all read</Btn>
+        </div>
       </div>
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {["all", "unread", "high", "medium", "low"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs border capitalize cursor-pointer transition-all", filter === f ? "bg-primary/15 text-primary border-primary/30" : "bg-secondary text-muted-foreground border-border hover:border-primary/20")}>{f}</button>
-        ))}
-      </div>
+      {showHistory && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {["all", "unread", "high", "medium", "low"].map(f => (
+            <button key={f} onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs border capitalize cursor-pointer transition-all", filter === f ? "bg-primary/15 text-primary border-primary/30" : "bg-secondary text-muted-foreground border-border hover:border-primary/20")}>{f}</button>
+          ))}
+        </div>
+      )}
       <div className="space-y-3">
         {filtered.map(a => (
           <Card key={a.id} className={cn("p-4 transition-all cursor-pointer hover:border-primary/30", isUnread(a) && "border-primary/20 bg-primary/3")}>
@@ -291,7 +300,9 @@ function AlertsPage({ navigate, setSelectedTicker, firebaseUser, onAlertsChanged
           </Card>
         ))}
         {filtered.length === 0 && (
-          <p className="text-center text-sm text-muted-foreground py-8">{ALERTS_DATA.length === 0 ? "No alerts yet. They appear here when one of your subscriptions triggers." : "No alerts match your filter."}</p>
+          <p className="text-center text-sm text-muted-foreground py-8">{ALERTS_DATA.length === 0
+            ? "No alerts yet. They appear here when one of your subscriptions triggers."
+            : showHistory ? "No alerts match your filter." : "No new alerts. Past notifications are under History."}</p>
         )}
       </div>
 
