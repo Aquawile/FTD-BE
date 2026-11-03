@@ -96,10 +96,13 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
     }
   };
 
+  // One subscription per ticker and type (paused ones count); the API enforces the same rule.
+  const duplicate = !workspaceMode && !!ticker && subs.some(s => s.ticker === ticker && s.alert_type === alertType);
+
   const add = async () => {
     if (workspaceMode) return addForWorkspace();
     const value = Number(threshold);
-    if (!ticker || (isPriceType(alertType) && !(value > 0))) return;
+    if (!ticker || duplicate || (isPriceType(alertType) && !(value > 0))) return;
     setSaving(true);
     try {
       const created = await createAlertSubscription(firebaseUser, {
@@ -146,12 +149,13 @@ function AlertSubscriptions({ firebaseUser, trackedTickers, prefillTicker, onPre
             <input className={cn(inputCls, "w-24")} type="number" min="0" step="0.01" placeholder="$ price" aria-label="Price threshold in dollars"
               value={threshold} onChange={e => setThreshold(e.target.value)} />
           )}
-          <Btn size="sm" onClick={add} disabled={saving || (workspaceMode ? !chosenWorkspace || chosenWorkspace.tickers.length === 0 : !ticker || (isPriceType(alertType) && !(Number(threshold) > 0)))}>
+          <Btn size="sm" onClick={add} disabled={saving || duplicate || (workspaceMode ? !chosenWorkspace || chosenWorkspace.tickers.length === 0 : !ticker || (isPriceType(alertType) && !(Number(threshold) > 0)))}>
             {saving ? "Saving…" : "Save"}
           </Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setAdding(false); setError(null); }}>Cancel</Btn>
         </div>
       )}
+      {adding && duplicate && <p className="text-xs text-muted-foreground mb-3">You already have this alert for {ticker}. You can turn it on or off in the list below.</p>}
       {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
       <div className="space-y-3 text-sm">
         {subs.map(s => (
